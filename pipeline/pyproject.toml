@@ -1,0 +1,20 @@
+[project]
+name = "mirage-pipeline"
+version = "0.1.0"
+description = "MIRAGE normaliser: raw source records on NATS -> MirageEvent -> ClickHouse"
+requires-python = ">=3.12,<3.14"
+license = "Apache-2.0"
+dependencies = ["mirage-schema", "nats-py>=2.9", "httpx>=0.28"]
+
+[project.scripts]
+mirage-normaliser = "mirage_pipeline.normaliser:main"
+
+[build-system]
+requires = ["hatchling>=1.25"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/mirage_pipeline"]
+
+[tool.uv.sources]
+mirage-schema = { workspace = true }

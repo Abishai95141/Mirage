@@ -1,0 +1,6 @@
+# Reference: the OpenSSH build Cowrie's default banner claims (Debian 12, OpenSSH 9.2p1).
+FROM debian:bookworm-slim
+RUN apt-get update && apt-get install -y --no-install-recommends openssh-server \
+ && rm -rf /var/lib/apt/lists/* && mkdir -p /run/sshd && ssh-keygen -A
+EXPOSE 22
+CMD ["/usr/sbin/sshd", "-D", "-e"]

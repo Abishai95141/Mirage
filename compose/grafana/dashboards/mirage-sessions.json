@@ -1,0 +1,68 @@
+{
+  "uid": "mirage-sessions",
+  "title": "MIRAGE · Sessions",
+  "tags": ["mirage"],
+  "timezone": "utc",
+  "schemaVersion": 41,
+  "version": 1,
+  "refresh": "10s",
+  "time": {"from": "now-24h", "to": "now"},
+  "panels": [
+    {
+      "id": 1, "type": "stat", "title": "Sessions",
+      "gridPos": {"x": 0, "y": 0, "w": 4, "h": 4},
+      "datasource": {"type": "grafana-clickhouse-datasource", "uid": "clickhouse"},
+      "targets": [{"refId": "A", "editorType": "sql", "format": 1,
+        "rawSql": "SELECT count() AS sessions FROM mirage.sessions WHERE $__timeFilter(start_ts)"}]
+    },
+    {
+      "id": 2, "type": "stat", "title": "Logged in",
+      "gridPos": {"x": 4, "y": 0, "w": 4, "h": 4},
+      "datasource": {"type": "grafana-clickhouse-datasource", "uid": "clickhouse"},
+      "targets": [{"refId": "A", "editorType": "sql", "format": 1,
+        "rawSql": "SELECT countIf(logged_in = 1) AS logged_in FROM mirage.sessions WHERE $__timeFilter(start_ts)"}]
+    },
+    {
+      "id": 3, "type": "stat", "title": "Commands",
+      "gridPos": {"x": 8, "y": 0, "w": 4, "h": 4},
+      "datasource": {"type": "grafana-clickhouse-datasource", "uid": "clickhouse"},
+      "targets": [{"refId": "A", "editorType": "sql", "format": 1,
+        "rawSql": "SELECT count() AS commands FROM mirage.events WHERE $__timeFilter(ts) AND class = 'process_activity' AND action = 'command' AND outcome != 'failure'"}]
+    },
+    {
+      "id": 4, "type": "stat", "title": "Unknown commands",
+      "gridPos": {"x": 12, "y": 0, "w": 4, "h": 4},
+      "datasource": {"type": "grafana-clickhouse-datasource", "uid": "clickhouse"},
+      "targets": [{"refId": "A", "editorType": "sql", "format": 1,
+        "rawSql": "SELECT count() AS unknown FROM mirage.events WHERE $__timeFilter(ts) AND class = 'process_activity' AND action = 'command' AND outcome = 'failure'"}]
+    },
+    {
+      "id": 5, "type": "timeseries", "title": "Events by class",
+      "gridPos": {"x": 0, "y": 4, "w": 24, "h": 8},
+      "datasource": {"type": "grafana-clickhouse-datasource", "uid": "clickhouse"},
+      "targets": [{"refId": "A", "editorType": "sql", "format": 0,
+        "rawSql": "SELECT $__timeInterval(ts) AS time, class, count() AS events FROM mirage.events WHERE $__timeFilter(ts) GROUP BY time, class ORDER BY time"}]
+    },
+    {
+      "id": 6, "type": "table", "title": "Recent sessions",
+      "gridPos": {"x": 0, "y": 12, "w": 24, "h": 10},
+      "datasource": {"type": "grafana-clickhouse-datasource", "uid": "clickhouse"},
+      "targets": [{"refId": "A", "editorType": "sql", "format": 1,
+        "rawSql": "SELECT start_ts, session_id, src_ip, client_version, username, logged_in, failed_logins, commands, unknown_commands, round(duration_s, 1) AS duration_s, arrayStringConcat(command_list, ' ; ') AS commands_run FROM mirage.sessions WHERE $__timeFilter(start_ts) ORDER BY start_ts DESC LIMIT 200"}]
+    },
+    {
+      "id": 7, "type": "table", "title": "Top commands",
+      "gridPos": {"x": 0, "y": 22, "w": 12, "h": 9},
+      "datasource": {"type": "grafana-clickhouse-datasource", "uid": "clickhouse"},
+      "targets": [{"refId": "A", "editorType": "sql", "format": 1,
+        "rawSql": "SELECT JSONExtractString(payload, 'command') AS command, countIf(outcome != 'failure') AS n, countIf(outcome = 'failure') AS not_found FROM mirage.events WHERE $__timeFilter(ts) AND class = 'process_activity' AND action = 'command' GROUP BY command ORDER BY n DESC LIMIT 50"}]
+    },
+    {
+      "id": 8, "type": "table", "title": "Credentials tried",
+      "gridPos": {"x": 12, "y": 22, "w": 12, "h": 9},
+      "datasource": {"type": "grafana-clickhouse-datasource", "uid": "clickhouse"},
+      "targets": [{"refId": "A", "editorType": "sql", "format": 1,
+        "rawSql": "SELECT JSONExtractString(payload, 'username') AS username, JSONExtractString(payload, 'password') AS password, outcome, count() AS n FROM mirage.events WHERE $__timeFilter(ts) AND class = 'authentication' AND action = 'login' GROUP BY username, password, outcome ORDER BY n DESC LIMIT 50"}]
+    }
+  ]
+}

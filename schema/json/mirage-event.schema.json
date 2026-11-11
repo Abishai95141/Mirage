@@ -1,0 +1,366 @@
+{
+  "$defs": {
+    "Endpoint": {
+      "additionalProperties": false,
+      "properties": {
+        "asn": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Asn"
+        },
+        "country": {
+          "anyOf": [
+            {
+              "maxLength": 2,
+              "minLength": 2,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Country"
+        },
+        "ip": {
+          "anyOf": [
+            {
+              "format": "ipvanyaddress",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Ip"
+        },
+        "port": {
+          "anyOf": [
+            {
+              "maximum": 65535,
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Port"
+        },
+        "pseudonym": {
+          "anyOf": [
+            {
+              "maxLength": 128,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Pseudonym"
+        }
+      },
+      "title": "Endpoint",
+      "type": "object"
+    },
+    "EventClass": {
+      "enum": [
+        "network_activity",
+        "ssh_activity",
+        "http_activity",
+        "authentication",
+        "process_activity",
+        "file_activity",
+        "policy_decision",
+        "unknown"
+      ],
+      "title": "EventClass",
+      "type": "string"
+    },
+    "Label": {
+      "additionalProperties": false,
+      "properties": {
+        "attack_version": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Attack Version"
+        },
+        "confidence": {
+          "anyOf": [
+            {
+              "maximum": 1.0,
+              "minimum": 0.0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Confidence"
+        },
+        "kind": {
+          "enum": [
+            "actor",
+            "tactic",
+            "technique"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "model_version": {
+          "title": "Model Version",
+          "type": "string"
+        },
+        "value": {
+          "title": "Value",
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "value",
+        "model_version"
+      ],
+      "title": "Label",
+      "type": "object"
+    },
+    "Outcome": {
+      "enum": [
+        "success",
+        "failure",
+        "unknown"
+      ],
+      "title": "Outcome",
+      "type": "string"
+    },
+    "PolicyRef": {
+      "additionalProperties": false,
+      "properties": {
+        "action": {
+          "title": "Action",
+          "type": "string"
+        },
+        "decision_id": {
+          "title": "Decision Id",
+          "type": "string"
+        },
+        "propensity": {
+          "anyOf": [
+            {
+              "maximum": 1.0,
+              "minimum": 0.0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Propensity"
+        }
+      },
+      "required": [
+        "decision_id",
+        "action"
+      ],
+      "title": "PolicyRef",
+      "type": "object"
+    },
+    "SimRef": {
+      "additionalProperties": false,
+      "properties": {
+        "scenario_id": {
+          "title": "Scenario Id",
+          "type": "string"
+        },
+        "step_id": {
+          "title": "Step Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "scenario_id",
+        "step_id"
+      ],
+      "title": "SimRef",
+      "type": "object"
+    },
+    "Source": {
+      "enum": [
+        "cowrie",
+        "http-decoy",
+        "db-decoy",
+        "zeek",
+        "suricata",
+        "policy",
+        "sim"
+      ],
+      "title": "Source",
+      "type": "string"
+    }
+  },
+  "$id": "https://mirage.invalid/schema/0.1.0/mirage-event.schema.json",
+  "additionalProperties": false,
+  "properties": {
+    "action": {
+      "title": "Action",
+      "type": "string"
+    },
+    "actor_id": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Actor Id"
+    },
+    "class": {
+      "$ref": "#/$defs/EventClass"
+    },
+    "class_uid": {
+      "readOnly": true,
+      "title": "Class Uid",
+      "type": "integer"
+    },
+    "dst": {
+      "$ref": "#/$defs/Endpoint"
+    },
+    "event_id": {
+      "title": "Event Id",
+      "type": "string"
+    },
+    "ingest_ts": {
+      "format": "date-time",
+      "title": "Ingest Ts",
+      "type": "string"
+    },
+    "labels": {
+      "items": {
+        "$ref": "#/$defs/Label"
+      },
+      "title": "Labels",
+      "type": "array"
+    },
+    "outcome": {
+      "$ref": "#/$defs/Outcome",
+      "default": "unknown"
+    },
+    "payload": {
+      "additionalProperties": true,
+      "title": "Payload",
+      "type": "object"
+    },
+    "policy": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/PolicyRef"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "protocol": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Protocol"
+    },
+    "raw": {
+      "additionalProperties": true,
+      "title": "Raw",
+      "type": "object"
+    },
+    "schema_version": {
+      "default": "0.1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "sensor": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Sensor"
+    },
+    "session_id": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Session Id"
+    },
+    "sim": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/SimRef"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "source": {
+      "$ref": "#/$defs/Source"
+    },
+    "src": {
+      "$ref": "#/$defs/Endpoint"
+    },
+    "ts": {
+      "format": "date-time",
+      "title": "Ts",
+      "type": "string"
+    }
+  },
+  "required": [
+    "event_id",
+    "ts",
+    "ingest_ts",
+    "source",
+    "class",
+    "action",
+    "class_uid"
+  ],
+  "title": "MirageEvent",
+  "type": "object"
+}

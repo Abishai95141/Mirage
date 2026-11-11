@@ -1,0 +1,95 @@
+{
+  "server": {
+    "model": "Qwen3.5-9B-Q4_K_M.gguf",
+    "n_ctx": 4096,
+    "slots": 4,
+    "build": "b11429-d81235049"
+  },
+  "no_cache": {
+    "n": 50,
+    "ttft_ms": {
+      "p50": 4892.8,
+      "p95": 6352.1
+    },
+    "total_ms": {
+      "p50": 11986.2,
+      "p95": 43816.8,
+      "max": 48754.3
+    },
+    "under_1500ms": 0.0,
+    "gen_tok_per_s_p50": 12.5,
+    "gen_tokens_p50": 91,
+    "prompt_tokens_p50": 443,
+    "cached_tokens_p50": 0,
+    "valid_json": 42,
+    "breaks_character": [],
+    "empty_output": [
+      "history",
+      "which python3 gcc perl",
+      "cat ~/.bash_history",
+      "journalctl -n 5 --no-pager"
+    ]
+  },
+  "cache": {
+    "n": 50,
+    "ttft_ms": {
+      "p50": 480.9,
+      "p95": 2135.0
+    },
+    "total_ms": {
+      "p50": 8587.5,
+      "p95": 39063.8,
+      "max": 43645.1
+    },
+    "under_1500ms": 0.0,
+    "gen_tok_per_s_p50": 12.5,
+    "gen_tokens_p50": 96,
+    "prompt_tokens_p50": 17,
+    "cached_tokens_p50": 426,
+    "valid_json": 41,
+    "breaks_character": [],
+    "empty_output": [
+      "history",
+      "cat ~/.bash_history"
+    ]
+  },
+  "parallel4": {
+    "n": 50,
+    "ttft_ms": {
+      "p50": 962.3,
+      "p95": 14802.0
+    },
+    "total_ms": {
+      "p50": 14352.9,
+      "p95": 65140.9,
+      "max": 72636.6
+    },
+    "under_1500ms": 0.0,
+    "gen_tok_per_s_p50": 6.6,
+    "gen_tokens_p50": 83,
+    "prompt_tokens_p50": 17,
+    "cached_tokens_p50": 426,
+    "valid_json": 43,
+    "breaks_character": [],
+    "empty_output": [
+      "history",
+      "which python3 gcc perl",
+      "cat ~/.bash_history",
+      "mount"
+    ],
+    "wall_s": 284.4
+  },
+  "memory_after": {
+    "llama_server_rss_mb": 945,
+    "system_free_pct": 19,
+    "docker_stack": [
+      "mirage-normaliser-1 48.2MiB / 256MiB",
+      "mirage-ssh-edge-1 18.75MiB / 128MiB",
+      "mirage-vector-1 133.5MiB / 256MiB",
+      "mirage-grafana-1 404.3MiB / 512MiB",
+      "mirage-cowrie-1 55.78MiB / 512MiB",
+      "mirage-clickhouse-1 470.6MiB / 2GiB",
+      "mirage-nats-1 84.77MiB / 256MiB"
+    ]
+  }
+}

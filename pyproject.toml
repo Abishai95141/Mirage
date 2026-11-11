@@ -1,0 +1,57 @@
+[project]
+name = "mirage"
+version = "0.0.0"
+description = "MIRAGE adaptive honeypot platform (workspace root)"
+requires-python = ">=3.12,<3.14"
+license = "Apache-2.0"
+
+[tool.uv]
+package = false
+
+[tool.uv.workspace]
+members = ["schema", "pipeline"]
+
+[tool.uv.sources]
+mirage-schema = { workspace = true }
+mirage-pipeline = { workspace = true }
+
+[dependency-groups]
+dev = [
+    "mirage-schema",
+    "mirage-pipeline",
+    "pytest>=8.3",
+    "pytest-asyncio>=0.25",
+    "ruff>=0.8",
+    "paramiko>=3.5",
+    "httpx>=0.28",
+    "pre-commit>=4.0",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["schema/tests", "pipeline/tests", "tests", "eval"]
+markers = [
+    "integration: needs the docker compose stack running (make up)",
+]
+addopts = "-m 'not integration'"
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+extend-exclude = ["spikes/**/upstream"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP", "S", "SIM", "RUF"]
+ignore = ["S101"]  # assert is fine in tests
+
+[tool.ruff.lint.isort]
+known-first-party = ["mirage_schema", "mirage_pipeline"]
+
+[tool.ruff.lint.per-file-ignores]
+# Tests and spikes embed long SQL and JSON strings.
+"**/tests/**" = ["S", "E501"]
+"tests/**" = ["S", "E501"]
+"eval/**" = ["S"]
+"spikes/**" = ["S", "E501"]
+"tools/**" = ["S", "E501"]

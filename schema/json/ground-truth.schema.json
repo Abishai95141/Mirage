@@ -1,0 +1,147 @@
+{
+  "$defs": {
+    "Endpoint": {
+      "additionalProperties": false,
+      "properties": {
+        "asn": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Asn"
+        },
+        "country": {
+          "anyOf": [
+            {
+              "maxLength": 2,
+              "minLength": 2,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Country"
+        },
+        "ip": {
+          "anyOf": [
+            {
+              "format": "ipvanyaddress",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Ip"
+        },
+        "port": {
+          "anyOf": [
+            {
+              "maximum": 65535,
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Port"
+        },
+        "pseudonym": {
+          "anyOf": [
+            {
+              "maxLength": 128,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Pseudonym"
+        }
+      },
+      "title": "Endpoint",
+      "type": "object"
+    }
+  },
+  "$id": "https://mirage.invalid/schema/0.1.0/ground-truth.schema.json",
+  "additionalProperties": false,
+  "properties": {
+    "attack_version": {
+      "title": "Attack Version",
+      "type": "string"
+    },
+    "dst": {
+      "$ref": "#/$defs/Endpoint"
+    },
+    "end_ts": {
+      "format": "date-time",
+      "title": "End Ts",
+      "type": "string"
+    },
+    "procedure_id": {
+      "title": "Procedure Id",
+      "type": "string"
+    },
+    "scenario_id": {
+      "title": "Scenario Id",
+      "type": "string"
+    },
+    "src": {
+      "$ref": "#/$defs/Endpoint"
+    },
+    "start_ts": {
+      "format": "date-time",
+      "title": "Start Ts",
+      "type": "string"
+    },
+    "status": {
+      "enum": [
+        "ran",
+        "failed",
+        "skipped"
+      ],
+      "title": "Status",
+      "type": "string"
+    },
+    "step_id": {
+      "title": "Step Id",
+      "type": "string"
+    },
+    "tactic": {
+      "pattern": "^TA\\d{4}$",
+      "title": "Tactic",
+      "type": "string"
+    },
+    "technique_id": {
+      "pattern": "^T\\d{4}(\\.\\d{3})?$",
+      "title": "Technique Id",
+      "type": "string"
+    }
+  },
+  "required": [
+    "scenario_id",
+    "step_id",
+    "procedure_id",
+    "technique_id",
+    "tactic",
+    "attack_version",
+    "src",
+    "dst",
+    "start_ts",
+    "end_ts",
+    "status"
+  ],
+  "title": "GroundTruth",
+  "type": "object"
+}

@@ -1,0 +1,57 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  lint-unit:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.12"
+      - run: uv sync --frozen || uv sync
+      - run: uv run ruff check .
+      - run: uv run ruff format --check .
+      - run: uv run pytest
+
+  integration:
+    # Gate 0 and the containment baseline, against the real compose stack.
+    runs-on: ubuntu-24.04
+    needs: lint-unit
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.12"
+      - run: uv sync --frozen || uv sync
+      - run: make up
+      - run: make itest
+      - if: failure()
+        run: docker compose --env-file .env -f compose/docker-compose.yml logs --tail=200
+      - if: always()
+        run: make nuke
+
+  cowrie-fork:
+    # The policy-gate patch must apply to the pinned Cowrie release and keep its whole
+    # test suite green. Catches upstream drift before the fork is rebased.
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.13"
+      - run: git clone --depth 1 --branch v3.1.6 https://github.com/cowrie/cowrie.git spikes/s1-cowrie-gate/upstream
+      - working-directory: spikes/s1-cowrie-gate/upstream
+        run: |
+          git apply ../mirage-gate.patch
+          uv venv -p 3.13 .venv
+          uv pip install -p .venv -r requirements.txt -r requirements-output.txt
+          uv pip install -p .venv -e .
+          .venv/bin/python -m unittest discover src

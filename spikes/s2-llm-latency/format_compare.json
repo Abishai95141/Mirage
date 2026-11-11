@@ -1,0 +1,97 @@
+{
+ "summary": {
+  "json_tokens_total": 1047,
+  "raw_tokens_total": 398,
+  "token_saving": 0.62,
+  "json_ms_p50": 5816.7,
+  "raw_ms_p50": 2211,
+  "raw_under_1500ms": 2,
+  "n": 12
+ },
+ "per_command": {
+  "nproc": {
+   "json_tokens": 61,
+   "json_ms": 4755.3,
+   "raw_tokens": 8,
+   "raw_ms": 827,
+   "raw_text": "4\n<<exit:0>>"
+  },
+  "uptime": {
+   "json_tokens": 75,
+   "json_ms": 5816.7,
+   "raw_tokens": 64,
+   "raw_ms": 4829,
+   "raw_text": "Up 41 days, 3:14:22 up  41 days,  3:14:22,  1 user,  load average: 0.45, 0.32, 0.28\n<<exit:0>>"
+  },
+  "id": {
+   "json_tokens": 39,
+   "json_ms": 3116.0,
+   "raw_tokens": 22,
+   "raw_ms": 1901,
+   "raw_text": "uid=0(root) gid=0(root) groups=0(root)\n<<exit:0>>"
+  },
+  "free -m": {
+   "json_tokens": 92,
+   "json_ms": 6880.2,
+   "raw_tokens": 69,
+   "raw_ms": 5229,
+   "raw_text": "total        used        free      shared  buff/cache   available\nMem:           7936        2145        3821          12        2970        5432\nSwap:              0           0           0\n<<exit:0>"
+  },
+  "df -h": {
+   "json_tokens": 72,
+   "json_ms": 6528.3,
+   "raw_tokens": 44,
+   "raw_ms": 3439,
+   "raw_text": "Filesystem      Size  Used Avail Use% Mounted on\n/dev/vda1       79G   31G   45G  41% /\n<<exit:0>>"
+  },
+  "cat /etc/os-release": {
+   "json_tokens": 114,
+   "json_ms": 8542.7,
+   "raw_tokens": 89,
+   "raw_ms": 7002,
+   "raw_text": "PRETTY_NAME=\"Debian GNU/Linux 12 (bookworm)\"\nNAME=\"Debian GNU/Linux\"\nVERSION_ID=\"12\"\nVERSION=\"12 (bookworm)\"\nVERSION_CODENAME=bookworm\nID=debian\nHOME_URL=\"https://www.debian.org/\"\nSUPPORT_URL=\"https:/"
+  },
+  "redis-cli ping": {
+   "json_tokens": 27,
+   "json_ms": 2347.2,
+   "raw_tokens": 9,
+   "raw_ms": 952,
+   "raw_text": "PONG\n<<exit:0>>"
+  },
+  "nvidia-smi": {
+   "json_tokens": 36,
+   "json_ms": 3166.8,
+   "raw_tokens": 17,
+   "raw_ms": 1542,
+   "raw_text": "nvidia-smi: command not found\n<<exit:127>>"
+  },
+  "w": {
+   "json_tokens": 53,
+   "json_ms": 4532.6,
+   "raw_tokens": 18,
+   "raw_ms": 1884,
+   "raw_text": "w\nbash: w: command not found\n<<exit:127>>"
+  },
+  "hostnamectl": {
+   "json_tokens": 400,
+   "json_ms": 37623.1,
+   "raw_tokens": 17,
+   "raw_ms": 2211,
+   "raw_text": "bash: hostnamectl: command not found\n<<exit:127>>"
+  },
+  "echo $SHELL $PATH": {
+   "json_tokens": 46,
+   "json_ms": 5968.6,
+   "raw_tokens": 27,
+   "raw_ms": 3381,
+   "raw_text": "/bin/bash\n/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin\n<<exit:0>>"
+  },
+  "mysql --version": {
+   "json_tokens": 32,
+   "json_ms": 4464.6,
+   "raw_tokens": 14,
+   "raw_ms": 1886,
+   "raw_text": "mysql: command not found\n<<exit:127>>"
+  }
+ }
+}

@@ -1,0 +1,32 @@
+# Spike S1 stack: gated Cowrie + stub policy on an internal network; stock Cowrie alongside
+# for a latency baseline. Separate project so it never touches the main stack.
+name: mirage-s1
+
+networks:
+  decoy:
+    name: mirage_s1_decoy
+    internal: true
+  edge:
+    name: mirage_s1_edge
+
+services:
+  cowrie-gated:
+    build: .
+    image: mirage/cowrie-gated:spike
+    networks: [decoy]
+    volumes: ["./cowrie-gated.cfg:/cowrie/cowrie-git/etc/cowrie.cfg:ro"]
+  cowrie-stock:
+    image: cowrie/cowrie:3.1.6
+    networks: [decoy]
+    volumes: ["../../compose/cowrie/cowrie.cfg:/cowrie/cowrie-git/etc/cowrie.cfg:ro"]
+  policy:
+    image: python:3.12-slim-bookworm
+    networks: [decoy]
+    volumes: ["./stub_policy.py:/app/stub_policy.py:ro"]
+    command: ["python", "-u", "/app/stub_policy.py"]
+  edge:
+    image: haproxy:3.2-alpine
+    networks: [decoy, edge]
+    ports: ["127.0.0.1:2224:2224", "127.0.0.1:2225:2225"]
+    volumes: ["./haproxy.cfg:/usr/local/etc/haproxy/haproxy.cfg:ro"]
+    depends_on: [cowrie-gated, cowrie-stock]

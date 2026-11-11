@@ -1,0 +1,138 @@
+# MIRAGE phase 0 stack. Start with `make up` from the repo root.
+#
+# Networks
+#   decoy  internal (no gateway): decoys live here and can reach nothing outside it.
+#   edge   the only attacker-facing path; ssh-edge forwards 127.0.0.1:2222 -> cowrie:2222.
+#   core   pipeline, storage, dashboards. Decoys are not attached to it.
+#
+# Every published port binds to 127.0.0.1. Nothing here is meant to face the internet; see the
+# exposure checklist in docs/01-build-plan.md section 7 before changing that.
+
+name: mirage
+
+x-hardening: &hardening
+  security_opt: ["no-new-privileges:true"]
+  cap_drop: ["ALL"]
+  restart: unless-stopped
+
+networks:
+  decoy:
+    name: mirage_decoy
+    internal: true
+  edge:
+    name: mirage_edge
+  core:
+    name: mirage_core
+
+volumes:
+  cowrie-var:
+  vector-data:
+  nats-data:
+  clickhouse-data:
+  grafana-data:
+
+services:
+  cowrie:
+    image: cowrie/cowrie:3.1.6
+    <<: *hardening
+    networks: [decoy]
+    read_only: true
+    tmpfs: ["/tmp"]
+    volumes:
+      - cowrie-var:/cowrie/cowrie-git/var
+      - ./cowrie/cowrie.cfg:/cowrie/cowrie-git/etc/cowrie.cfg:ro
+    mem_limit: 512m
+    pids_limit: 256
+
+  ssh-edge:
+    image: haproxy:3.2-alpine
+    <<: *hardening
+    networks: [decoy, edge]
+    ports: ["127.0.0.1:${SSH_PORT:-2222}:2222"]
+    volumes:
+      - ./ssh-edge/haproxy.cfg:/usr/local/etc/haproxy/haproxy.cfg:ro
+    depends_on: [cowrie]
+    mem_limit: 128m
+
+  nats:
+    image: nats:2.15.2
+    <<: *hardening
+    command: ["--jetstream", "--store_dir", "/data", "--http_port", "8222"]
+    networks: [core]
+    ports: ["127.0.0.1:${NATS_PORT:-4222}:4222", "127.0.0.1:${NATS_MONITOR_PORT:-8222}:8222"]
+    volumes: [nats-data:/data]
+    mem_limit: 256m
+
+  vector:
+    image: timberio/vector:0.61.0-debian
+    <<: *hardening
+    networks: [core]
+    volumes:
+      - ./vector/vector.yaml:/etc/vector/vector.yaml:ro
+      - cowrie-var:/cowrie-var:ro
+      - vector-data:/var/lib/vector
+    command: ["--config", "/etc/vector/vector.yaml"]
+    depends_on: [nats]
+    mem_limit: 256m
+
+  clickhouse:
+    image: clickhouse/clickhouse-server:26.8.36.3
+    restart: unless-stopped
+    security_opt: ["no-new-privileges:true"]
+    networks: [core]
+    ports: ["127.0.0.1:${CLICKHOUSE_PORT:-8123}:8123"]
+    environment:
+      CLICKHOUSE_USER: ${CLICKHOUSE_USER:?run make env}
+      CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD:?run make env}
+      CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT: "1"
+    volumes:
+      - clickhouse-data:/var/lib/clickhouse
+      - ./clickhouse/config.d/mirage.xml:/etc/clickhouse-server/config.d/mirage.xml:ro
+      - ./clickhouse/init.sql:/docker-entrypoint-initdb.d/001-init.sql:ro
+    ulimits:
+      nofile: {soft: 262144, hard: 262144}
+    mem_limit: 2g
+    healthcheck:
+      test: ["CMD-SHELL", "clickhouse-client --user \"$$CLICKHOUSE_USER\" --password \"$$CLICKHOUSE_PASSWORD\" -q 'SELECT count() FROM mirage.events'"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+
+  normaliser:
+    build:
+      context: ..
+      dockerfile: pipeline/Dockerfile
+    image: mirage/normaliser:dev
+    <<: *hardening
+    networks: [core]
+    environment:
+      NATS_URL: nats://nats:4222
+      CLICKHOUSE_URL: http://clickhouse:8123
+      CLICKHOUSE_USER: ${CLICKHOUSE_USER}
+      CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD}
+    depends_on:
+      nats: {condition: service_started}
+      clickhouse: {condition: service_healthy}
+    mem_limit: 256m
+
+  grafana:
+    image: grafana/grafana:13.2.6
+    <<: *hardening
+    networks: [core]
+    ports: ["127.0.0.1:${GRAFANA_PORT:-3300}:3000"]
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:?run make env}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_AUTH_ANONYMOUS_ENABLED: "false"
+      GF_ANALYTICS_REPORTING_ENABLED: "false"
+      GF_ANALYTICS_CHECK_FOR_UPDATES: "false"
+      GF_PLUGINS_PREINSTALL_SYNC: grafana-clickhouse-datasource
+      CLICKHOUSE_USER: ${CLICKHOUSE_USER}
+      CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD}
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./grafana/dashboards:/var/lib/grafana/dashboards:ro
+    depends_on:
+      clickhouse: {condition: service_healthy}
+    mem_limit: 512m

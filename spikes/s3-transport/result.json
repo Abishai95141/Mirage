@@ -1,0 +1,441 @@
+{
+  "results": [
+    {
+      "target": "openssh:22",
+      "kexinit": {
+        "banner": "SSH-2.0-OpenSSH_9.2p1 Debian-2+deb12u10",
+        "banner_line_ending": "CRLF",
+        "kexinit_before_client_id": false,
+        "padding_lengths": [
+          11,
+          11,
+          11
+        ],
+        "padding_all_zero": true,
+        "padding_sample_hex": "0000000000000000000000",
+        "packet_length_stable": true,
+        "first_kex_packet_follows": 0,
+        "hassh_server": "425d29fe50d8e4f5e37efb6e24bcf660",
+        "algorithms": {
+          "kex_algorithms": [
+            "sntrup761x25519-sha512",
+            "sntrup761x25519-sha512@openssh.com",
+            "curve25519-sha256",
+            "curve25519-sha256@libssh.org",
+            "ecdh-sha2-nistp256",
+            "ecdh-sha2-nistp384",
+            "ecdh-sha2-nistp521",
+            "diffie-hellman-group-exchange-sha256",
+            "diffie-hellman-group16-sha512",
+            "diffie-hellman-group18-sha512",
+            "diffie-hellman-group14-sha256",
+            "kex-strict-s-v00@openssh.com"
+          ],
+          "server_host_key_algorithms": [
+            "rsa-sha2-512",
+            "rsa-sha2-256",
+            "ecdsa-sha2-nistp256",
+            "ssh-ed25519"
+          ],
+          "encryption_c2s": [
+            "chacha20-poly1305@openssh.com",
+            "aes128-ctr",
+            "aes192-ctr",
+            "aes256-ctr",
+            "aes128-gcm@openssh.com",
+            "aes256-gcm@openssh.com"
+          ],
+          "encryption_s2c": [
+            "chacha20-poly1305@openssh.com",
+            "aes128-ctr",
+            "aes192-ctr",
+            "aes256-ctr",
+            "aes128-gcm@openssh.com",
+            "aes256-gcm@openssh.com"
+          ],
+          "mac_c2s": [
+            "umac-64-etm@openssh.com",
+            "umac-128-etm@openssh.com",
+            "hmac-sha2-256-etm@openssh.com",
+            "hmac-sha2-512-etm@openssh.com",
+            "hmac-sha1-etm@openssh.com",
+            "umac-64@openssh.com",
+            "umac-128@openssh.com",
+            "hmac-sha2-256",
+            "hmac-sha2-512",
+            "hmac-sha1"
+          ],
+          "mac_s2c": [
+            "umac-64-etm@openssh.com",
+            "umac-128-etm@openssh.com",
+            "hmac-sha2-256-etm@openssh.com",
+            "hmac-sha2-512-etm@openssh.com",
+            "hmac-sha1-etm@openssh.com",
+            "umac-64@openssh.com",
+            "umac-128@openssh.com",
+            "hmac-sha2-256",
+            "hmac-sha2-512",
+            "hmac-sha1"
+          ],
+          "compression_c2s": [
+            "none",
+            "zlib@openssh.com"
+          ],
+          "compression_s2c": [
+            "none",
+            "zlib@openssh.com"
+          ],
+          "languages_c2s": [],
+          "languages_s2c": []
+        }
+      },
+      "banners": {
+        "version_2.2": {
+          "reply_text": "",
+          "reply_bytes": 1136,
+          "kexinit_sent": true,
+          "closed": false,
+          "close_after_s": null
+        },
+        "version_1.5": {
+          "reply_text": "Protocol major versions differ.\\x0d\\x0a",
+          "reply_bytes": 33,
+          "kexinit_sent": false,
+          "closed": true,
+          "close_after_s": 0.0
+        },
+        "version_1.99": {
+          "reply_text": "",
+          "reply_bytes": 1136,
+          "kexinit_sent": true,
+          "closed": false,
+          "close_after_s": null
+        },
+        "no_cr": {
+          "reply_text": "",
+          "reply_bytes": 1136,
+          "kexinit_sent": true,
+          "closed": false,
+          "close_after_s": null
+        },
+        "http_get": {
+          "reply_text": "Invalid SSH identification string.",
+          "reply_bytes": 34,
+          "kexinit_sent": false,
+          "closed": true,
+          "close_after_s": 0.0
+        },
+        "garbage": {
+          "reply_text": "Invalid SSH identification string.",
+          "reply_bytes": 34,
+          "kexinit_sent": false,
+          "closed": true,
+          "close_after_s": 0.0
+        },
+        "overlong": {
+          "reply_text": "",
+          "reply_bytes": 1136,
+          "kexinit_sent": true,
+          "closed": false,
+          "close_after_s": null
+        }
+      }
+    },
+    {
+      "target": "cowrie-stock:2222",
+      "kexinit": {
+        "banner": "SSH-2.0-OpenSSH_9.2p1 Debian-2+deb12u3",
+        "banner_line_ending": "CRLF",
+        "kexinit_before_client_id": false,
+        "padding_lengths": [
+          10,
+          10,
+          10
+        ],
+        "padding_all_zero": true,
+        "padding_sample_hex": "00000000000000000000",
+        "packet_length_stable": true,
+        "first_kex_packet_follows": 0,
+        "hassh_server": "6fa2f18e2061da02d6c8a9009674fa4e",
+        "algorithms": {
+          "kex_algorithms": [
+            "mlkem768x25519-sha256",
+            "curve25519-sha256",
+            "curve25519-sha256@libssh.org",
+            "ecdh-sha2-nistp256",
+            "ecdh-sha2-nistp384",
+            "ecdh-sha2-nistp521",
+            "diffie-hellman-group14-sha1",
+            "ext-info-s"
+          ],
+          "server_host_key_algorithms": [
+            "ssh-rsa",
+            "ecdsa-sha2-nistp256",
+            "ssh-ed25519"
+          ],
+          "encryption_c2s": [
+            "aes128-ctr",
+            "aes192-ctr",
+            "aes256-ctr",
+            "aes256-cbc",
+            "aes192-cbc",
+            "aes128-cbc",
+            "3des-cbc",
+            "cast128-cbc"
+          ],
+          "encryption_s2c": [
+            "aes128-ctr",
+            "aes192-ctr",
+            "aes256-ctr",
+            "aes256-cbc",
+            "aes192-cbc",
+            "aes128-cbc",
+            "3des-cbc",
+            "cast128-cbc"
+          ],
+          "mac_c2s": [
+            "hmac-sha2-512",
+            "hmac-sha2-384",
+            "hmac-sha2-256",
+            "hmac-sha1",
+            "hmac-md5"
+          ],
+          "mac_s2c": [
+            "hmac-sha2-512",
+            "hmac-sha2-384",
+            "hmac-sha2-256",
+            "hmac-sha1",
+            "hmac-md5"
+          ],
+          "compression_c2s": [
+            "zlib@openssh.com",
+            "zlib",
+            "none"
+          ],
+          "compression_s2c": [
+            "zlib@openssh.com",
+            "zlib",
+            "none"
+          ],
+          "languages_c2s": [],
+          "languages_s2c": []
+        }
+      },
+      "banners": {
+        "version_2.2": {
+          "reply_text": "Protocol major versions differ.\\x0a",
+          "reply_bytes": 32,
+          "kexinit_sent": false,
+          "closed": true,
+          "close_after_s": 0.0
+        },
+        "version_1.5": {
+          "reply_text": "Protocol major versions differ.\\x0a",
+          "reply_bytes": 32,
+          "kexinit_sent": false,
+          "closed": true,
+          "close_after_s": 0.0
+        },
+        "version_1.99": {
+          "reply_text": "",
+          "reply_bytes": 624,
+          "kexinit_sent": true,
+          "closed": false,
+          "close_after_s": null
+        },
+        "no_cr": {
+          "reply_text": "",
+          "reply_bytes": 624,
+          "kexinit_sent": true,
+          "closed": false,
+          "close_after_s": null
+        },
+        "http_get": {
+          "reply_text": "Invalid SSH identification string.\\x0a",
+          "reply_bytes": 35,
+          "kexinit_sent": false,
+          "closed": true,
+          "close_after_s": 0.0
+        },
+        "garbage": {
+          "reply_text": "Invalid SSH identification string.\\x0a",
+          "reply_bytes": 35,
+          "kexinit_sent": false,
+          "closed": true,
+          "close_after_s": 0.0
+        },
+        "overlong": {
+          "reply_text": "",
+          "reply_bytes": 624,
+          "kexinit_sent": true,
+          "closed": false,
+          "close_after_s": null
+        }
+      }
+    },
+    {
+      "target": "cowrie-gated:2222",
+      "kexinit": {
+        "banner": "SSH-2.0-OpenSSH_9.2p1 Debian-2+deb12u3",
+        "banner_line_ending": "CRLF",
+        "kexinit_before_client_id": false,
+        "padding_lengths": [
+          10,
+          10,
+          10
+        ],
+        "padding_all_zero": true,
+        "padding_sample_hex": "00000000000000000000",
+        "packet_length_stable": true,
+        "first_kex_packet_follows": 0,
+        "hassh_server": "6fa2f18e2061da02d6c8a9009674fa4e",
+        "algorithms": {
+          "kex_algorithms": [
+            "mlkem768x25519-sha256",
+            "curve25519-sha256",
+            "curve25519-sha256@libssh.org",
+            "ecdh-sha2-nistp256",
+            "ecdh-sha2-nistp384",
+            "ecdh-sha2-nistp521",
+            "diffie-hellman-group14-sha1",
+            "ext-info-s"
+          ],
+          "server_host_key_algorithms": [
+            "ssh-rsa",
+            "ecdsa-sha2-nistp256",
+            "ssh-ed25519"
+          ],
+          "encryption_c2s": [
+            "aes128-ctr",
+            "aes192-ctr",
+            "aes256-ctr",
+            "aes256-cbc",
+            "aes192-cbc",
+            "aes128-cbc",
+            "3des-cbc",
+            "cast128-cbc"
+          ],
+          "encryption_s2c": [
+            "aes128-ctr",
+            "aes192-ctr",
+            "aes256-ctr",
+            "aes256-cbc",
+            "aes192-cbc",
+            "aes128-cbc",
+            "3des-cbc",
+            "cast128-cbc"
+          ],
+          "mac_c2s": [
+            "hmac-sha2-512",
+            "hmac-sha2-384",
+            "hmac-sha2-256",
+            "hmac-sha1",
+            "hmac-md5"
+          ],
+          "mac_s2c": [
+            "hmac-sha2-512",
+            "hmac-sha2-384",
+            "hmac-sha2-256",
+            "hmac-sha1",
+            "hmac-md5"
+          ],
+          "compression_c2s": [
+            "zlib@openssh.com",
+            "zlib",
+            "none"
+          ],
+          "compression_s2c": [
+            "zlib@openssh.com",
+            "zlib",
+            "none"
+          ],
+          "languages_c2s": [],
+          "languages_s2c": []
+        }
+      },
+      "banners": {
+        "version_2.2": {
+          "reply_text": "Protocol major versions differ.\\x0a",
+          "reply_bytes": 32,
+          "kexinit_sent": false,
+          "closed": true,
+          "close_after_s": 0.0
+        },
+        "version_1.5": {
+          "reply_text": "Protocol major versions differ.\\x0a",
+          "reply_bytes": 32,
+          "kexinit_sent": false,
+          "closed": true,
+          "close_after_s": 0.0
+        },
+        "version_1.99": {
+          "reply_text": "",
+          "reply_bytes": 624,
+          "kexinit_sent": true,
+          "closed": false,
+          "close_after_s": null
+        },
+        "no_cr": {
+          "reply_text": "",
+          "reply_bytes": 624,
+          "kexinit_sent": true,
+          "closed": false,
+          "close_after_s": null
+        },
+        "http_get": {
+          "reply_text": "Invalid SSH identification string.\\x0a",
+          "reply_bytes": 35,
+          "kexinit_sent": false,
+          "closed": true,
+          "close_after_s": 0.0
+        },
+        "garbage": {
+          "reply_text": "Invalid SSH identification string.\\x0a",
+          "reply_bytes": 35,
+          "kexinit_sent": false,
+          "closed": true,
+          "close_after_s": 0.0
+        },
+        "overlong": {
+          "reply_text": "",
+          "reply_bytes": 624,
+          "kexinit_sent": true,
+          "closed": false,
+          "close_after_s": null
+        }
+      }
+    }
+  ],
+  "tells": {
+    "cowrie-stock:2222": [
+      "kexinit.hassh_server: reference='425d29fe50d8e4f5e37efb6e24bcf660' decoy='6fa2f18e2061da02d6c8a9009674fa4e'",
+      "algorithms.kex_algorithms: extra=['diffie-hellman-group14-sha1', 'ext-info-s', 'mlkem768x25519-sha256'] missing=['diffie-hellman-group-exchange-sha256', 'diffie-hellman-group14-sha256', 'diffie-hellman-group16-sha512', 'diffie-hellman-group18-sha512', 'kex-strict-s-v00@openssh.com', 'sntrup761x25519-sha512', 'sntrup761x25519-sha512@openssh.com']",
+      "algorithms.server_host_key_algorithms: extra=['ssh-rsa'] missing=['rsa-sha2-256', 'rsa-sha2-512']",
+      "algorithms.encryption_c2s: extra=['3des-cbc', 'aes128-cbc', 'aes192-cbc', 'aes256-cbc', 'cast128-cbc'] missing=['aes128-gcm@openssh.com', 'aes256-gcm@openssh.com', 'chacha20-poly1305@openssh.com']",
+      "algorithms.encryption_s2c: extra=['3des-cbc', 'aes128-cbc', 'aes192-cbc', 'aes256-cbc', 'cast128-cbc'] missing=['aes128-gcm@openssh.com', 'aes256-gcm@openssh.com', 'chacha20-poly1305@openssh.com']",
+      "algorithms.mac_c2s: extra=['hmac-md5', 'hmac-sha2-384'] missing=['hmac-sha1-etm@openssh.com', 'hmac-sha2-256-etm@openssh.com', 'hmac-sha2-512-etm@openssh.com', 'umac-128-etm@openssh.com', 'umac-128@openssh.com', 'umac-64-etm@openssh.com', 'umac-64@openssh.com']",
+      "algorithms.mac_s2c: extra=['hmac-md5', 'hmac-sha2-384'] missing=['hmac-sha1-etm@openssh.com', 'hmac-sha2-256-etm@openssh.com', 'hmac-sha2-512-etm@openssh.com', 'umac-128-etm@openssh.com', 'umac-128@openssh.com', 'umac-64-etm@openssh.com', 'umac-64@openssh.com']",
+      "algorithms.compression_c2s: extra=['zlib'] missing=[]",
+      "algorithms.compression_s2c: extra=['zlib'] missing=[]",
+      "banner.version_2.2: reference='' closed=False kex=True | decoy='Protocol major versions differ.\\\\x0a' closed=True kex=False",
+      "banner.version_1.5: reference='Protocol major versions differ.\\\\x0d\\\\x0a' closed=True kex=False | decoy='Protocol major versions differ.\\\\x0a' closed=True kex=False",
+      "banner.http_get: reference='Invalid SSH identification string.' closed=True kex=False | decoy='Invalid SSH identification string.\\\\x0a' closed=True kex=False",
+      "banner.garbage: reference='Invalid SSH identification string.' closed=True kex=False | decoy='Invalid SSH identification string.\\\\x0a' closed=True kex=False"
+    ],
+    "cowrie-gated:2222": [
+      "kexinit.hassh_server: reference='425d29fe50d8e4f5e37efb6e24bcf660' decoy='6fa2f18e2061da02d6c8a9009674fa4e'",
+      "algorithms.kex_algorithms: extra=['diffie-hellman-group14-sha1', 'ext-info-s', 'mlkem768x25519-sha256'] missing=['diffie-hellman-group-exchange-sha256', 'diffie-hellman-group14-sha256', 'diffie-hellman-group16-sha512', 'diffie-hellman-group18-sha512', 'kex-strict-s-v00@openssh.com', 'sntrup761x25519-sha512', 'sntrup761x25519-sha512@openssh.com']",
+      "algorithms.server_host_key_algorithms: extra=['ssh-rsa'] missing=['rsa-sha2-256', 'rsa-sha2-512']",
+      "algorithms.encryption_c2s: extra=['3des-cbc', 'aes128-cbc', 'aes192-cbc', 'aes256-cbc', 'cast128-cbc'] missing=['aes128-gcm@openssh.com', 'aes256-gcm@openssh.com', 'chacha20-poly1305@openssh.com']",
+      "algorithms.encryption_s2c: extra=['3des-cbc', 'aes128-cbc', 'aes192-cbc', 'aes256-cbc', 'cast128-cbc'] missing=['aes128-gcm@openssh.com', 'aes256-gcm@openssh.com', 'chacha20-poly1305@openssh.com']",
+      "algorithms.mac_c2s: extra=['hmac-md5', 'hmac-sha2-384'] missing=['hmac-sha1-etm@openssh.com', 'hmac-sha2-256-etm@openssh.com', 'hmac-sha2-512-etm@openssh.com', 'umac-128-etm@openssh.com', 'umac-128@openssh.com', 'umac-64-etm@openssh.com', 'umac-64@openssh.com']",
+      "algorithms.mac_s2c: extra=['hmac-md5', 'hmac-sha2-384'] missing=['hmac-sha1-etm@openssh.com', 'hmac-sha2-256-etm@openssh.com', 'hmac-sha2-512-etm@openssh.com', 'umac-128-etm@openssh.com', 'umac-128@openssh.com', 'umac-64-etm@openssh.com', 'umac-64@openssh.com']",
+      "algorithms.compression_c2s: extra=['zlib'] missing=[]",
+      "algorithms.compression_s2c: extra=['zlib'] missing=[]",
+      "banner.version_2.2: reference='' closed=False kex=True | decoy='Protocol major versions differ.\\\\x0a' closed=True kex=False",
+      "banner.version_1.5: reference='Protocol major versions differ.\\\\x0d\\\\x0a' closed=True kex=False | decoy='Protocol major versions differ.\\\\x0a' closed=True kex=False",
+      "banner.http_get: reference='Invalid SSH identification string.' closed=True kex=False | decoy='Invalid SSH identification string.\\\\x0a' closed=True kex=False",
+      "banner.garbage: reference='Invalid SSH identification string.' closed=True kex=False | decoy='Invalid SSH identification string.\\\\x0a' closed=True kex=False"
+    ]
+  }
+}

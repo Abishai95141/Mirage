@@ -1,0 +1,19 @@
+# Spike S3: real OpenSSH reference next to stock and gated Cowrie, on an internal network.
+name: mirage-s3
+networks:
+  probe:
+    name: mirage_s3_probe
+    internal: true
+services:
+  openssh:
+    build: {context: ., dockerfile: Dockerfile.openssh}
+    image: mirage/openssh-ref:bookworm
+    networks: [probe]
+  cowrie-stock:
+    image: cowrie/cowrie:3.1.6
+    networks: [probe]
+    volumes: ["../../compose/cowrie/cowrie.cfg:/cowrie/cowrie-git/etc/cowrie.cfg:ro"]
+  cowrie-gated:
+    image: mirage/cowrie-gated:spike
+    networks: [probe]
+    volumes: ["../../compose/cowrie/cowrie.cfg:/cowrie/cowrie-git/etc/cowrie.cfg:ro"]

@@ -1,0 +1,40 @@
+# Vector: tail decoy logs and publish each record, unchanged, to NATS JetStream.
+# Normalisation happens in the Python normaliser, not here, so the raw stream stays raw.
+
+data_dir: /var/lib/vector
+
+api:
+  enabled: true
+  address: 0.0.0.0:8686
+
+sources:
+  cowrie_log:
+    type: file
+    include: ["/cowrie-var/log/cowrie/cowrie.json*"]
+    read_from: beginning
+
+transforms:
+  cowrie_record:
+    type: remap
+    inputs: [cowrie_log]
+    source: |
+      parsed, err = parse_json(.message)
+      if err == null && is_object(parsed) {
+        . = parsed
+      } else {
+        # Unparseable lines still travel; the normaliser dead-letters them with the reason.
+        . = {"_unparsed": .message}
+      }
+
+sinks:
+  nats_raw:
+    type: nats
+    inputs: [cowrie_record]
+    url: nats://nats:4222
+    subject: raw.honeypot.cowrie
+    jetstream:
+      enabled: true
+    encoding:
+      codec: json
+    acknowledgements:
+      enabled: true

@@ -1,0 +1,41 @@
+{
+  "latency_ms": {
+    "stock": {
+      "p50": 5.1,
+      "p95": 7.7,
+      "n": 100
+    },
+    "gated": {
+      "p50": 7.6,
+      "p95": 10.2,
+      "n": 100
+    },
+    "added_p50": 2.4
+  },
+  "unknown_answered_by_policy": true,
+  "pipeline_and_substitution": true,
+  "slow_policy": {
+    "elapsed_ms": 208.1,
+    "fell_back_to_stock": true
+  },
+  "policy_requests_before_restart": 107,
+  "policy_down": {
+    "elapsed_ms": 9.3,
+    "shell_works": true
+  },
+  "terminate_closed_session": true,
+  "decisions": {
+    "n": 109,
+    "by_action": {
+      "allow": 104,
+      "fake_success": 2,
+      "allow(fallback)": 2,
+      "terminate": 1
+    },
+    "gate_latency_ms": {
+      "p50": 0.8,
+      "p95": 1.3,
+      "max": 5.7
+    }
+  }
+}

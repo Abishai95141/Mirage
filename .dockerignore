@@ -1,0 +1,6 @@
+**
+!schema/pyproject.toml
+!schema/src/**
+!pipeline/pyproject.toml
+!pipeline/src/**
+**/__pycache__
