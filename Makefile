@@ -1,6 +1,6 @@
 COMPOSE := docker compose --env-file .env -f compose/docker-compose.yml
 
-.PHONY: help env profile profile-ref reference-image dashboards up migrate down nuke ps logs lab-up lab-run lab-down test itest lint fmt schema probe
+.PHONY: help env profile profile-ref reference-image dashboards up migrate down nuke ps logs lab-up lab-run lab-down split test itest lint fmt schema probe
 
 help:
 	@grep -E '^[a-z-]+:.*?## ' $(MAKEFILE_LIST) | awk 'BEGIN{FS=":.*?## "}{printf "  %-12s %s\n",$$1,$$2}'
@@ -56,6 +56,9 @@ lab-run: ## Run scenarios in the lab: make lab-run SCENARIOS=/lab/scenarios/smok
 
 lab-down: ## Stop the lab containers; the decoys and the pipeline keep running
 	$(LAB) stop lab-edge sim-join
+
+split: ## Freeze the train/dev/test split (eval/split.yaml) from the catalogue
+	uv run python -m eval.split build
 
 itest: ## Integration tests against the running stack (Gates 0 and 1)
 	uv run pytest -m integration -v

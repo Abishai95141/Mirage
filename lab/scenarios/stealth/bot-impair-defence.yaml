@@ -1,0 +1,16 @@
+#Stopping logging and pulling the firewall down.
+id: bot-impair-defence
+actor: {class: scripted_bot, timing: bot-slow, patience: 4}
+sessions:
+  - protocol: ssh
+    channel: exec
+    login: {user: root}
+    steps:
+      - {id: s1, procedure: impair-stop-journald}
+      - {id: s2, procedure: impair-stop-edr}
+      - {id: s3, procedure: impair-kill-auditd}
+      - {id: s4, procedure: impair-ufw-disable}
+      - {id: s5, procedure: impair-ufw-stop}
+      - {id: s6, procedure: impair-ufw-logging-off}
+      - {id: s7, procedure: impair-iptables-flush}
+      - {id: s8, procedure: impair-iptables-save}

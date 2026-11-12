@@ -232,3 +232,101 @@ def test_http_redis_mysql_sessions_all_join_cleanly(proto_run, clickhouse):
     assert ("mysql", "datastore_activity") in inputs
     assert ("mysql", "authentication") in inputs  # the login step
     assert {r["technique_id"] for r in rows if r["technique_id"]} >= {"T1082", "T1083", "T1005"}
+
+
+# ------------------------------------------------------------------ Gate 2 tests 3 and 4: demos
+
+TA = {
+    "recon": "TA0043", "cred": "TA0006", "discovery": "TA0007", "exec": "TA0002",
+    "persist": "TA0003", "c2": "TA0011", "impact": "TA0040", "initial": "TA0001",
+    "collection": "TA0009",
+}  # fmt: skip
+
+
+def run_one(clickhouse, path: str) -> tuple[dict, dict]:
+    out = runner("run", path, "--seed", str(int(time.time())), "--time-scale", "0.1")
+    summary = json.loads(out.stdout.strip().splitlines()[-1])
+    assert summary["errors"] == [], summary
+    (row,) = poll(
+        clickhouse,
+        f"SELECT * FROM mirage.sim_runs FINAL WHERE run_id = '{summary['run_id']}' AND final = 1",
+        lambda rows: len(rows) == 1,
+    )
+    assert row["no_event"] == 0 and row["mismatch"] == 0, row["problems"]
+    assert row["connections_unmatched"] == 0, row["problems"]
+    return summary, row
+
+
+def tactics_of(clickhouse, run_id: str, where: str = "") -> set[str]:
+    rows = clickhouse(
+        f"SELECT DISTINCT tactic FROM mirage.sim_steps FINAL WHERE run_id = '{run_id}' "
+        f"AND tactic != '' {where}"
+    )
+    return {r["tactic"] for r in rows}
+
+
+def test_demo_1_ssh_brute_to_miner(clickhouse):
+    summary, _ = run_one(clickhouse, "/lab/scenarios/demo/demo-1-ssh-brute-miner.yaml")
+    run_id = summary["run_id"]
+    # the session's label union is exactly the six tactics the demo promises
+    assert tactics_of(clickhouse, run_id) == {
+        TA["cred"],
+        TA["discovery"],
+        TA["c2"],
+        TA["exec"],
+        TA["persist"],
+        TA["impact"],
+    }
+    # brute-force login opens several connections, so there are several session rows; all bot
+    sess = clickhouse(
+        f"SELECT session_id, actor_class FROM mirage.sim_sessions FINAL WHERE run_id = '{run_id}'"
+    )
+    assert sess and all(s["actor_class"] == "scripted_bot" for s in sess)
+    # the miner upload is a distinct step, and its bytes are an indexed artifact
+    up = clickhouse(
+        f"SELECT session_id FROM mirage.sim_steps FINAL WHERE run_id = '{run_id}' "
+        "AND evidence = 'upload' AND state = 'matched'"
+    )
+    assert up, "demo 1 must have a matched upload step"
+    art = poll(
+        clickhouse,
+        f"SELECT sha256 FROM mirage.artifacts WHERE has(sessions, '{up[0]['session_id']}')",
+        lambda rows: bool(rows),
+    )
+    assert art
+
+
+def test_demo_2_web_cred_theft_reused_on_mysql(clickhouse):
+    summary, _ = run_one(clickhouse, "/lab/scenarios/demo/demo-2-web-cred-mysql.yaml")
+    run_id = summary["run_id"]
+    sessions = clickhouse(
+        "SELECT session_id, session_ref, actor_class, protocol, logical_session_id "
+        f"FROM mirage.sim_sessions FINAL WHERE run_id = '{run_id}' ORDER BY session_ref"
+    )
+    scanner = [s for s in sessions if s["actor_class"] == "scanner"]
+    bot = [s for s in sessions if s["actor_class"] == "scripted_bot"]
+    assert scanner and bot, sessions
+    # the scanner sweeps and reads the planted file; the bot reuses the credential on MySQL
+    ref = scanner[0]["session_ref"]
+    assert tactics_of(clickhouse, run_id, f"AND session_ref = '{ref}'") >= {TA["recon"], TA["cred"]}
+    bref = bot[0]["session_ref"]
+    assert tactics_of(clickhouse, run_id, f"AND session_ref = '{bref}'") >= {
+        TA["initial"],
+        TA["collection"],
+    }
+    # the honeytoken fires on the second session, and the pipeline ties both to one actor
+    mysql_logical = bot[0]["logical_session_id"]
+    poll(
+        clickhouse,
+        "SELECT session_id FROM mirage.events FINAL WHERE action = 'token_triggered' "
+        f"AND JSONExtractString(payload, 'session') = '{mysql_logical}'",
+        lambda rows: bool(rows),
+    )
+    ids = [s["logical_session_id"] for s in sessions]
+    id_list = ",".join(f"'{i}'" for i in ids)
+    actors = poll(
+        clickhouse,
+        f"SELECT actor_id FROM mirage.session_summary FINAL WHERE session_id IN ({id_list})",
+        lambda rows: len(rows) >= 2 and len({r["actor_id"] for r in rows}) == 1,
+    )
+    assert actors[0]["actor_id"].startswith("actor-")

@@ -314,6 +314,31 @@ def test_engine_happy_path_records_every_step(tmp_path):
     assert by_id["b"]["technique_id"] is None  # an explicit negative
 
 
+def test_session_source_and_actor_overrides(tmp_path):
+    """A session can dial from its own simulated address with its own actor class (the demo
+    that reuses stolen credentials needs both)."""
+    doc = (
+        BASE
+        + """
+  - protocol: ssh
+    channel: exec
+    source: 2
+    actor: {class: scanner, timing: scan}
+    login: {user: root}
+    steps:
+      - {id: f, procedure: sysinfo-uname-all}
+"""
+    )
+    records, _sent = run_actor(tmp_path, doc=doc, answers=GOOD)
+    sessions = [r for r in records if r["kind"] == "session"]
+    assert [s["actor_class"] for s in sessions] == ["scripted_bot", "scanner"]
+    assert [s["timing_profile"].split("@")[0] for s in sessions] == ["bot-fast", "scan"]
+    addresses = {c["src"]["ip"] for s in sessions for c in s["connections"]}
+    assert len(addresses) == 2  # the second session dialled from its own address
+    steps = steps_of(records)
+    assert steps["f"] == ("ran", "unchecked")
+
+
 def test_engine_goto_skips_and_records_the_skipped_step(tmp_path):
     answers = {**GOOD, r"--version$": ("bash: x: command not found\n", 127)}
     records, sent = run_actor(tmp_path, answers=answers)

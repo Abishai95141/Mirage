@@ -1,0 +1,18 @@
+# Clearing files, logs and history; wrapping commands in base64 on the way.
+id: bot-cover-tracks
+actor: {class: scripted_bot, timing: bot-fast, patience: 4}
+sessions:
+  - protocol: ssh
+    channel: shell
+    login: {user: root, guesses: 2, procedure: ssh-password-guessing}
+    steps:
+      - {id: s1, procedure: delete-single-file}
+      - {id: s2, procedure: delete-folder}
+      - {id: s3, procedure: delete-shred}
+      - {id: s4, procedure: delete-tool-dirs}
+      - {id: s5, procedure: clear-auth-log}
+      - {id: s6, procedure: clear-journal-vacuum}
+      - {id: s7, procedure: obf-base64-decode-file}
+      - {id: s8, procedure: obf-base64-pipe}
+      - {id: s9, procedure: obf-printf-decode}
+      - {id: s10, procedure: obf-gzip-file}

@@ -1,0 +1,12 @@
+# Impact: destructive statements, then a shutdown attempt.
+id: bot-impact-destruct
+actor: {class: scripted_bot, timing: bot-fast, patience: 4}
+sessions:
+  - protocol: ssh
+    channel: exec
+    login: {user: root}
+    steps:
+      - {id: s1, procedure: destroy-dd-zero}
+      - {id: s2, procedure: destroy-rm-tree, with: {dir: /var/tmp}}
+      - {id: s3, procedure: shutdown-reboot}
+      - {id: s4, procedure: reboot-now}

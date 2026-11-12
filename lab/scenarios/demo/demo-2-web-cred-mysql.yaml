@@ -1,0 +1,24 @@
+# Demo 2 (spec 2.8): a scanner sweeps the web application and reads the planted .env with its
+# database credential; later a scripted bot logs in to MariaDB with that credential from a
+# second address and reads the customer table. The runner looks the password up in the
+# deployment profile, so it never appears here. Expected: session 1 is the scanner with
+# Reconnaissance and Credential Access; session 2 is the scripted_bot using valid accounts and
+# Collection; a token.triggered fires; both sessions share one actor via the honeytoken link.
+id: demo-2-web-cred-mysql
+actor: {class: scanner, timing: scan, patience: 4}
+sessions:
+  - protocol: http
+    steps:
+      - {id: s1, procedure: web-get-index, expect: "200"}
+      - {id: s2, procedure: sweep-web-admin-paths}
+      - {id: s3, procedure: sweep-web-config-paths}
+      - {id: s4, procedure: sweep-web-content}
+      - {id: s5, procedure: creds-http-env, expect: "DB_"}
+  - protocol: mysql
+    source: 2
+    actor: {class: scripted_bot, timing: bot-fast}
+    gap_s: 2
+    login: {user: wp_user, procedure: mysql-login}
+    steps:
+      - {id: m1, procedure: valid-mysql-session, expect: "wp_user"}
+      - {id: m2, procedure: repo-mysql-customers, expect: "@"}

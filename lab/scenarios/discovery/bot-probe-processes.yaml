@@ -1,0 +1,12 @@
+# A bot that looks at running processes, miners included.
+id: bot-probe-processes
+actor: {class: scripted_bot, timing: bot-fast, patience: 2}
+sessions:
+  - protocol: ssh
+    channel: exec
+    login: {user: root}
+    steps:
+      - {id: s1, procedure: proc-ps-to-file}
+      - {id: s2, procedure: proc-top}
+      - {id: s3, procedure: proc-grep-miner}
+      - {id: s4, procedure: proc-grep-miner-short}

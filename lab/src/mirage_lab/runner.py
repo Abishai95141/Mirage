@@ -111,12 +111,24 @@ class ActorRun:
         self.actor_ref = f"{run_id}/{scenario.id}/{instance}"
         self.rng = random.Random(f"{settings.seed}:{scenario.id}:{instance}")
         self.dialer = Dialer(settings.target_ip, src_ip, self.rng)
+        self.dialers = {1: self.dialer}  # session.source -> that address's dialer
         self.timing: Timing = make(scenario.actor.timing, self.rng, settings.time_scale)
         self.slots = Slots(self.rng)
         self.fingerprint = Fingerprint(self.rng)
         self.failures = 0
         self.steps: dict[str, int] = {}
         self.driver_factory = SSHDriver  # tests put a scripted driver here
+
+    def dialer_for(self, source: int) -> Dialer:
+        """The dialer for a session's simulated address; extra addresses come from the same
+        per-run pool, so two sessions of one actor can arrive from different sources."""
+        if source not in self.dialers:
+            pool = AddressPool(
+                self.settings.out_dir / f"addresses.{self.settings.mode}", self.settings.mode
+            )
+            ip = pool.take(1)[0]
+            self.dialers[source] = Dialer(self.settings.target_ip, ip, self.rng)
+        return self.dialers[source]
 
     # ------------------------------------------------------------------ records
 
@@ -179,6 +191,12 @@ class ActorRun:
         if spec.gap_s:
             time.sleep(spec.gap_s * self.settings.time_scale)
         started = now()
+        saved_dialer, saved_timing = self.dialer, self.timing
+        self.dialer = self.dialer_for(spec.source)
+        if spec.actor is not None:
+            self.timing = make(spec.actor.timing, self.rng, self.settings.time_scale)
+        actor_class = spec.actor.class_ if spec.actor is not None else self.scenario.actor.class_
+        session_timing = self.timing
         first_conn = len(self.dialer.opened)
         driver = self._make_driver(spec)
         try:
@@ -199,8 +217,9 @@ class ActorRun:
                     self._step_record(session_ref, step.id, proc, None, None, "skipped")
         finally:
             driver.close()
+            self.dialer, self.timing = saved_dialer, saved_timing
         ended = now()
-        conns = self.dialer.opened[first_conn:]
+        conns = self.dialers[spec.source].opened[first_conn:]
         if not conns:
             return  # nothing reached the decoy, so there is no session to describe
         self.truth.write(
@@ -210,8 +229,8 @@ class ActorRun:
                 session_ref=session_ref,
                 protocol=spec.protocol,
                 actor_ref=self.actor_ref,
-                actor_class=self.scenario.actor.class_,
-                timing_profile=self.timing.describe(),
+                actor_class=actor_class,
+                timing_profile=session_timing.describe(),
                 mode=self.settings.mode,
                 connections=[
                     Connection(

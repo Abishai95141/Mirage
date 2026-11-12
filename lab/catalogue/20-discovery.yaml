@@ -1,0 +1,245 @@
+# Host, account, network and process discovery: written for the Phase 2 catalogue (spec 2.1).
+attack_version: "20.1"
+procedures:
+  - id: sysinfo-os-release
+    technique: T1082
+    tactic: TA0007
+    source: own
+    protocol: ssh
+    template: cat /etc/os-release
+  - id: sysinfo-hostname
+    technique: T1082
+    tactic: TA0007
+    source: atomic
+    protocol: ssh
+    template: hostname
+    ref: ART T1082 test 8 Hostname Discovery (486e88ea-4f56-470f-9b57-3f4d73f39133)
+  - id: sysinfo-uname-flags
+    technique: T1082
+    tactic: TA0007
+    source: corpus
+    protocol: ssh
+    template: uname -s -v -n -r -m
+  - id: sysinfo-uname-machine
+    technique: T1082
+    tactic: TA0007
+    source: corpus
+    protocol: ssh
+    template: uname -m
+  - id: sysinfo-cpu-count
+    technique: T1082
+    tactic: TA0007
+    source: corpus
+    protocol: ssh
+    template: cat /proc/cpuinfo | grep name | wc -l
+  - id: sysinfo-env-vars
+    technique: T1082
+    tactic: TA0007
+    source: atomic
+    protocol: ssh
+    template: env
+    ref: ART T1082 test 12 Environment variables discovery (fcbdd43f-f4ad-42d5-98f3-0218097e2720)
+  - id: sysinfo-mysql-variables
+    technique: T1082
+    tactic: TA0007
+    source: own
+    protocol: mysql
+    template: SHOW VARIABLES LIKE 'version%'
+  - id: files-find-hidden
+    technique: T1083
+    tactic: TA0007
+    source: atomic
+    protocol: ssh
+    template: find {{dir}} -type f -name '.*'
+    ref: ART T1083 test 2 Nix File and Directory Discovery 2 (13c5e1ae-605b-46c4-a79f-db28c77ff24e)
+  - id: files-find-recent
+    technique: T1083
+    tactic: TA0007
+    source: own
+    protocol: ssh
+    template: find {{dir}} -type f -mtime -7
+  - id: files-which-ls
+    technique: T1083
+    tactic: TA0007
+    source: corpus
+    protocol: ssh
+    template: ls -lh $(which ls)
+  - id: files-which-sh
+    technique: T1083
+    tactic: TA0007
+    source: corpus
+    protocol: ssh
+    template: which sh
+  - id: files-locate-hex
+    technique: T1083
+    tactic: TA0007
+    source: corpus
+    protocol: ssh
+    template: locate {{hex}}
+  - id: files-mysql-tables
+    technique: T1083
+    tactic: TA0007
+    source: own
+    protocol: mysql
+    template: SHOW TABLES FROM wordpress
+  - id: files-redis-scan
+    technique: T1083
+    tactic: TA0007
+    source: own
+    protocol: redis
+    template: SCAN 0 MATCH {{word}}*
+  - id: accounts-who
+    technique: T1033
+    tactic: TA0007
+    source: own
+    protocol: ssh
+    template: who
+  - id: accounts-users
+    technique: T1033
+    tactic: TA0007
+    source: atomic
+    protocol: ssh
+    template: users
+    ref: ART T1033 test 1 System Owner/User Discovery (2a9b677d-a230-44f4-ad86-782df1ef108c)
+  - id: accounts-whoami
+    technique: T1033
+    tactic: TA0007
+    source: corpus
+    protocol: ssh
+    template: whoami
+  - id: accounts-uid-zero
+    technique: T1087.001
+    tactic: TA0007
+    source: atomic
+    protocol: ssh
+    template: grep 'x:0:' /etc/passwd
+    ref: ART T1087.001 test 3 View accounts with UID 0 (c955a599-3653-4fe5-b631-f11c00eb0397)
+  - id: accounts-groups-of
+    technique: T1087.001
+    tactic: TA0007
+    source: atomic
+    protocol: ssh
+    template: groups
+    ref: ART T1087.001 test 7 Enumerate users and groups (e6f36545-dc1e-47f0-9f48-7f730f54a02e)
+  - id: accounts-getent-user
+    technique: T1087.001
+    tactic: TA0007
+    source: own
+    protocol: ssh
+    template: getent passwd {{user}}
+  - id: proc-ps-to-file
+    technique: T1057
+    tactic: TA0007
+    source: atomic
+    protocol: ssh
+    template: ps aux >> /tmp/{{file}}
+    ref: ART T1057 test 1 Process Discovery - ps (4ff64f0b-aaf2-4866-b39d-38d9791407cc)
+  - id: proc-top
+    technique: T1057
+    tactic: TA0007
+    source: corpus
+    protocol: ssh
+    template: top
+  - id: proc-grep-miner
+    technique: T1057
+    tactic: TA0007
+    source: corpus
+    protocol: ssh
+    template: ps -ef | grep '[Mm]iner'
+  - id: proc-grep-miner-short
+    technique: T1057
+    tactic: TA0007
+    source: corpus
+    protocol: ssh
+    template: ps | grep '[Mm]iner'
+  - id: proc-pgrep-name
+    technique: T1057
+    tactic: TA0007
+    source: own
+    protocol: ssh
+    template: pgrep -l {{word}}
+  - id: conn-netstat-ant
+    technique: T1049
+    tactic: TA0007
+    source: atomic
+    protocol: ssh
+    template: netstat -ant
+    ref: ART T1049 test 2 System Network Connections Discovery (9ae28d3f-190f-4fa0-b023-c7bd3e0eabf2)
+  - id: conn-ss-ant
+    technique: T1049
+    tactic: TA0007
+    source: atomic
+    protocol: ssh
+    template: ss -ant
+    ref: ART T1049 test 1 System Network Connections Discovery via ss or lsof (bcf05343-ef1d-4052-8a27-b00c9be42b9f)
+  - id: conn-lsof-inet
+    technique: T1049
+    tactic: TA0007
+    source: own
+    protocol: ssh
+    template: lsof -i -nP
+  - id: conn-sockstat
+    technique: T1049
+    tactic: TA0007
+    source: atomic
+    protocol: ssh
+    template: sockstat -4
+    ref: ART T1049 test 3 System Network Connections Discovery via sockstat (997bb0a6-421e-40c7-b5d2-0f493904ef9b)
+  - id: net-ip-addr
+    technique: T1016
+    tactic: TA0007
+    source: own
+    protocol: ssh
+    template: ip addr show
+  - id: net-resolv-conf
+    technique: T1016
+    tactic: TA0007
+    source: own
+    protocol: ssh
+    template: cat /etc/resolv.conf
+  - id: net-ifconfig
+    technique: T1016
+    tactic: TA0007
+    source: corpus
+    protocol: ssh
+    template: ifconfig
+  - id: net-netstat-tcp
+    technique: T1016
+    tactic: TA0007
+    source: atomic
+    protocol: ssh
+    template: netstat -Sp tcp
+    ref: ART T1016 test 1 System Network Configuration Discovery (c141bbdb-7fca-4254-9fd6-f47e79447e17)
+  - id: remote-hosts-file
+    technique: T1018
+    tactic: TA0007
+    source: own
+    protocol: ssh
+    template: cat /etc/hosts
+  - id: remote-arp-table
+    technique: T1018
+    tactic: TA0007
+    source: atomic
+    protocol: ssh
+    template: arp -a | grep -v '^?'
+    ref: ART T1018 test 5 Remote System Discovery - arp nix (acb6b1ff-e2ad-4d64-806c-6c35fe73b951)
+  - id: remote-ip-neighbours
+    technique: T1018
+    tactic: TA0007
+    source: atomic
+    protocol: ssh
+    template: ip neighbour show
+    ref: ART T1018 test 1 Remote System Discovery - ip neighbour (158bd4dd-6359-40ab-b13c-285b9ef6fa25)
+  - id: remote-ping-host
+    technique: T1018
+    tactic: TA0007
+    source: own
+    protocol: ssh
+    template: ping -c 2 {{host}}
+  - id: remote-netstat-routes
+    technique: T1018
+    tactic: TA0007
+    source: atomic
+    protocol: ssh
+    template: netstat -r | grep default
+    ref: ART T1018 test 7 Remote System Discovery - netstat (d2791d72-b67f-4615-814f-ec824a91f514)

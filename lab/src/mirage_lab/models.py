@@ -111,11 +111,22 @@ class Login(_Strict):
     procedure: str | None = None  # the auth procedure the guessing is labelled with
 
 
+class SessionActor(_Strict):
+    """A session's own actor class and pacing, when they differ from the scenario's (the
+    demo that reuses stolen credentials sweeps the web as a scanner, then logs in to the
+    database as a bot, from a second address)."""
+
+    class_: ActorClass = Field(alias="class")
+    timing: Literal["scan", "bot-fast", "bot-slow", "human"]
+
+
 class SessionSpec(_Strict):
     protocol: Protocol
     channel: Literal["shell", "exec"] = "shell"
     login: Login = Field(default_factory=Login)
     gap_s: float = Field(default=0.0, ge=0.0, le=3600.0)  # pause before this session
+    source: int = Field(default=1, ge=1, le=8)  # which simulated address the session dials from
+    actor: SessionActor | None = None  # overrides the scenario's actor for this session
     steps: list[Step] = Field(default_factory=list)
 
 

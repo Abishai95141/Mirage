@@ -1,0 +1,13 @@
+# A scanner that sweeps the web application and probes its exposed endpoints.
+id: scanner-web-app
+actor: {class: scanner, timing: scan, patience: 5}
+sessions:
+  - protocol: http
+    steps:
+      - {id: s1, procedure: web-get-index, expect: "200"}
+      - {id: s2, procedure: sweep-web-admin-paths}
+      - {id: s3, procedure: sweep-web-config-paths}
+      - {id: s4, procedure: sweep-web-content}
+      - {id: s5, procedure: exploit-jsonapi-users}
+      - {id: s6, procedure: exploit-xmlrpc-ping}
+      - {id: s7, procedure: exploit-comments-post}

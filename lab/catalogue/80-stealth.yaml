@@ -1,0 +1,139 @@
+# Covering tracks and impairing defences: written for the Phase 2 catalogue (spec 2.1).
+attack_version: "20.1"
+procedures:
+  - id: delete-single-file
+    technique: T1070.004
+    tactic: TA0005
+    source: atomic
+    protocol: ssh
+    template: rm -f /tmp/{{file}}
+    ref: ART T1070.004 test 1 Delete a single file (562d737f-2fc6-4b09-8c2a-7f8ff0828480)
+  - id: delete-folder
+    technique: T1070.004
+    tactic: TA0005
+    source: atomic
+    protocol: ssh
+    template: rm -rf /var/tmp/{{file}}
+    ref: ART T1070.004 test 2 Delete an entire folder (a415f17e-ce8d-4ce2-a8b4-83b674e7017e)
+  - id: delete-shred
+    technique: T1070.004
+    tactic: TA0005
+    source: atomic
+    protocol: ssh
+    template: shred -u /tmp/{{file}}
+    ref: ART T1070.004 test 3 Overwrite and delete a file with shred (039b4b10-2900-404b-b67f-4b6d49aa6499)
+  - id: delete-tool-dirs
+    technique: T1070.004
+    tactic: TA0005
+    source: corpus
+    protocol: ssh
+    template: rm -rf /tmp/{{file}}.sh; rm -rf /tmp/{{file2}}.sh
+  - id: clear-auth-log
+    technique: T1070.002
+    tactic: TA0005
+    source: own
+    protocol: ssh
+    template: cat /dev/null > /var/log/auth.log
+  - id: clear-lastlog
+    technique: T1070.002
+    tactic: TA0005
+    source: own
+    protocol: ssh
+    template: cat /dev/null > /var/log/lastlog
+  - id: clear-history
+    technique: T1070.002
+    tactic: TA0005
+    source: own
+    protocol: ssh
+    template: cat /dev/null > ~/.bash_history
+  - id: clear-journal-vacuum
+    technique: T1070.002
+    tactic: TA0005
+    source: own
+    protocol: ssh
+    template: journalctl --vacuum-size=1M
+  - id: obf-base64-decode-file
+    technique: T1027
+    tactic: TA0005
+    source: own
+    protocol: ssh
+    template: base64 -d /tmp/{{file}}.b64 > /tmp/{{file2}}
+  - id: obf-base64-pipe
+    technique: T1027
+    tactic: TA0005
+    source: atomic
+    protocol: ssh
+    template: echo {{word}} | base64 -d | bash
+    ref: ART T1140 test 2 Linux Base64 Encoded Shebang in CLI (3a15c372-67c1-4430-ac8e-ec06d641ce4d)
+  - id: obf-printf-decode
+    technique: T1027
+    tactic: TA0005
+    source: atomic
+    protocol: ssh
+    template: printf {{word}} | base64 -d
+    ref: ART T1140 test 1 Base64 decoding with shell utilities (b4f6a567-a27a-41e5-b8ef-ac4b4008bb7e)
+  - id: obf-gzip-file
+    technique: T1027
+    tactic: TA0005
+    source: own
+    protocol: ssh
+    template: cat /tmp/{{file}} | gzip > /tmp/{{file2}}.gz
+  - id: impair-stop-journald
+    technique: T1685
+    tactic: TA0112
+    source: atomic
+    protocol: ssh
+    template: systemctl stop systemd-journald
+    ref: ART T1685 test 1 Disable journal logging via systemctl utility (c3a377f9-1203-4454-aa35-9d391d34768f)
+  - id: impair-stop-edr
+    technique: T1685
+    tactic: TA0112
+    source: atomic
+    protocol: ssh
+    template: systemctl stop falcon-sensor.service
+    ref: ART T1685 test 3 Stop Crowdstrike Falcon on Linux (828a1278-81cc-4802-96ab-188bf29ca77d)
+  - id: impair-kill-auditd
+    technique: T1685
+    tactic: TA0112
+    source: own
+    protocol: ssh
+    template: pkill -f auditd
+  - id: impair-disable-rsyslog
+    technique: T1685
+    tactic: TA0112
+    source: own
+    protocol: ssh
+    template: systemctl disable rsyslog
+  - id: impair-ufw-disable
+    technique: T1686
+    tactic: TA0112
+    source: atomic
+    protocol: ssh
+    template: ufw disable
+    ref: ART T1686 test 1 Stop/Start UFW firewall (fe135572-edcd-49a2-afe6-1d39521c5a9a)
+  - id: impair-ufw-stop
+    technique: T1686
+    tactic: TA0112
+    source: atomic
+    protocol: ssh
+    template: systemctl stop ufw
+    ref: ART T1686 test 2 Stop/Start UFW firewall systemctl (9fd99609-1854-4f3c-b47b-97d9a5972bd1)
+  - id: impair-ufw-logging-off
+    technique: T1686
+    tactic: TA0112
+    source: own
+    protocol: ssh
+    template: ufw logging off
+  - id: impair-iptables-flush
+    technique: T1686
+    tactic: TA0112
+    source: own
+    protocol: ssh
+    template: iptables -F
+  - id: impair-iptables-save
+    technique: T1686
+    tactic: TA0112
+    source: atomic
+    protocol: ssh
+    template: iptables-save > /tmp/{{file}}
+    ref: ART T1686 test 5 Disable iptables (7784c64e-ed0b-4b65-bf63-c86db229fd56)

@@ -1,0 +1,53 @@
+# Reconnaissance: web path sweeps and network scanning: written for the Phase 2 catalogue (spec 2.1).
+attack_version: "20.1"
+procedures:
+  - id: sweep-web-admin-paths
+    technique: T1595.002
+    tactic: TA0043
+    source: own
+    protocol: http
+    template: GET /wp-admin/
+  - id: sweep-web-config-paths
+    technique: T1595.002
+    tactic: TA0043
+    source: own
+    protocol: http
+    template: GET /phpmyadmin/
+  - id: sweep-web-setup-paths
+    technique: T1595.002
+    tactic: TA0043
+    source: own
+    protocol: http
+    template: GET /wp-admin/setup-config.php
+  - id: sweep-web-content
+    technique: T1595.002
+    tactic: TA0043
+    source: own
+    protocol: http
+    template: GET /wp-content/
+  - id: scan-nmap-single
+    technique: T1046
+    tactic: TA0007
+    source: atomic
+    protocol: ssh
+    template: nmap -Pn -sV -p {{port}} {{host}}
+    ref: ART T1046 test 3 Port Scan using nmap (0d5a2b03-3a26-45e4-96ae-89485b4d1f97)
+  - id: scan-ports-devtcp
+    technique: T1046
+    tactic: TA0007
+    source: own
+    protocol: ssh
+    template: for p in 22 80 443 3306 6379; do (echo > /dev/tcp/{{host}}/$p) 2>/dev/null && echo $p open; done
+  - id: scan-nmap-syn
+    technique: T1046
+    tactic: TA0007
+    source: atomic
+    protocol: ssh
+    template: sudo nmap -sS {{host}} -p {{port}}
+    ref: ART T1046 test 2 Port Scan Nmap (515942b0-a09f-4163-a7bb-22fefb6f185f)
+  - id: scan-port-nc-timeout
+    technique: T1046
+    tactic: TA0007
+    source: own
+    protocol: ssh
+    template: nc -z -w2 {{host}} {{port}}

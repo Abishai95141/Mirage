@@ -1,0 +1,11 @@
+# Persistence as a system service.
+id: bot-persist-services
+actor: {class: scripted_bot, timing: bot-slow, patience: 3}
+sessions:
+  - protocol: ssh
+    channel: exec
+    login: {user: root}
+    steps:
+      - {id: s1, procedure: systemd-write-unit}
+      - {id: s2, procedure: systemd-enable-unit}
+      - {id: s3, procedure: systemd-sysv-enable}

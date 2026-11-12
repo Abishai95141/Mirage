@@ -1,0 +1,35 @@
+# Session glue and explicit negatives (no technique): written for the Phase 2 catalogue (spec 2.1).
+attack_version: "20.1"
+procedures:
+  - id: glue-touch-file
+    source: own
+    protocol: ssh
+    template: touch /tmp/{{file}}
+  - id: glue-echo-ok
+    source: corpus
+    protocol: ssh
+    template: echo ok
+  - id: glue-echo-marker
+    source: corpus
+    protocol: ssh
+    template: echo IoT_ACCESS_VERIFIED
+  - id: glue-echo-cat
+    source: corpus
+    protocol: ssh
+    template: echo Hi | cat -n
+  - id: glue-router-cloud
+    source: corpus
+    protocol: ssh
+    template: /ip cloud print
+  - id: glue-uptime-cut
+    source: corpus
+    protocol: ssh
+    template: cat /proc/uptime | cut -d ' ' -f1
+  - id: glue-hosts-deny
+    source: corpus
+    protocol: ssh
+    template: echo > /etc/hosts.deny
+  - id: glue-nproc
+    source: corpus
+    protocol: ssh
+    template: nproc

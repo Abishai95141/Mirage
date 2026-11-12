@@ -1,0 +1,12 @@
+# A scanner that enumerates listening services from a shell.
+id: scanner-port-sweep
+actor: {class: scanner, timing: scan, patience: 4}
+sessions:
+  - protocol: ssh
+    channel: exec
+    login: {user: root, guesses: 4, procedure: ssh-password-guessing}
+    steps:
+      - {id: s1, procedure: scan-nmap-single, with: {port: "22"}}
+      - {id: s2, procedure: scan-nmap-syn, with: {port: "3306"}}
+      - {id: s3, procedure: scan-ports-devtcp}
+      - {id: s4, procedure: scan-port-nc-timeout, with: {port: "6379"}}

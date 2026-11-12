@@ -1,0 +1,25 @@
+# Demo 1 (spec 2.8): a scripted bot guesses SSH passwords, looks around, tries to fetch a
+# miner, uploads it when the fetch fails, runs it against a pool and adds a cron entry.
+# Session tactics must come out exactly: Credential Access, Discovery, Command and Control,
+# Execution, Persistence, Impact. The miner is random bytes; nothing here is executable.
+id: demo-1-ssh-brute-miner
+actor: {class: scripted_bot, timing: bot-fast, patience: 8}
+sessions:
+  - protocol: ssh
+    channel: shell
+    login: {user: root, guesses: 6, procedure: ssh-password-guessing}
+    steps:
+      # Credential Access comes from the login procedure's own label (T1110.001).
+      - {id: s1, procedure: sysinfo-uname-all, expect: "Linux", on_fail: leave}
+      - {id: s2, procedure: owner-w, expect: "USER"}
+      - {id: s3, procedure: cron-list-jobs}
+      # Tries to download the miner; without egress this fails, so the bot falls through.
+      - {id: s4, procedure: fetch-wget-url, expect: "saved", on_fail: {goto: s6}}
+      - {id: s5, procedure: fetch-tftp-get, expect: "saved", on_fail: continue}
+      # Falls back to pushing it over SFTP - this step becomes an indexed artifact.
+      - {id: s6, procedure: transfer-sftp-put}
+      # Runs it: first through the shell, then directly with pool-style arguments.
+      - {id: s7, procedure: exec-chmod-run}
+      - {id: s8, procedure: miner-run-pool}
+      # Persistence: bring the miner back on every reboot.
+      - {id: s9, procedure: cron-add-reboot}

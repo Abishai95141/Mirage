@@ -1,0 +1,17 @@
+# Account discovery: who am I, who else is on the box.
+id: bot-probe-accounts
+actor: {class: scripted_bot, timing: bot-fast, patience: 3}
+sessions:
+  - protocol: ssh
+    channel: exec
+    login: {user: root}
+    steps:
+      - {id: s1, procedure: owner-id, expect: "uid=", on_fail: leave}
+      - {id: s2, procedure: owner-w}
+      - {id: s3, procedure: accounts-who}
+      - {id: s4, procedure: accounts-users}
+      - {id: s5, procedure: accounts-whoami}
+      - {id: s6, procedure: accounts-passwd, expect: "root:"}
+      - {id: s7, procedure: accounts-uid-zero}
+      - {id: s8, procedure: accounts-groups-of}
+      - {id: s9, procedure: accounts-getent-user, with: {user: admin}}

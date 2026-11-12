@@ -1,0 +1,10 @@
+# Redis reconnaissance: server facts and the keyspace.
+id: bot-redis-recon
+actor: {class: scripted_bot, timing: bot-fast, patience: 3}
+sessions:
+  - protocol: redis
+    steps:
+      - {id: s1, procedure: redis-ping, expect: "PONG"}
+      - {id: s2, procedure: redis-server-info, expect: "redis_version"}
+      - {id: s3, procedure: redis-list-keys, expect: "app:config"}
+      - {id: s4, procedure: files-redis-scan}

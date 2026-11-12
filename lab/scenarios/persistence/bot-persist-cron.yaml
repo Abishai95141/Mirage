@@ -1,0 +1,13 @@
+# Persistence through cron: inspect, then add jobs at every cron hook the decoy knows.
+id: bot-persist-cron
+actor: {class: scripted_bot, timing: bot-fast, patience: 3}
+sessions:
+  - protocol: ssh
+    channel: shell
+    login: {user: root, guesses: 2, procedure: ssh-password-guessing}
+    steps:
+      - {id: s1, procedure: cron-list-jobs}
+      - {id: s2, procedure: cron-add-reboot}
+      - {id: s3, procedure: cron-spool-append}
+      - {id: s4, procedure: cron-d-write}
+      - {id: s5, procedure: cron-daily-write}

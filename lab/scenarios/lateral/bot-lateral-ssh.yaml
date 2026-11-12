@@ -1,0 +1,12 @@
+# Reach for a neighbouring host over SSH.
+id: bot-lateral-ssh
+actor: {class: scripted_bot, timing: bot-slow, patience: 3}
+sessions:
+  - protocol: ssh
+    channel: exec
+    login: {user: root}
+    steps:
+      - {id: s1, procedure: lateral-ssh-keyscan, with: {host: 192.0.2.10}}
+      - {id: s2, procedure: lateral-ssh-id, with: {host: 192.0.2.10}}
+      - {id: s3, procedure: lateral-ssh-uname, with: {host: 198.51.100.7}}
+      - {id: s4, procedure: lateral-ssh-port, with: {port: "2222"}}

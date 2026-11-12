@@ -1,0 +1,11 @@
+# A bot that talks to MariaDB: version, variables and schemas.
+id: bot-mysql-recon
+actor: {class: scripted_bot, timing: bot-fast, patience: 3}
+sessions:
+  - protocol: mysql
+    login: {user: wp_user, procedure: mysql-login}
+    steps:
+      - {id: s1, procedure: mysql-select-one, expect: "1"}
+      - {id: s2, procedure: mysql-show-databases, expect: "crm"}
+      - {id: s3, procedure: sysinfo-mysql-variables, expect: "version"}
+      - {id: s4, procedure: files-mysql-tables, expect: "wp_users"}

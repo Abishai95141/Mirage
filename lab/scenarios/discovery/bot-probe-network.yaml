@@ -1,0 +1,16 @@
+# Network configuration and connection discovery in one pass.
+id: bot-probe-network
+actor: {class: scripted_bot, timing: bot-slow, patience: 4}
+sessions:
+  - protocol: ssh
+    channel: exec
+    login: {user: root}
+    steps:
+      - {id: s1, procedure: net-ip-addr}
+      - {id: s2, procedure: net-ifconfig}
+      - {id: s3, procedure: conn-netstat-ant}
+      - {id: s4, procedure: conn-ss-ant}
+      - {id: s5, procedure: conn-lsof-inet}
+      - {id: s6, procedure: remote-arp-table}
+      - {id: s7, procedure: remote-ip-neighbours}
+      - {id: s8, procedure: remote-hosts-file}

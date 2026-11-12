@@ -1,0 +1,11 @@
+# Redis: read the planted application secrets, then try the module and web-shell path.
+id: bot-redis-takeover
+actor: {class: scripted_bot, timing: bot-fast, patience: 4}
+sessions:
+  - protocol: redis
+    steps:
+      - {id: s1, procedure: creds-redis-config-hash, expect: "db_pass"}
+      - {id: s2, procedure: repo-redis-hget}
+      - {id: s3, procedure: webshell-redis-dbfilename, expect: "CONFIG SET"}
+      - {id: s4, procedure: module-redis-load, expect: "MODULE"}
+      - {id: s5, procedure: destroy-redis-flush, expect: "OK"}

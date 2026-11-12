@@ -1,0 +1,12 @@
+# Resource hijacking: start a miner and check it is running.
+id: bot-impact-miner
+actor: {class: scripted_bot, timing: bot-fast, patience: 3}
+sessions:
+  - protocol: ssh
+    channel: shell
+    login: {user: root, guesses: 2, procedure: ssh-password-guessing}
+    steps:
+      - {id: s1, procedure: transfer-sftp-put}
+      - {id: s2, procedure: miner-run-pool}
+      - {id: s3, procedure: miner-cpu-burn}
+      - {id: s4, procedure: miner-process-check}

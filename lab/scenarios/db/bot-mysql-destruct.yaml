@@ -1,0 +1,11 @@
+# Module loading and destructive statements against the database.
+id: bot-mysql-destruct
+actor: {class: scripted_bot, timing: bot-fast, patience: 3}
+sessions:
+  - protocol: mysql
+    login: {user: wp_user, procedure: mysql-login}
+    steps:
+      - {id: s1, procedure: module-mysql-udf}
+      - {id: s2, procedure: webshell-mysql-outfile}
+      - {id: s3, procedure: destroy-mysql-drop}
+      - {id: s4, procedure: destroy-mysql-delete}

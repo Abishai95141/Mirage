@@ -1,0 +1,14 @@
+# Persist access: a web shell, an authorized key and a fresh account.
+id: bot-persist-access
+actor: {class: scripted_bot, timing: bot-fast, patience: 3}
+sessions:
+  - protocol: ssh
+    channel: shell
+    login: {user: root, guesses: 2, procedure: ssh-password-guessing}
+    steps:
+      - {id: s1, procedure: webshell-write-php}
+      - {id: s2, procedure: sshkeys-prepare-dir}
+      - {id: s3, procedure: sshkeys-append}
+      - {id: s4, procedure: sshkeys-rewrite}
+      - {id: s5, procedure: useradd-shell, with: {user: deploy}}
+      - {id: s6, procedure: useradd-with-password, with: {user: ops}}

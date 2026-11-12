@@ -1,0 +1,12 @@
+# Persistence in the shell's own start-up files.
+id: bot-persist-rc
+actor: {class: scripted_bot, timing: bot-fast, patience: 3}
+sessions:
+  - protocol: ssh
+    channel: exec
+    login: {user: root}
+    steps:
+      - {id: s1, procedure: rc-bashrc-append}
+      - {id: s2, procedure: rc-profile-append}
+      - {id: s3, procedure: rc-bashprofile-append}
+      - {id: s4, procedure: rc-profiled-append}

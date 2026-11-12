@@ -1,0 +1,11 @@
+# Transfer a payload in, make it runnable, execute it (a dry run of the miner flow).
+id: bot-stage-and-run
+actor: {class: scripted_bot, timing: bot-fast, patience: 4}
+sessions:
+  - protocol: ssh
+    channel: shell
+    login: {user: root, guesses: 3, procedure: ssh-password-guessing}
+    steps:
+      - {id: s1, procedure: fetch-wget-url, expect: "saved", on_fail: continue}
+      - {id: s2, procedure: transfer-sftp-put}
+      - {id: s3, procedure: exec-chmod-run}

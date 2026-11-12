@@ -1,0 +1,13 @@
+# A bot that logs in and asks the host what it is (system information discovery).
+id: bot-probe-system
+actor: {class: scripted_bot, timing: bot-slow, patience: 3}
+sessions:
+  - protocol: ssh
+    channel: exec
+    login: {user: root, guesses: 3, procedure: ssh-password-guessing}
+    steps:
+      - {id: s1, procedure: sysinfo-uname-all, expect: "Linux", on_fail: leave}
+      - {id: s2, procedure: sysinfo-os-release}
+      - {id: s3, procedure: sysinfo-hostname}
+      - {id: s4, procedure: sysinfo-env-vars}
+      - {id: s5, procedure: probe-missing-tool}

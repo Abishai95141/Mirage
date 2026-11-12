@@ -1,0 +1,12 @@
+# Sudo enumeration and setuid hunting on the way up.
+id: bot-escalate
+actor: {class: scripted_bot, timing: bot-slow, patience: 3}
+sessions:
+  - protocol: ssh
+    channel: exec
+    login: {user: root}
+    steps:
+      - {id: s1, procedure: sudo-list}
+      - {id: s2, procedure: sudo-nopass}
+      - {id: s3, procedure: privesc-find-setuid, with: {dir: /usr}}
+      - {id: s4, procedure: privesc-find-setgid, with: {dir: /usr}}

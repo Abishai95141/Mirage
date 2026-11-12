@@ -1,0 +1,51 @@
+# Public-application exploitation and valid-account use: written for the Phase 2 catalogue (spec 2.1).
+attack_version: "20.1"
+procedures:
+  - id: exploit-jsonapi-users
+    technique: T1190
+    tactic: TA0001
+    source: own
+    protocol: http
+    template: GET /wp-json/wp/v2/users
+  - id: exploit-xmlrpc-ping
+    technique: T1190
+    tactic: TA0001
+    source: own
+    protocol: http
+    template: POST /xmlrpc.php <methodCall><methodName>pingback.ping</methodName></methodCall>
+  - id: exploit-eval-stdin
+    technique: T1190
+    tactic: TA0001
+    source: own
+    protocol: http
+    template: GET /eval-stdin.php
+  - id: exploit-comments-post
+    technique: T1190
+    tactic: TA0001
+    source: own
+    protocol: http
+    template: POST /wp-comments-post.php
+  - id: valid-mysql-session
+    technique: T1078
+    tactic: TA0001
+    source: own
+    protocol: mysql
+    template: SELECT USER()
+  - id: valid-mysql-current
+    technique: T1078
+    tactic: TA0001
+    source: own
+    protocol: mysql
+    template: SELECT CURRENT_USER()
+  - id: valid-redis-set
+    technique: T1078
+    tactic: TA0001
+    source: own
+    protocol: redis
+    template: SET {{word}} 1
+  - id: valid-su-groups
+    technique: T1078
+    tactic: TA0001
+    source: own
+    protocol: ssh
+    template: su {{user}} -c 'groups'

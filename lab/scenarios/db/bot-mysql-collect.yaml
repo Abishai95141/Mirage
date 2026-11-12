@@ -1,0 +1,12 @@
+# Valid account use, then collection from the application tables.
+id: bot-mysql-collect
+actor: {class: scripted_bot, timing: bot-fast, patience: 3}
+sessions:
+  - protocol: mysql
+    login: {user: wp_user, procedure: mysql-login}
+    steps:
+      - {id: s1, procedure: valid-mysql-session, expect: "wp_user"}
+      - {id: s2, procedure: repo-mysql-customers, expect: "@"}
+      - {id: s3, procedure: repo-mysql-logins}
+      - {id: s4, procedure: repo-mysql-count}
+      - {id: s5, procedure: collect-mysql-users}
