@@ -253,6 +253,8 @@ class Profile:
         )
         if ref:
             order = ref["header_order"]
+        elif resp.location:  # a PHP redirect: nginx's own redirect order, Location included
+            order = self.errors["301"]["header_order"]
         else:
             order = self.ok_order if resp.static else self.errors["404"]["header_order"]
         h = {"Server": self.server, "Date": http_date()}

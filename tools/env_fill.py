@@ -12,7 +12,12 @@ import secrets
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-SECRETS = ("CLICKHOUSE_PASSWORD", "GRAFANA_ADMIN_PASSWORD", "POLICY_TOKEN")
+SECRETS = (
+    "CLICKHOUSE_PASSWORD",
+    "CLICKHOUSE_GRAFANA_PASSWORD",
+    "GRAFANA_ADMIN_PASSWORD",
+    "POLICY_TOKEN",
+)
 
 
 def parse(text: str) -> list[tuple[str | None, str]]:

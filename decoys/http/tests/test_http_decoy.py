@@ -302,7 +302,8 @@ async def test_wp_login_captures_credentials(srv):
     )
     (resp,) = parse(await srv.talk(get("/wp-login.php", method="POST", extra=extra) + form))
     assert resp[0] == "HTTP/1.1 200 OK"
-    assert resp[2] == route["post_body"].encode()
+    # admin is one of the site's WordPress users, so WordPress names the password as wrong.
+    assert resp[2] == route["post_bodies"]["known"].replace("{username}", "admin").encode()
     assert [k for k, _ in resp[1]] == REF["404"]["header_order"]  # a PHP page, not a file
     (resp,) = parse(await srv.talk(get("/wp-login.php", extra=CLOSE)))
     assert resp[2] == route["body"].encode()
@@ -529,3 +530,50 @@ async def test_large_bodies_reach_the_artifact_store(srv):
     )
     assert (srv.art / digest).read_bytes() == big
     assert srv.of("http.policy.decision")[1]["input"] == "POST /upload"
+
+
+async def post_form(srv, path: str, form: bytes):
+    extra = (
+        f"Content-Type: application/x-www-form-urlencoded\r\nContent-Length: {len(form)}\r\n{CLOSE}"
+    )
+    (resp,) = parse(await srv.talk(get(path, method="POST", extra=extra) + form))
+    return resp
+
+
+async def test_wp_login_names_an_unknown_user_and_escapes_it(srv):
+    route = srv.route("/wp-login.php")
+    resp = await post_form(srv, "/wp-login.php", b"log=%3Cscript%3Ex%3C%2Fscript%3E&pwd=x")
+    body = resp[2].decode()
+    assert "is not registered on this site" in body
+    assert "&lt;script&gt;x&lt;/script&gt;" in body and "<script>x" not in body
+    empty = await post_form(srv, "/wp-login.php", b"log=&pwd=")
+    assert empty[2] == route["post_bodies"]["empty"].encode()
+
+
+async def test_wp_admin_redirects_to_the_login_like_php(srv):
+    (resp,) = parse(await srv.talk(get("/wp-admin/", extra=CLOSE)))
+    assert resp[0] == "HTTP/1.1 302 Moved Temporarily"
+    headers = dict(resp[1])
+    assert headers["Location"].endswith(
+        "/wp-login.php?redirect_to=http%3A%2F%2Flocalhost%2Fwp-admin%2F&reauth=1"
+    )
+    assert resp[2] == b"" and "ETag" not in headers
+
+
+async def test_post_replies_carry_no_file_metadata(srv):
+    resp = await post_form(srv, "/contact/", b"your-name=a&your-email=a%40b.c&your-message=hi")
+    assert resp[0] == "HTTP/1.1 200 OK" and b"Thank you for your message" in resp[2]
+    assert "ETag" not in dict(resp[1]) and "Last-Modified" not in dict(resp[1])
+    (page,) = parse(await srv.talk(get("/contact/", extra=CLOSE)))
+    assert "ETag" in dict(page[1])  # the page itself is a cached file
+
+
+async def test_phpmyadmin_form_posts_where_its_action_points(srv):
+    page = (await srv.talk(get("/phpmyadmin/", extra=CLOSE))).decode()
+    assert 'action="index.php?route=/"' in page
+    resp = await post_form(
+        srv, "/phpmyadmin/index.php?route=/", b"pma_username=root&pma_password=x&server=1"
+    )
+    assert b"Access denied for user 'root'@'localhost'" in resp[2]
+    await srv.events(2)
+    assert srv.of("http.login.failed")[0]["form"] == "/phpmyadmin/index.php"

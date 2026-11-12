@@ -11,11 +11,12 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import hashlib
+import html
 import re
 from collections import Counter
 from dataclasses import dataclass, field
 from typing import Any
-from urllib.parse import parse_qsl
+from urllib.parse import parse_qsl, quote
 
 import h11
 
@@ -306,10 +307,17 @@ class Connection:
             methods = set(route["methods"]) | ({"HEAD"} if "GET" in route["methods"] else set())
             if m not in methods:
                 return self.p.error(405, ua, v10)
-            body = route.get("post_body") if m == "POST" else None
-            body = route["body"] if body is None else body
+            if route.get("redirect") and m != "POST":  # a PHP redirect: no body
+                resp = Response(302, b"", route.get("content_type"))
+                here = self.absolute(req, path + (f"?{req.query}" if req.query else ""))
+                resp.location = self.absolute(
+                    req, route["redirect"].replace("{self}", quote(here, safe=""))
+                )
+                return resp
+            body = self.post_body(req, route) if m == "POST" else route["body"]
             resp = Response(route["status"], body.encode(), route["content_type"])
-            resp.static = "capture" not in route  # PHP pages carry no file metadata
+            # Files carry Last-Modified and ETag; PHP output and every POST reply do not.
+            resp.static = not (route.get("capture") or route.get("dynamic") or m == "POST")
             if resp.static and resp.status == 200 and self.not_modified(req, len(resp.body)):
                 resp.status, resp.content_type = 304, None
             return resp
@@ -318,11 +326,8 @@ class Connection:
             return self.p.error(405, ua, v10)
         if path + "/" in dirs:
             resp = self.p.error(301, ua, v10)
-            ip, port = self.local
-            host = req.host or (f"[{ip}]" if ":" in str(ip) else str(ip))
-            suffix = f":{port}" if port and port != 80 else ""  # port_in_redirect
             q = f"?{req.query}" if req.query else ""
-            resp.location = f"http://{host}{suffix}{path}/{q}"
+            resp.location = self.absolute(req, f"{path}/{q}")
             return resp
         return self.p.error(403 if path in dirs else 404, ua, v10)
 
@@ -335,13 +340,44 @@ class Connection:
             return False
         return inm is None or nginx.etag_matches(inm, self.p.etag(length))
 
-    def capture(self, req: Request, route: dict[str, Any], seq: int, rid: str) -> None:
+    def absolute(self, req: Request, path: str) -> str:
+        """An absolute URL on this server, as nginx (port_in_redirect) and PHP build them."""
+        ip, port = self.local
+        host = req.host or (f"[{ip}]" if ":" in str(ip) else str(ip))
+        suffix = f":{port}" if port and port != 80 else ""
+        return f"http://{host}{suffix}{path}"
+
+    @staticmethod
+    def form(req: Request) -> dict[str, str] | None:
+        """A urlencoded form body (the first value of each field), or None for other bodies."""
         ctype = (req.header("content-type") or "").lower()
         if ctype and not ctype.startswith("application/x-www-form-urlencoded"):
-            return
+            return None
         form: dict[str, str] = {}
         for k, v in parse_qsl(req.body, keep_blank_values=True):
             form.setdefault(k.decode(errors="replace"), v.decode(errors="replace"))
+        return form
+
+    def post_body(self, req: Request, route: dict[str, Any]) -> str:
+        """The page a POST gets. A route with ``post_bodies`` answers as a login form does:
+        differently for an empty, a known and an unknown username (WordPress names which one it
+        was). ``{username}`` is replaced with the submitted name, HTML-escaped."""
+        fields = route.get("fields") or []
+        user = (self.form(req) or {}).get(fields[0], "") if fields else ""
+        user = truncate(user, FIELD_CAP) or ""
+        bodies = route.get("post_bodies")
+        if bodies:
+            known = {u.lower() for u in route.get("known_users", [])}
+            key = "empty" if not user else "known" if user.lower() in known else "unknown"
+            tmpl = bodies.get(key) or bodies["unknown"]
+        else:
+            tmpl = route.get("post_body") or route["body"]
+        return tmpl.replace("{username}", html.escape(user, quote=True))
+
+    def capture(self, req: Request, route: dict[str, Any], seq: int, rid: str) -> None:
+        form = self.form(req)
+        if form is None:
+            return
         user_f, pass_f = route["fields"][:2]
         if user_f in form or pass_f in form:
             self.s.emit(

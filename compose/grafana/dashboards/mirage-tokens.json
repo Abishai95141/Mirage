@@ -1,0 +1,468 @@
+{
+ "uid": "mirage-tokens",
+ "title": "MIRAGE · Honeytokens",
+ "description": "Planted tokens, which sessions reached where they are planted, and which used them.",
+ "tags": [
+  "mirage"
+ ],
+ "timezone": "utc",
+ "schemaVersion": 41,
+ "version": 1,
+ "editable": false,
+ "graphTooltip": 1,
+ "refresh": "30s",
+ "time": {
+  "from": "now-24h",
+  "to": "now"
+ },
+ "links": [
+  {
+   "type": "dashboards",
+   "tags": [
+    "mirage"
+   ],
+   "asDropdown": false,
+   "includeVars": false,
+   "keepTime": true,
+   "title": "MIRAGE"
+  }
+ ],
+ "templating": {
+  "list": []
+ },
+ "panels": [
+  {
+   "type": "table",
+   "title": "Planted tokens",
+   "description": "Values are this deployment's own fake credentials and records.",
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "grafana-clickhouse-datasource",
+      "uid": "clickhouse"
+     },
+     "editorType": "sql",
+     "format": 1,
+     "rawSql": "SELECT t.token_id AS token_id, t.type AS type, t.planted_at AS planted_at, t.username AS username, t.value AS value, ifNull(e.n, 0) AS exposures, ifNull(u.n, 0) AS uses, u.last AS last_used FROM (SELECT * FROM mirage.tokens FINAL WHERE loaded_at = (SELECT max(loaded_at) FROM mirage.tokens)) AS t LEFT JOIN (SELECT token_id, count() AS n FROM mirage.token_exposures FINAL GROUP BY token_id) AS e ON e.token_id = t.token_id LEFT JOIN (SELECT JSONExtractString(payload, 'token_id') AS token_id, count() AS n, max(ts) AS last FROM mirage.events FINAL WHERE action = 'token_triggered' GROUP BY token_id) AS u ON u.token_id = t.token_id ORDER BY uses DESC, token_id SETTINGS join_use_nulls = 1"
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "custom": {
+      "filterable": true,
+      "minWidth": 90
+     }
+    },
+    "overrides": [
+     {
+      "matcher": {
+       "id": "byRegexp",
+       "options": "^(ts|start_ts|stored_at|first_seen|last_seen|last|last_used)$"
+      },
+      "properties": [
+       {
+        "id": "custom.width",
+        "value": 185
+       }
+      ]
+     },
+     {
+      "matcher": {
+       "id": "byRegexp",
+       "options": "^(session_id|actor_id|a|b|exposed_in|token_id|request_id)$"
+      },
+      "properties": [
+       {
+        "id": "custom.width",
+        "value": 215
+       }
+      ]
+     },
+     {
+      "matcher": {
+       "id": "byRegexp",
+       "options": "^(sha256)$"
+      },
+      "properties": [
+       {
+        "id": "custom.width",
+        "value": 270
+       }
+      ]
+     },
+     {
+      "matcher": {
+       "id": "byRegexp",
+       "options": "^(source|protocol|outcome|type|action|reason|mime)$"
+      },
+      "properties": [
+       {
+        "id": "custom.width",
+        "value": 115
+       }
+      ]
+     },
+     {
+      "matcher": {
+       "id": "byRegexp",
+       "options": "^(class|src_ip|sensor|rule_id|location|used_in)$"
+      },
+      "properties": [
+       {
+        "id": "custom.width",
+        "value": 150
+       }
+      ]
+     },
+     {
+      "matcher": {
+       "id": "byRegexp",
+       "options": "^(seq|inputs|decisions|fallbacks|tokens|artifacts|logged_in|strength|times|size|n_sessions|sessions|attempts|succeeded|exposures|uses|logins|sources|honeytokens|auth_attempts|duration_s|latency_us|status)$"
+      },
+      "properties": [
+       {
+        "id": "custom.width",
+        "value": 95
+       }
+      ]
+     }
+    ]
+   },
+   "options": {
+    "showHeader": true,
+    "cellHeight": "sm",
+    "footer": {
+     "show": false
+    }
+   },
+   "id": 1,
+   "gridPos": {
+    "x": 0,
+    "y": 0,
+    "w": 24,
+    "h": 7
+   },
+   "datasource": {
+    "type": "grafana-clickhouse-datasource",
+    "uid": "clickhouse"
+   }
+  },
+  {
+   "type": "table",
+   "title": "Uses (token.triggered)",
+   "description": "",
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "grafana-clickhouse-datasource",
+      "uid": "clickhouse"
+     },
+     "editorType": "sql",
+     "format": 1,
+     "rawSql": "SELECT ts, JSONExtractString(payload, 'token_id') AS token_id, JSONExtractString(payload, 'session') AS session_id, protocol, src_ip, JSONExtractString(payload, 'trigger_class') AS used_in, arrayStringConcat(JSONExtract(payload, 'exposed_in', 'Array(String)'), ', ') AS exposed_in FROM mirage.events FINAL WHERE action = 'token_triggered' AND $__timeFilter(ts) ORDER BY ts DESC LIMIT 500"
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "custom": {
+      "filterable": true,
+      "minWidth": 90
+     }
+    },
+    "overrides": [
+     {
+      "matcher": {
+       "id": "byRegexp",
+       "options": "^(ts|start_ts|stored_at|first_seen|last_seen|last|last_used)$"
+      },
+      "properties": [
+       {
+        "id": "custom.width",
+        "value": 185
+       }
+      ]
+     },
+     {
+      "matcher": {
+       "id": "byRegexp",
+       "options": "^(session_id|actor_id|a|b|exposed_in|token_id|request_id)$"
+      },
+      "properties": [
+       {
+        "id": "custom.width",
+        "value": 215
+       }
+      ]
+     },
+     {
+      "matcher": {
+       "id": "byRegexp",
+       "options": "^(sha256)$"
+      },
+      "properties": [
+       {
+        "id": "custom.width",
+        "value": 270
+       }
+      ]
+     },
+     {
+      "matcher": {
+       "id": "byRegexp",
+       "options": "^(source|protocol|outcome|type|action|reason|mime)$"
+      },
+      "properties": [
+       {
+        "id": "custom.width",
+        "value": 115
+       }
+      ]
+     },
+     {
+      "matcher": {
+       "id": "byRegexp",
+       "options": "^(class|src_ip|sensor|rule_id|location|used_in)$"
+      },
+      "properties": [
+       {
+        "id": "custom.width",
+        "value": 150
+       }
+      ]
+     },
+     {
+      "matcher": {
+       "id": "byRegexp",
+       "options": "^(seq|inputs|decisions|fallbacks|tokens|artifacts|logged_in|strength|times|size|n_sessions|sessions|attempts|succeeded|exposures|uses|logins|sources|honeytokens|auth_attempts|duration_s|latency_us|status)$"
+      },
+      "properties": [
+       {
+        "id": "custom.width",
+        "value": 95
+       }
+      ]
+     },
+     {
+      "matcher": {
+       "id": "byName",
+       "options": "session_id"
+      },
+      "properties": [
+       {
+        "id": "links",
+        "value": [
+         {
+          "title": "Open session",
+          "url": "/d/mirage-session/mirage-session?var-session=${__value.raw}&${__url_time_range}"
+         }
+        ]
+       }
+      ]
+     }
+    ]
+   },
+   "options": {
+    "showHeader": true,
+    "cellHeight": "sm",
+    "footer": {
+     "show": false
+    }
+   },
+   "id": 2,
+   "gridPos": {
+    "x": 0,
+    "y": 7,
+    "w": 24,
+    "h": 9
+   },
+   "datasource": {
+    "type": "grafana-clickhouse-datasource",
+    "uid": "clickhouse"
+   }
+  },
+  {
+   "type": "table",
+   "title": "Exposures",
+   "description": "A session reached a place a token is planted, e.g. read /var/www/html/.env.",
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "grafana-clickhouse-datasource",
+      "uid": "clickhouse"
+     },
+     "editorType": "sql",
+     "format": 1,
+     "rawSql": "SELECT ts, token_id, session_id, location FROM mirage.token_exposures FINAL WHERE $__timeFilter(ts) ORDER BY ts DESC LIMIT 500"
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "custom": {
+      "filterable": true,
+      "minWidth": 90
+     }
+    },
+    "overrides": [
+     {
+      "matcher": {
+       "id": "byRegexp",
+       "options": "^(ts|start_ts|stored_at|first_seen|last_seen|last|last_used)$"
+      },
+      "properties": [
+       {
+        "id": "custom.width",
+        "value": 185
+       }
+      ]
+     },
+     {
+      "matcher": {
+       "id": "byRegexp",
+       "options": "^(session_id|actor_id|a|b|exposed_in|token_id|request_id)$"
+      },
+      "properties": [
+       {
+        "id": "custom.width",
+        "value": 215
+       }
+      ]
+     },
+     {
+      "matcher": {
+       "id": "byRegexp",
+       "options": "^(sha256)$"
+      },
+      "properties": [
+       {
+        "id": "custom.width",
+        "value": 270
+       }
+      ]
+     },
+     {
+      "matcher": {
+       "id": "byRegexp",
+       "options": "^(source|protocol|outcome|type|action|reason|mime)$"
+      },
+      "properties": [
+       {
+        "id": "custom.width",
+        "value": 115
+       }
+      ]
+     },
+     {
+      "matcher": {
+       "id": "byRegexp",
+       "options": "^(class|src_ip|sensor|rule_id|location|used_in)$"
+      },
+      "properties": [
+       {
+        "id": "custom.width",
+        "value": 150
+       }
+      ]
+     },
+     {
+      "matcher": {
+       "id": "byRegexp",
+       "options": "^(seq|inputs|decisions|fallbacks|tokens|artifacts|logged_in|strength|times|size|n_sessions|sessions|attempts|succeeded|exposures|uses|logins|sources|honeytokens|auth_attempts|duration_s|latency_us|status)$"
+      },
+      "properties": [
+       {
+        "id": "custom.width",
+        "value": 95
+       }
+      ]
+     },
+     {
+      "matcher": {
+       "id": "byName",
+       "options": "session_id"
+      },
+      "properties": [
+       {
+        "id": "links",
+        "value": [
+         {
+          "title": "Open session",
+          "url": "/d/mirage-session/mirage-session?var-session=${__value.raw}&${__url_time_range}"
+         }
+        ]
+       }
+      ]
+     }
+    ]
+   },
+   "options": {
+    "showHeader": true,
+    "cellHeight": "sm",
+    "footer": {
+     "show": false
+    }
+   },
+   "id": 3,
+   "gridPos": {
+    "x": 0,
+    "y": 16,
+    "w": 14,
+    "h": 9
+   },
+   "datasource": {
+    "type": "grafana-clickhouse-datasource",
+    "uid": "clickhouse"
+   }
+  },
+  {
+   "type": "timeseries",
+   "title": "Uses over time",
+   "description": "",
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "grafana-clickhouse-datasource",
+      "uid": "clickhouse"
+     },
+     "editorType": "sql",
+     "format": 0,
+     "rawSql": "SELECT $__timeInterval(ts) AS time, JSONExtractString(payload, 'token_type') AS type, count() AS uses FROM mirage.events FINAL WHERE action = 'token_triggered' AND $__timeFilter(ts) GROUP BY time, type ORDER BY time"
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "short",
+     "custom": {
+      "drawStyle": "bars",
+      "fillOpacity": 70,
+      "stacking": {
+       "mode": "normal"
+      },
+      "lineWidth": 1
+     }
+    },
+    "overrides": []
+   },
+   "options": {
+    "legend": {
+     "displayMode": "list",
+     "placement": "bottom"
+    }
+   },
+   "id": 4,
+   "gridPos": {
+    "x": 14,
+    "y": 16,
+    "w": 10,
+    "h": 9
+   },
+   "datasource": {
+    "type": "grafana-clickhouse-datasource",
+    "uid": "clickhouse"
+   }
+  }
+ ]
+}

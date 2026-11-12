@@ -23,14 +23,14 @@ make itest
 | What | Where |
 | --- | --- |
 | SSH decoy (Cowrie 3.1.6 + `decoys/ssh/patches`) | `ssh -p 2222 root@127.0.0.1`; the accepted root passwords are in `build/profile/cowrie/userdb.txt` |
-| HTTP decoy (nginx 1.22 imitation) | http://127.0.0.1:8081 |
-| Grafana, dashboard "MIRAGE · Sessions" | http://127.0.0.1:3300 (user `admin`, password in `.env`) |
+| HTTP decoy: a generated WordPress-style company site behind an nginx 1.22 imitation | http://127.0.0.1:8081 (also `/wp-login.php`, `/phpmyadmin/`, `/wp-json/wp/v2/users`, `/feed/`) |
+| Grafana: seven MIRAGE pages (Overview, Sessions, Session, Actors, Honeytokens, Artifacts, Policy), linked from a bar at the top of each | http://127.0.0.1:3300 (user `admin`, password in `.env`). Grafana reads ClickHouse as a read-only user. |
 | ClickHouse HTTP | http://127.0.0.1:8123 (`mirage.events`, `mirage.session_summary`, `mirage.actor_links`, `mirage.artifacts`, `mirage.tokens`) |
 | NATS monitoring | http://127.0.0.1:8222 |
 
 Every port binds to 127.0.0.1, and the ports can be changed in `.env`. Nothing here is meant to face the internet; read the exposure checklist in the build plan first.
 
-Other targets: `make test` (unit tests), `make lint`, `make schema` (export JSON Schema), `make probe` (SSH transport probes), `make profile` (re-render the profile), `make profile-ref` (rebuild the reference image and re-extract its facts), `make migrate` (re-apply ClickHouse DDL), `make down`, `make nuke` (also deletes data).
+Other targets: `make dashboards` (regenerate the Grafana pages from `tools/grafana_dashboards.py`), `make test` (unit tests), `make lint`, `make schema` (export JSON Schema), `make probe` (SSH transport probes), `make profile` (re-render the profile), `make profile-ref` (rebuild the reference image and re-extract its facts), `make migrate` (re-apply ClickHouse DDL), `make down`, `make nuke` (also deletes data).
 
 The default-tell checks run on their own too: `uv run python -m eval.probes.default_tells`.
 

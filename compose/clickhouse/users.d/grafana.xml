@@ -1,0 +1,24 @@
+<!-- Grafana's ClickHouse user: SELECT on the mirage database and nothing else.
+     Dashboards interpolate template variables into SQL unescaped, so whoever can edit a
+     dashboard URL can shape a query; as this user it can only read. readonly=2 still lets the
+     datasource plugin set per-query settings, but forbids every write and DDL statement. -->
+<clickhouse>
+    <profiles>
+        <grafana_readonly>
+            <readonly>2</readonly>
+            <max_execution_time>30</max_execution_time>
+            <max_memory_usage>500000000</max_memory_usage>
+        </grafana_readonly>
+    </profiles>
+    <users>
+        <grafana>
+            <password from_env="CLICKHOUSE_GRAFANA_PASSWORD"/>
+            <profile>grafana_readonly</profile>
+            <quota>default</quota>
+            <networks><ip>::/0</ip></networks>
+            <grants>
+                <query>GRANT SELECT ON mirage.*</query>
+            </grants>
+        </grafana>
+    </users>
+</clickhouse>

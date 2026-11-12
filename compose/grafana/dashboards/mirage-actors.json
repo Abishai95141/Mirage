@@ -1,0 +1,597 @@
+{
+ "uid": "mirage-actors",
+ "title": "MIRAGE · Actors",
+ "description": "Sessions grouped by the links between them: honeytoken use (strongest), SSH fingerprint plus credentials, and the same source within 24 hours (weakest).",
+ "tags": [
+  "mirage"
+ ],
+ "timezone": "utc",
+ "schemaVersion": 41,
+ "version": 1,
+ "editable": false,
+ "graphTooltip": 1,
+ "refresh": "30s",
+ "time": {
+  "from": "now-24h",
+  "to": "now"
+ },
+ "links": [
+  {
+   "type": "dashboards",
+   "tags": [
+    "mirage"
+   ],
+   "asDropdown": false,
+   "includeVars": false,
+   "keepTime": true,
+   "title": "MIRAGE"
+  }
+ ],
+ "templating": {
+  "list": [
+   {
+    "type": "textbox",
+    "name": "actor",
+    "label": "Actor ID",
+    "query": "",
+    "current": {
+     "text": "",
+     "value": ""
+    },
+    "hide": 0
+   }
+  ]
+ },
+ "panels": [
+  {
+   "type": "table",
+   "title": "Actors",
+   "description": "",
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "grafana-clickhouse-datasource",
+      "uid": "clickhouse"
+     },
+     "editorType": "sql",
+     "format": 1,
+     "rawSql": "SELECT actor_id, count() AS sessions, arrayStringConcat(arraySort(groupUniqArray(protocol)), ', ') AS protocols, uniqExact(src_ip) AS sources, min(start_ts) AS first_seen, max(end_ts) AS last_seen, sum(inputs) AS inputs, countIf(auth_success = 1) AS logins, length(groupUniqArrayArray(tokens)) AS honeytokens FROM mirage.session_summary FINAL WHERE $__timeFilter(start_ts) GROUP BY actor_id ORDER BY length(groupUniqArrayArray(tokens)) DESC, sessions DESC LIMIT 500"
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "custom": {
+      "filterable": true,
+      "minWidth": 90
+     }
+    },
+    "overrides": [
+     {
+      "matcher": {
+       "id": "byRegexp",
+       "options": "^(ts|start_ts|stored_at|first_seen|last_seen|last|last_used)$"
+      },
+      "properties": [
+       {
+        "id": "custom.width",
+        "value": 185
+       }
+      ]
+     },
+     {
+      "matcher": {
+       "id": "byRegexp",
+       "options": "^(session_id|actor_id|a|b|exposed_in|token_id|request_id)$"
+      },
+      "properties": [
+       {
+        "id": "custom.width",
+        "value": 215
+       }
+      ]
+     },
+     {
+      "matcher": {
+       "id": "byRegexp",
+       "options": "^(sha256)$"
+      },
+      "properties": [
+       {
+        "id": "custom.width",
+        "value": 270
+       }
+      ]
+     },
+     {
+      "matcher": {
+       "id": "byRegexp",
+       "options": "^(source|protocol|outcome|type|action|reason|mime)$"
+      },
+      "properties": [
+       {
+        "id": "custom.width",
+        "value": 115
+       }
+      ]
+     },
+     {
+      "matcher": {
+       "id": "byRegexp",
+       "options": "^(class|src_ip|sensor|rule_id|location|used_in)$"
+      },
+      "properties": [
+       {
+        "id": "custom.width",
+        "value": 150
+       }
+      ]
+     },
+     {
+      "matcher": {
+       "id": "byRegexp",
+       "options": "^(seq|inputs|decisions|fallbacks|tokens|artifacts|logged_in|strength|times|size|n_sessions|sessions|attempts|succeeded|exposures|uses|logins|sources|honeytokens|auth_attempts|duration_s|latency_us|status)$"
+      },
+      "properties": [
+       {
+        "id": "custom.width",
+        "value": 95
+       }
+      ]
+     },
+     {
+      "matcher": {
+       "id": "byName",
+       "options": "actor_id"
+      },
+      "properties": [
+       {
+        "id": "links",
+        "value": [
+         {
+          "title": "Open actor",
+          "url": "/d/mirage-actors/mirage-actors?var-actor=${__value.raw}&${__url_time_range}"
+         }
+        ]
+       }
+      ]
+     }
+    ]
+   },
+   "options": {
+    "showHeader": true,
+    "cellHeight": "sm",
+    "footer": {
+     "show": false
+    }
+   },
+   "id": 1,
+   "gridPos": {
+    "x": 0,
+    "y": 0,
+    "w": 24,
+    "h": 10
+   },
+   "datasource": {
+    "type": "grafana-clickhouse-datasource",
+    "uid": "clickhouse"
+   }
+  },
+  {
+   "type": "nodeGraph",
+   "title": "Selected actor: sessions and links",
+   "description": "Nodes are sessions; edges are links, labelled with their reason.",
+   "targets": [
+    {
+     "refId": "nodes",
+     "datasource": {
+      "type": "grafana-clickhouse-datasource",
+      "uid": "clickhouse"
+     },
+     "editorType": "sql",
+     "format": 1,
+     "rawSql": "SELECT session_id AS id, protocol AS title, src_ip AS subtitle, concat(toString(inputs), ' in') AS mainstat, formatDateTime(start_ts, '%d %b %H:%i') AS secondarystat FROM mirage.session_summary FINAL WHERE actor_id = '${actor}' AND match('${actor}', '^actor-[0-9a-f]{16}$') LIMIT 300"
+    },
+    {
+     "refId": "edges",
+     "datasource": {
+      "type": "grafana-clickhouse-datasource",
+      "uid": "clickhouse"
+     },
+     "editorType": "sql",
+     "format": 1,
+     "rawSql": "SELECT concat(a, '|', b, '|', reason) AS id, a AS source, b AS target, reason AS mainstat FROM mirage.actor_links FINAL WHERE a IN (SELECT session_id FROM mirage.session_summary FINAL WHERE actor_id = '${actor}' AND match('${actor}', '^actor-[0-9a-f]{16}$')) LIMIT 1000"
+    }
+   ],
+   "id": 2,
+   "gridPos": {
+    "x": 0,
+    "y": 10,
+    "w": 24,
+    "h": 12
+   },
+   "datasource": {
+    "type": "grafana-clickhouse-datasource",
+    "uid": "clickhouse"
+   }
+  },
+  {
+   "type": "table",
+   "title": "Selected actor: sessions",
+   "description": "",
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "grafana-clickhouse-datasource",
+      "uid": "clickhouse"
+     },
+     "editorType": "sql",
+     "format": 1,
+     "rawSql": "SELECT start_ts, session_id, protocol, src_ip, inputs, arrayStringConcat(arrayMap(c -> concat(c.1, ' / ', c.2), credentials), ', ') AS credentials, coalesce(nullIf(JSONExtractString(fingerprints, 'client_version'), ''), nullIf(JSONExtractString(fingerprints, 'user_agent'), ''), '') AS client, arrayStringConcat(tokens, ', ') AS honeytokens FROM mirage.session_summary FINAL WHERE actor_id = '${actor}' AND match('${actor}', '^actor-[0-9a-f]{16}$') ORDER BY start_ts"
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "custom": {
+      "filterable": true,
+      "minWidth": 90
+     }
+    },
+    "overrides": [
+     {
+      "matcher": {
+       "id": "byRegexp",
+       "options": "^(ts|start_ts|stored_at|first_seen|last_seen|last|last_used)$"
+      },
+      "properties": [
+       {
+        "id": "custom.width",
+        "value": 185
+       }
+      ]
+     },
+     {
+      "matcher": {
+       "id": "byRegexp",
+       "options": "^(session_id|actor_id|a|b|exposed_in|token_id|request_id)$"
+      },
+      "properties": [
+       {
+        "id": "custom.width",
+        "value": 215
+       }
+      ]
+     },
+     {
+      "matcher": {
+       "id": "byRegexp",
+       "options": "^(sha256)$"
+      },
+      "properties": [
+       {
+        "id": "custom.width",
+        "value": 270
+       }
+      ]
+     },
+     {
+      "matcher": {
+       "id": "byRegexp",
+       "options": "^(source|protocol|outcome|type|action|reason|mime)$"
+      },
+      "properties": [
+       {
+        "id": "custom.width",
+        "value": 115
+       }
+      ]
+     },
+     {
+      "matcher": {
+       "id": "byRegexp",
+       "options": "^(class|src_ip|sensor|rule_id|location|used_in)$"
+      },
+      "properties": [
+       {
+        "id": "custom.width",
+        "value": 150
+       }
+      ]
+     },
+     {
+      "matcher": {
+       "id": "byRegexp",
+       "options": "^(seq|inputs|decisions|fallbacks|tokens|artifacts|logged_in|strength|times|size|n_sessions|sessions|attempts|succeeded|exposures|uses|logins|sources|honeytokens|auth_attempts|duration_s|latency_us|status)$"
+      },
+      "properties": [
+       {
+        "id": "custom.width",
+        "value": 95
+       }
+      ]
+     },
+     {
+      "matcher": {
+       "id": "byName",
+       "options": "session_id"
+      },
+      "properties": [
+       {
+        "id": "links",
+        "value": [
+         {
+          "title": "Open session",
+          "url": "/d/mirage-session/mirage-session?var-session=${__value.raw}&${__url_time_range}"
+         }
+        ]
+       }
+      ]
+     }
+    ]
+   },
+   "options": {
+    "showHeader": true,
+    "cellHeight": "sm",
+    "footer": {
+     "show": false
+    }
+   },
+   "id": 3,
+   "gridPos": {
+    "x": 0,
+    "y": 22,
+    "w": 14,
+    "h": 9
+   },
+   "datasource": {
+    "type": "grafana-clickhouse-datasource",
+    "uid": "clickhouse"
+   }
+  },
+  {
+   "type": "table",
+   "title": "Selected actor: links",
+   "description": "",
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "grafana-clickhouse-datasource",
+      "uid": "clickhouse"
+     },
+     "editorType": "sql",
+     "format": 1,
+     "rawSql": "SELECT reason, strength, a, b, evidence, ts FROM mirage.actor_links FINAL WHERE a IN (SELECT session_id FROM mirage.session_summary FINAL WHERE actor_id = '${actor}' AND match('${actor}', '^actor-[0-9a-f]{16}$')) ORDER BY strength DESC, ts"
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "custom": {
+      "filterable": true,
+      "minWidth": 90
+     }
+    },
+    "overrides": [
+     {
+      "matcher": {
+       "id": "byRegexp",
+       "options": "^(ts|start_ts|stored_at|first_seen|last_seen|last|last_used)$"
+      },
+      "properties": [
+       {
+        "id": "custom.width",
+        "value": 185
+       }
+      ]
+     },
+     {
+      "matcher": {
+       "id": "byRegexp",
+       "options": "^(session_id|actor_id|a|b|exposed_in|token_id|request_id)$"
+      },
+      "properties": [
+       {
+        "id": "custom.width",
+        "value": 215
+       }
+      ]
+     },
+     {
+      "matcher": {
+       "id": "byRegexp",
+       "options": "^(sha256)$"
+      },
+      "properties": [
+       {
+        "id": "custom.width",
+        "value": 270
+       }
+      ]
+     },
+     {
+      "matcher": {
+       "id": "byRegexp",
+       "options": "^(source|protocol|outcome|type|action|reason|mime)$"
+      },
+      "properties": [
+       {
+        "id": "custom.width",
+        "value": 115
+       }
+      ]
+     },
+     {
+      "matcher": {
+       "id": "byRegexp",
+       "options": "^(class|src_ip|sensor|rule_id|location|used_in)$"
+      },
+      "properties": [
+       {
+        "id": "custom.width",
+        "value": 150
+       }
+      ]
+     },
+     {
+      "matcher": {
+       "id": "byRegexp",
+       "options": "^(seq|inputs|decisions|fallbacks|tokens|artifacts|logged_in|strength|times|size|n_sessions|sessions|attempts|succeeded|exposures|uses|logins|sources|honeytokens|auth_attempts|duration_s|latency_us|status)$"
+      },
+      "properties": [
+       {
+        "id": "custom.width",
+        "value": 95
+       }
+      ]
+     },
+     {
+      "matcher": {
+       "id": "byName",
+       "options": "a"
+      },
+      "properties": [
+       {
+        "id": "links",
+        "value": [
+         {
+          "title": "Open session",
+          "url": "/d/mirage-session/mirage-session?var-session=${__value.raw}&${__url_time_range}"
+         }
+        ]
+       }
+      ]
+     },
+     {
+      "matcher": {
+       "id": "byName",
+       "options": "b"
+      },
+      "properties": [
+       {
+        "id": "links",
+        "value": [
+         {
+          "title": "Open session",
+          "url": "/d/mirage-session/mirage-session?var-session=${__value.raw}&${__url_time_range}"
+         }
+        ]
+       }
+      ]
+     }
+    ]
+   },
+   "options": {
+    "showHeader": true,
+    "cellHeight": "sm",
+    "footer": {
+     "show": false
+    }
+   },
+   "id": 4,
+   "gridPos": {
+    "x": 14,
+    "y": 22,
+    "w": 10,
+    "h": 9
+   },
+   "datasource": {
+    "type": "grafana-clickhouse-datasource",
+    "uid": "clickhouse"
+   }
+  },
+  {
+   "type": "piechart",
+   "title": "Links by reason",
+   "description": "",
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "grafana-clickhouse-datasource",
+      "uid": "clickhouse"
+     },
+     "editorType": "sql",
+     "format": 1,
+     "rawSql": "SELECT reason, count() AS links FROM mirage.actor_links FINAL WHERE $__timeFilter(ts) GROUP BY reason"
+    }
+   ],
+   "options": {
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ],
+     "fields": "",
+     "values": true
+    },
+    "pieType": "donut",
+    "legend": {
+     "displayMode": "table",
+     "placement": "right",
+     "values": [
+      "value"
+     ]
+    }
+   },
+   "id": 5,
+   "gridPos": {
+    "x": 0,
+    "y": 31,
+    "w": 8,
+    "h": 7
+   },
+   "datasource": {
+    "type": "grafana-clickhouse-datasource",
+    "uid": "clickhouse"
+   }
+  },
+  {
+   "type": "timeseries",
+   "title": "New links",
+   "description": "",
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "grafana-clickhouse-datasource",
+      "uid": "clickhouse"
+     },
+     "editorType": "sql",
+     "format": 0,
+     "rawSql": "SELECT $__timeInterval(ts) AS time, reason, count() AS links FROM mirage.actor_links FINAL WHERE $__timeFilter(ts) GROUP BY time, reason ORDER BY time"
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "short",
+     "custom": {
+      "drawStyle": "bars",
+      "fillOpacity": 70,
+      "stacking": {
+       "mode": "normal"
+      },
+      "lineWidth": 1
+     }
+    },
+    "overrides": []
+   },
+   "options": {
+    "legend": {
+     "displayMode": "list",
+     "placement": "bottom"
+    }
+   },
+   "id": 6,
+   "gridPos": {
+    "x": 8,
+    "y": 31,
+    "w": 16,
+    "h": 7
+   },
+   "datasource": {
+    "type": "grafana-clickhouse-datasource",
+    "uid": "clickhouse"
+   }
+  }
+ ]
+}

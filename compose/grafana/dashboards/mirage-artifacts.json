@@ -1,0 +1,463 @@
+{
+ "uid": "mirage-artifacts",
+ "title": "MIRAGE · Artifacts",
+ "description": "Files the decoys stored: uploads, downloads, redirected writes, large bodies. Never executed; the indexer only hashes them and reads their type.",
+ "tags": [
+  "mirage"
+ ],
+ "timezone": "utc",
+ "schemaVersion": 41,
+ "version": 1,
+ "editable": false,
+ "graphTooltip": 1,
+ "refresh": "30s",
+ "time": {
+  "from": "now-24h",
+  "to": "now"
+ },
+ "links": [
+  {
+   "type": "dashboards",
+   "tags": [
+    "mirage"
+   ],
+   "asDropdown": false,
+   "includeVars": false,
+   "keepTime": true,
+   "title": "MIRAGE"
+  }
+ ],
+ "templating": {
+  "list": []
+ },
+ "panels": [
+  {
+   "type": "stat",
+   "title": "Stored files",
+   "description": "",
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "grafana-clickhouse-datasource",
+      "uid": "clickhouse"
+     },
+     "editorType": "sql",
+     "format": 1,
+     "rawSql": "SELECT count() FROM mirage.artifacts WHERE $__timeFilter(stored_at)"
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "none",
+     "color": {
+      "mode": "fixed",
+      "fixedColor": "green"
+     },
+     "noValue": "0"
+    },
+    "overrides": []
+   },
+   "options": {
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ],
+     "fields": "/.*/",
+     "values": false
+    },
+    "colorMode": "value",
+    "graphMode": "none",
+    "textMode": "value"
+   },
+   "id": 1,
+   "gridPos": {
+    "x": 0,
+    "y": 0,
+    "w": 6,
+    "h": 4
+   },
+   "datasource": {
+    "type": "grafana-clickhouse-datasource",
+    "uid": "clickhouse"
+   }
+  },
+  {
+   "type": "stat",
+   "title": "Total size",
+   "description": "",
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "grafana-clickhouse-datasource",
+      "uid": "clickhouse"
+     },
+     "editorType": "sql",
+     "format": 1,
+     "rawSql": "SELECT sum(size) FROM mirage.artifacts WHERE $__timeFilter(stored_at)"
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "bytes",
+     "color": {
+      "mode": "fixed",
+      "fixedColor": "green"
+     },
+     "noValue": "0"
+    },
+    "overrides": []
+   },
+   "options": {
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ],
+     "fields": "/.*/",
+     "values": false
+    },
+    "colorMode": "value",
+    "graphMode": "none",
+    "textMode": "value"
+   },
+   "id": 2,
+   "gridPos": {
+    "x": 6,
+    "y": 0,
+    "w": 6,
+    "h": 4
+   },
+   "datasource": {
+    "type": "grafana-clickhouse-datasource",
+    "uid": "clickhouse"
+   }
+  },
+  {
+   "type": "stat",
+   "title": "Distinct types",
+   "description": "",
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "grafana-clickhouse-datasource",
+      "uid": "clickhouse"
+     },
+     "editorType": "sql",
+     "format": 1,
+     "rawSql": "SELECT uniqExact(mime) FROM mirage.artifacts WHERE $__timeFilter(stored_at)"
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "none",
+     "color": {
+      "mode": "fixed",
+      "fixedColor": "green"
+     },
+     "noValue": "0"
+    },
+    "overrides": []
+   },
+   "options": {
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ],
+     "fields": "/.*/",
+     "values": false
+    },
+    "colorMode": "value",
+    "graphMode": "none",
+    "textMode": "value"
+   },
+   "id": 3,
+   "gridPos": {
+    "x": 12,
+    "y": 0,
+    "w": 6,
+    "h": 4
+   },
+   "datasource": {
+    "type": "grafana-clickhouse-datasource",
+    "uid": "clickhouse"
+   }
+  },
+  {
+   "type": "stat",
+   "title": "Seen in sessions",
+   "description": "",
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "grafana-clickhouse-datasource",
+      "uid": "clickhouse"
+     },
+     "editorType": "sql",
+     "format": 1,
+     "rawSql": "SELECT uniqExact(s) FROM (SELECT arrayJoin(sessions) AS s FROM mirage.artifacts WHERE $__timeFilter(stored_at))"
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "none",
+     "color": {
+      "mode": "fixed",
+      "fixedColor": "green"
+     },
+     "noValue": "0"
+    },
+    "overrides": []
+   },
+   "options": {
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ],
+     "fields": "/.*/",
+     "values": false
+    },
+    "colorMode": "value",
+    "graphMode": "none",
+    "textMode": "value"
+   },
+   "id": 4,
+   "gridPos": {
+    "x": 18,
+    "y": 0,
+    "w": 6,
+    "h": 4
+   },
+   "datasource": {
+    "type": "grafana-clickhouse-datasource",
+    "uid": "clickhouse"
+   }
+  },
+  {
+   "type": "table",
+   "title": "Artifacts",
+   "description": "session_id is the first session the hash appeared in.",
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "grafana-clickhouse-datasource",
+      "uid": "clickhouse"
+     },
+     "editorType": "sql",
+     "format": 1,
+     "rawSql": "SELECT stored_at, sha256, size, mime, source, first_seen, last_seen, sessions[1] AS session_id, length(sessions) AS n_sessions FROM mirage.artifacts WHERE $__timeFilter(stored_at) ORDER BY stored_at DESC LIMIT 500"
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "custom": {
+      "filterable": true,
+      "minWidth": 90
+     }
+    },
+    "overrides": [
+     {
+      "matcher": {
+       "id": "byRegexp",
+       "options": "^(ts|start_ts|stored_at|first_seen|last_seen|last|last_used)$"
+      },
+      "properties": [
+       {
+        "id": "custom.width",
+        "value": 185
+       }
+      ]
+     },
+     {
+      "matcher": {
+       "id": "byRegexp",
+       "options": "^(session_id|actor_id|a|b|exposed_in|token_id|request_id)$"
+      },
+      "properties": [
+       {
+        "id": "custom.width",
+        "value": 215
+       }
+      ]
+     },
+     {
+      "matcher": {
+       "id": "byRegexp",
+       "options": "^(sha256)$"
+      },
+      "properties": [
+       {
+        "id": "custom.width",
+        "value": 270
+       }
+      ]
+     },
+     {
+      "matcher": {
+       "id": "byRegexp",
+       "options": "^(source|protocol|outcome|type|action|reason|mime)$"
+      },
+      "properties": [
+       {
+        "id": "custom.width",
+        "value": 115
+       }
+      ]
+     },
+     {
+      "matcher": {
+       "id": "byRegexp",
+       "options": "^(class|src_ip|sensor|rule_id|location|used_in)$"
+      },
+      "properties": [
+       {
+        "id": "custom.width",
+        "value": 150
+       }
+      ]
+     },
+     {
+      "matcher": {
+       "id": "byRegexp",
+       "options": "^(seq|inputs|decisions|fallbacks|tokens|artifacts|logged_in|strength|times|size|n_sessions|sessions|attempts|succeeded|exposures|uses|logins|sources|honeytokens|auth_attempts|duration_s|latency_us|status)$"
+      },
+      "properties": [
+       {
+        "id": "custom.width",
+        "value": 95
+       }
+      ]
+     },
+     {
+      "matcher": {
+       "id": "byName",
+       "options": "session_id"
+      },
+      "properties": [
+       {
+        "id": "links",
+        "value": [
+         {
+          "title": "Open session",
+          "url": "/d/mirage-session/mirage-session?var-session=${__value.raw}&${__url_time_range}"
+         }
+        ]
+       }
+      ]
+     }
+    ]
+   },
+   "options": {
+    "showHeader": true,
+    "cellHeight": "sm",
+    "footer": {
+     "show": false
+    }
+   },
+   "id": 5,
+   "gridPos": {
+    "x": 0,
+    "y": 4,
+    "w": 16,
+    "h": 12
+   },
+   "datasource": {
+    "type": "grafana-clickhouse-datasource",
+    "uid": "clickhouse"
+   }
+  },
+  {
+   "type": "piechart",
+   "title": "By type",
+   "description": "",
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "grafana-clickhouse-datasource",
+      "uid": "clickhouse"
+     },
+     "editorType": "sql",
+     "format": 1,
+     "rawSql": "SELECT mime, count() AS files FROM mirage.artifacts WHERE $__timeFilter(stored_at) GROUP BY mime"
+    }
+   ],
+   "options": {
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ],
+     "fields": "",
+     "values": true
+    },
+    "pieType": "donut",
+    "legend": {
+     "displayMode": "table",
+     "placement": "right",
+     "values": [
+      "value"
+     ]
+    }
+   },
+   "id": 6,
+   "gridPos": {
+    "x": 16,
+    "y": 4,
+    "w": 8,
+    "h": 6
+   },
+   "datasource": {
+    "type": "grafana-clickhouse-datasource",
+    "uid": "clickhouse"
+   }
+  },
+  {
+   "type": "piechart",
+   "title": "By decoy",
+   "description": "",
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "grafana-clickhouse-datasource",
+      "uid": "clickhouse"
+     },
+     "editorType": "sql",
+     "format": 1,
+     "rawSql": "SELECT source, count() AS files FROM mirage.artifacts WHERE $__timeFilter(stored_at) GROUP BY source"
+    }
+   ],
+   "options": {
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ],
+     "fields": "",
+     "values": true
+    },
+    "pieType": "donut",
+    "legend": {
+     "displayMode": "table",
+     "placement": "right",
+     "values": [
+      "value"
+     ]
+    }
+   },
+   "id": 7,
+   "gridPos": {
+    "x": 0,
+    "y": 16,
+    "w": 8,
+    "h": 6
+   },
+   "datasource": {
+    "type": "grafana-clickhouse-datasource",
+    "uid": "clickhouse"
+   }
+  }
+ ]
+}

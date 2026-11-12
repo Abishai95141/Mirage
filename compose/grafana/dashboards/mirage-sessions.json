@@ -1,68 +1,941 @@
 {
-  "uid": "mirage-sessions",
-  "title": "MIRAGE · Sessions",
-  "tags": ["mirage"],
-  "timezone": "utc",
-  "schemaVersion": 41,
-  "version": 1,
-  "refresh": "10s",
-  "time": {"from": "now-24h", "to": "now"},
-  "panels": [
-    {
-      "id": 1, "type": "stat", "title": "Sessions",
-      "gridPos": {"x": 0, "y": 0, "w": 4, "h": 4},
-      "datasource": {"type": "grafana-clickhouse-datasource", "uid": "clickhouse"},
-      "targets": [{"refId": "A", "editorType": "sql", "format": 1,
-        "rawSql": "SELECT count() AS sessions FROM mirage.sessions WHERE $__timeFilter(start_ts)"}]
+ "uid": "mirage-sessions",
+ "title": "MIRAGE · Sessions",
+ "description": "Every session on every protocol. Click a session to open it.",
+ "tags": [
+  "mirage"
+ ],
+ "timezone": "utc",
+ "schemaVersion": 41,
+ "version": 1,
+ "editable": false,
+ "graphTooltip": 1,
+ "refresh": "30s",
+ "time": {
+  "from": "now-24h",
+  "to": "now"
+ },
+ "links": [
+  {
+   "type": "dashboards",
+   "tags": [
+    "mirage"
+   ],
+   "asDropdown": false,
+   "includeVars": false,
+   "keepTime": true,
+   "title": "MIRAGE"
+  }
+ ],
+ "templating": {
+  "list": [
+   {
+    "type": "custom",
+    "name": "protocol",
+    "label": "Protocol",
+    "query": "all,ssh,http,redis,mysql",
+    "options": [
+     {
+      "text": "all",
+      "value": "all",
+      "selected": true
+     },
+     {
+      "text": "ssh",
+      "value": "ssh",
+      "selected": false
+     },
+     {
+      "text": "http",
+      "value": "http",
+      "selected": false
+     },
+     {
+      "text": "redis",
+      "value": "redis",
+      "selected": false
+     },
+     {
+      "text": "mysql",
+      "value": "mysql",
+      "selected": false
+     }
+    ],
+    "current": {
+     "text": "all",
+     "value": "all"
     },
-    {
-      "id": 2, "type": "stat", "title": "Logged in",
-      "gridPos": {"x": 4, "y": 0, "w": 4, "h": 4},
-      "datasource": {"type": "grafana-clickhouse-datasource", "uid": "clickhouse"},
-      "targets": [{"refId": "A", "editorType": "sql", "format": 1,
-        "rawSql": "SELECT countIf(logged_in = 1) AS logged_in FROM mirage.sessions WHERE $__timeFilter(start_ts)"}]
+    "hide": 0
+   },
+   {
+    "type": "textbox",
+    "name": "src",
+    "label": "Source IP",
+    "query": "",
+    "current": {
+     "text": "",
+     "value": ""
     },
-    {
-      "id": 3, "type": "stat", "title": "Commands",
-      "gridPos": {"x": 8, "y": 0, "w": 4, "h": 4},
-      "datasource": {"type": "grafana-clickhouse-datasource", "uid": "clickhouse"},
-      "targets": [{"refId": "A", "editorType": "sql", "format": 1,
-        "rawSql": "SELECT count() AS commands FROM mirage.events WHERE $__timeFilter(ts) AND class = 'process_activity' AND action = 'command' AND outcome != 'failure'"}]
-    },
-    {
-      "id": 4, "type": "stat", "title": "Unknown commands",
-      "gridPos": {"x": 12, "y": 0, "w": 4, "h": 4},
-      "datasource": {"type": "grafana-clickhouse-datasource", "uid": "clickhouse"},
-      "targets": [{"refId": "A", "editorType": "sql", "format": 1,
-        "rawSql": "SELECT count() AS unknown FROM mirage.events WHERE $__timeFilter(ts) AND class = 'process_activity' AND action = 'command' AND outcome = 'failure'"}]
-    },
-    {
-      "id": 5, "type": "timeseries", "title": "Events by class",
-      "gridPos": {"x": 0, "y": 4, "w": 24, "h": 8},
-      "datasource": {"type": "grafana-clickhouse-datasource", "uid": "clickhouse"},
-      "targets": [{"refId": "A", "editorType": "sql", "format": 0,
-        "rawSql": "SELECT $__timeInterval(ts) AS time, class, count() AS events FROM mirage.events WHERE $__timeFilter(ts) GROUP BY time, class ORDER BY time"}]
-    },
-    {
-      "id": 6, "type": "table", "title": "Recent sessions",
-      "gridPos": {"x": 0, "y": 12, "w": 24, "h": 10},
-      "datasource": {"type": "grafana-clickhouse-datasource", "uid": "clickhouse"},
-      "targets": [{"refId": "A", "editorType": "sql", "format": 1,
-        "rawSql": "SELECT start_ts, session_id, src_ip, client_version, username, logged_in, failed_logins, commands, unknown_commands, round(duration_s, 1) AS duration_s, arrayStringConcat(command_list, ' ; ') AS commands_run FROM mirage.sessions WHERE $__timeFilter(start_ts) ORDER BY start_ts DESC LIMIT 200"}]
-    },
-    {
-      "id": 7, "type": "table", "title": "Top commands",
-      "gridPos": {"x": 0, "y": 22, "w": 12, "h": 9},
-      "datasource": {"type": "grafana-clickhouse-datasource", "uid": "clickhouse"},
-      "targets": [{"refId": "A", "editorType": "sql", "format": 1,
-        "rawSql": "SELECT JSONExtractString(payload, 'command') AS command, countIf(outcome != 'failure') AS n, countIf(outcome = 'failure') AS not_found FROM mirage.events WHERE $__timeFilter(ts) AND class = 'process_activity' AND action = 'command' GROUP BY command ORDER BY n DESC LIMIT 50"}]
-    },
-    {
-      "id": 8, "type": "table", "title": "Credentials tried",
-      "gridPos": {"x": 12, "y": 22, "w": 12, "h": 9},
-      "datasource": {"type": "grafana-clickhouse-datasource", "uid": "clickhouse"},
-      "targets": [{"refId": "A", "editorType": "sql", "format": 1,
-        "rawSql": "SELECT JSONExtractString(payload, 'username') AS username, JSONExtractString(payload, 'password') AS password, outcome, count() AS n FROM mirage.events WHERE $__timeFilter(ts) AND class = 'authentication' AND action = 'login' GROUP BY username, password, outcome ORDER BY n DESC LIMIT 50"}]
-    }
+    "hide": 0
+   }
   ]
+ },
+ "panels": [
+  {
+   "type": "stat",
+   "title": "Sessions",
+   "description": "",
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "grafana-clickhouse-datasource",
+      "uid": "clickhouse"
+     },
+     "editorType": "sql",
+     "format": 1,
+     "rawSql": "SELECT count() FROM mirage.session_summary FINAL WHERE $__timeFilter(start_ts) AND ('${protocol}' = 'all' OR protocol = '${protocol}') AND (match('${src}', '^[0-9A-Fa-f:.]{0,45}$') AND ('${src}' = '' OR src_ip = '${src}'))"
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "none",
+     "color": {
+      "mode": "fixed",
+      "fixedColor": "blue"
+     },
+     "noValue": "0"
+    },
+    "overrides": []
+   },
+   "options": {
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ],
+     "fields": "/.*/",
+     "values": false
+    },
+    "colorMode": "value",
+    "graphMode": "none",
+    "textMode": "value"
+   },
+   "id": 1,
+   "gridPos": {
+    "x": 0,
+    "y": 0,
+    "w": 4,
+    "h": 4
+   },
+   "datasource": {
+    "type": "grafana-clickhouse-datasource",
+    "uid": "clickhouse"
+   }
+  },
+  {
+   "type": "stat",
+   "title": "Logged in",
+   "description": "",
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "grafana-clickhouse-datasource",
+      "uid": "clickhouse"
+     },
+     "editorType": "sql",
+     "format": 1,
+     "rawSql": "SELECT countIf(auth_success = 1) FROM mirage.session_summary FINAL WHERE $__timeFilter(start_ts) AND ('${protocol}' = 'all' OR protocol = '${protocol}') AND (match('${src}', '^[0-9A-Fa-f:.]{0,45}$') AND ('${src}' = '' OR src_ip = '${src}'))"
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "none",
+     "color": {
+      "mode": "fixed",
+      "fixedColor": "orange"
+     },
+     "noValue": "0"
+    },
+    "overrides": []
+   },
+   "options": {
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ],
+     "fields": "/.*/",
+     "values": false
+    },
+    "colorMode": "value",
+    "graphMode": "none",
+    "textMode": "value"
+   },
+   "id": 2,
+   "gridPos": {
+    "x": 4,
+    "y": 0,
+    "w": 4,
+    "h": 4
+   },
+   "datasource": {
+    "type": "grafana-clickhouse-datasource",
+    "uid": "clickhouse"
+   }
+  },
+  {
+   "type": "stat",
+   "title": "Inputs",
+   "description": "",
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "grafana-clickhouse-datasource",
+      "uid": "clickhouse"
+     },
+     "editorType": "sql",
+     "format": 1,
+     "rawSql": "SELECT sum(inputs) FROM mirage.session_summary FINAL WHERE $__timeFilter(start_ts) AND ('${protocol}' = 'all' OR protocol = '${protocol}') AND (match('${src}', '^[0-9A-Fa-f:.]{0,45}$') AND ('${src}' = '' OR src_ip = '${src}'))"
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "none",
+     "color": {
+      "mode": "fixed",
+      "fixedColor": "blue"
+     },
+     "noValue": "0"
+    },
+    "overrides": []
+   },
+   "options": {
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ],
+     "fields": "/.*/",
+     "values": false
+    },
+    "colorMode": "value",
+    "graphMode": "none",
+    "textMode": "value"
+   },
+   "id": 3,
+   "gridPos": {
+    "x": 8,
+    "y": 0,
+    "w": 4,
+    "h": 4
+   },
+   "datasource": {
+    "type": "grafana-clickhouse-datasource",
+    "uid": "clickhouse"
+   }
+  },
+  {
+   "type": "stat",
+   "title": "Auth attempts",
+   "description": "",
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "grafana-clickhouse-datasource",
+      "uid": "clickhouse"
+     },
+     "editorType": "sql",
+     "format": 1,
+     "rawSql": "SELECT sum(auth_attempts) FROM mirage.session_summary FINAL WHERE $__timeFilter(start_ts) AND ('${protocol}' = 'all' OR protocol = '${protocol}') AND (match('${src}', '^[0-9A-Fa-f:.]{0,45}$') AND ('${src}' = '' OR src_ip = '${src}'))"
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "none",
+     "color": {
+      "mode": "fixed",
+      "fixedColor": "purple"
+     },
+     "noValue": "0"
+    },
+    "overrides": []
+   },
+   "options": {
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ],
+     "fields": "/.*/",
+     "values": false
+    },
+    "colorMode": "value",
+    "graphMode": "none",
+    "textMode": "value"
+   },
+   "id": 4,
+   "gridPos": {
+    "x": 12,
+    "y": 0,
+    "w": 4,
+    "h": 4
+   },
+   "datasource": {
+    "type": "grafana-clickhouse-datasource",
+    "uid": "clickhouse"
+   }
+  },
+  {
+   "type": "stat",
+   "title": "With honeytokens",
+   "description": "",
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "grafana-clickhouse-datasource",
+      "uid": "clickhouse"
+     },
+     "editorType": "sql",
+     "format": 1,
+     "rawSql": "SELECT countIf(length(tokens) > 0) FROM mirage.session_summary FINAL WHERE $__timeFilter(start_ts) AND ('${protocol}' = 'all' OR protocol = '${protocol}') AND (match('${src}', '^[0-9A-Fa-f:.]{0,45}$') AND ('${src}' = '' OR src_ip = '${src}'))"
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "none",
+     "color": {
+      "mode": "fixed",
+      "fixedColor": "red"
+     },
+     "noValue": "0"
+    },
+    "overrides": []
+   },
+   "options": {
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ],
+     "fields": "/.*/",
+     "values": false
+    },
+    "colorMode": "value",
+    "graphMode": "none",
+    "textMode": "value"
+   },
+   "id": 5,
+   "gridPos": {
+    "x": 16,
+    "y": 0,
+    "w": 4,
+    "h": 4
+   },
+   "datasource": {
+    "type": "grafana-clickhouse-datasource",
+    "uid": "clickhouse"
+   }
+  },
+  {
+   "type": "stat",
+   "title": "With artifacts",
+   "description": "",
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "grafana-clickhouse-datasource",
+      "uid": "clickhouse"
+     },
+     "editorType": "sql",
+     "format": 1,
+     "rawSql": "SELECT countIf(length(artifacts) > 0) FROM mirage.session_summary FINAL WHERE $__timeFilter(start_ts) AND ('${protocol}' = 'all' OR protocol = '${protocol}') AND (match('${src}', '^[0-9A-Fa-f:.]{0,45}$') AND ('${src}' = '' OR src_ip = '${src}'))"
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "none",
+     "color": {
+      "mode": "fixed",
+      "fixedColor": "green"
+     },
+     "noValue": "0"
+    },
+    "overrides": []
+   },
+   "options": {
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ],
+     "fields": "/.*/",
+     "values": false
+    },
+    "colorMode": "value",
+    "graphMode": "none",
+    "textMode": "value"
+   },
+   "id": 6,
+   "gridPos": {
+    "x": 20,
+    "y": 0,
+    "w": 4,
+    "h": 4
+   },
+   "datasource": {
+    "type": "grafana-clickhouse-datasource",
+    "uid": "clickhouse"
+   }
+  },
+  {
+   "type": "table",
+   "title": "Recent sessions",
+   "description": "",
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "grafana-clickhouse-datasource",
+      "uid": "clickhouse"
+     },
+     "editorType": "sql",
+     "format": 1,
+     "rawSql": "SELECT start_ts, session_id, protocol, src_ip, actor_id, round(dateDiff('millisecond', start_ts, end_ts) / 1000, 1) AS duration_s, inputs, decisions, fallbacks, auth_attempts, auth_success AS logged_in, arrayStringConcat(arrayMap(c -> concat(c.1, ' / ', c.2), credentials), ', ') AS credentials, coalesce(nullIf(JSONExtractString(fingerprints, 'client_version'), ''), nullIf(JSONExtractString(fingerprints, 'user_agent'), ''), '') AS client, length(tokens) AS tokens, length(artifacts) AS artifacts FROM mirage.session_summary FINAL WHERE $__timeFilter(start_ts) AND ('${protocol}' = 'all' OR protocol = '${protocol}') AND (match('${src}', '^[0-9A-Fa-f:.]{0,45}$') AND ('${src}' = '' OR src_ip = '${src}')) ORDER BY start_ts DESC LIMIT 500"
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "custom": {
+      "filterable": true,
+      "minWidth": 90
+     }
+    },
+    "overrides": [
+     {
+      "matcher": {
+       "id": "byRegexp",
+       "options": "^(ts|start_ts|stored_at|first_seen|last_seen|last|last_used)$"
+      },
+      "properties": [
+       {
+        "id": "custom.width",
+        "value": 185
+       }
+      ]
+     },
+     {
+      "matcher": {
+       "id": "byRegexp",
+       "options": "^(session_id|actor_id|a|b|exposed_in|token_id|request_id)$"
+      },
+      "properties": [
+       {
+        "id": "custom.width",
+        "value": 215
+       }
+      ]
+     },
+     {
+      "matcher": {
+       "id": "byRegexp",
+       "options": "^(sha256)$"
+      },
+      "properties": [
+       {
+        "id": "custom.width",
+        "value": 270
+       }
+      ]
+     },
+     {
+      "matcher": {
+       "id": "byRegexp",
+       "options": "^(source|protocol|outcome|type|action|reason|mime)$"
+      },
+      "properties": [
+       {
+        "id": "custom.width",
+        "value": 115
+       }
+      ]
+     },
+     {
+      "matcher": {
+       "id": "byRegexp",
+       "options": "^(class|src_ip|sensor|rule_id|location|used_in)$"
+      },
+      "properties": [
+       {
+        "id": "custom.width",
+        "value": 150
+       }
+      ]
+     },
+     {
+      "matcher": {
+       "id": "byRegexp",
+       "options": "^(seq|inputs|decisions|fallbacks|tokens|artifacts|logged_in|strength|times|size|n_sessions|sessions|attempts|succeeded|exposures|uses|logins|sources|honeytokens|auth_attempts|duration_s|latency_us|status)$"
+      },
+      "properties": [
+       {
+        "id": "custom.width",
+        "value": 95
+       }
+      ]
+     },
+     {
+      "matcher": {
+       "id": "byName",
+       "options": "session_id"
+      },
+      "properties": [
+       {
+        "id": "links",
+        "value": [
+         {
+          "title": "Open session",
+          "url": "/d/mirage-session/mirage-session?var-session=${__value.raw}&${__url_time_range}"
+         }
+        ]
+       }
+      ]
+     },
+     {
+      "matcher": {
+       "id": "byName",
+       "options": "actor_id"
+      },
+      "properties": [
+       {
+        "id": "links",
+        "value": [
+         {
+          "title": "Open actor",
+          "url": "/d/mirage-actors/mirage-actors?var-actor=${__value.raw}&${__url_time_range}"
+         }
+        ]
+       }
+      ]
+     }
+    ]
+   },
+   "options": {
+    "showHeader": true,
+    "cellHeight": "sm",
+    "footer": {
+     "show": false
+    }
+   },
+   "id": 7,
+   "gridPos": {
+    "x": 0,
+    "y": 4,
+    "w": 24,
+    "h": 12
+   },
+   "datasource": {
+    "type": "grafana-clickhouse-datasource",
+    "uid": "clickhouse"
+   }
+  },
+  {
+   "type": "timeseries",
+   "title": "Events by class",
+   "description": "",
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "grafana-clickhouse-datasource",
+      "uid": "clickhouse"
+     },
+     "editorType": "sql",
+     "format": 0,
+     "rawSql": "SELECT $__timeInterval(ts) AS time, class, count() AS events FROM mirage.events WHERE $__timeFilter(ts) AND source != 'policy' AND ('${protocol}' = 'all' OR protocol = '${protocol}') AND (match('${src}', '^[0-9A-Fa-f:.]{0,45}$') AND ('${src}' = '' OR src_ip = '${src}')) GROUP BY time, class ORDER BY time"
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "short",
+     "custom": {
+      "drawStyle": "bars",
+      "fillOpacity": 70,
+      "stacking": {
+       "mode": "normal"
+      },
+      "lineWidth": 1
+     }
+    },
+    "overrides": []
+   },
+   "options": {
+    "legend": {
+     "displayMode": "list",
+     "placement": "bottom"
+    }
+   },
+   "id": 8,
+   "gridPos": {
+    "x": 0,
+    "y": 16,
+    "w": 24,
+    "h": 7
+   },
+   "datasource": {
+    "type": "grafana-clickhouse-datasource",
+    "uid": "clickhouse"
+   }
+  },
+  {
+   "type": "table",
+   "title": "Top commands (SSH)",
+   "description": "",
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "grafana-clickhouse-datasource",
+      "uid": "clickhouse"
+     },
+     "editorType": "sql",
+     "format": 1,
+     "rawSql": "SELECT JSONExtractString(payload, 'command') AS command, count() AS times, uniqExact(session_id) AS sessions FROM mirage.events WHERE $__timeFilter(ts) AND source != 'policy' AND ('${protocol}' = 'all' OR protocol = '${protocol}') AND (match('${src}', '^[0-9A-Fa-f:.]{0,45}$') AND ('${src}' = '' OR src_ip = '${src}')) AND source = 'cowrie' AND class = 'process_activity' AND action = 'command' AND outcome = 'unknown' GROUP BY command ORDER BY times DESC LIMIT 50"
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "custom": {
+      "filterable": true,
+      "minWidth": 90
+     }
+    },
+    "overrides": [
+     {
+      "matcher": {
+       "id": "byRegexp",
+       "options": "^(ts|start_ts|stored_at|first_seen|last_seen|last|last_used)$"
+      },
+      "properties": [
+       {
+        "id": "custom.width",
+        "value": 185
+       }
+      ]
+     },
+     {
+      "matcher": {
+       "id": "byRegexp",
+       "options": "^(session_id|actor_id|a|b|exposed_in|token_id|request_id)$"
+      },
+      "properties": [
+       {
+        "id": "custom.width",
+        "value": 215
+       }
+      ]
+     },
+     {
+      "matcher": {
+       "id": "byRegexp",
+       "options": "^(sha256)$"
+      },
+      "properties": [
+       {
+        "id": "custom.width",
+        "value": 270
+       }
+      ]
+     },
+     {
+      "matcher": {
+       "id": "byRegexp",
+       "options": "^(source|protocol|outcome|type|action|reason|mime)$"
+      },
+      "properties": [
+       {
+        "id": "custom.width",
+        "value": 115
+       }
+      ]
+     },
+     {
+      "matcher": {
+       "id": "byRegexp",
+       "options": "^(class|src_ip|sensor|rule_id|location|used_in)$"
+      },
+      "properties": [
+       {
+        "id": "custom.width",
+        "value": 150
+       }
+      ]
+     },
+     {
+      "matcher": {
+       "id": "byRegexp",
+       "options": "^(seq|inputs|decisions|fallbacks|tokens|artifacts|logged_in|strength|times|size|n_sessions|sessions|attempts|succeeded|exposures|uses|logins|sources|honeytokens|auth_attempts|duration_s|latency_us|status)$"
+      },
+      "properties": [
+       {
+        "id": "custom.width",
+        "value": 95
+       }
+      ]
+     }
+    ]
+   },
+   "options": {
+    "showHeader": true,
+    "cellHeight": "sm",
+    "footer": {
+     "show": false
+    }
+   },
+   "id": 9,
+   "gridPos": {
+    "x": 0,
+    "y": 23,
+    "w": 8,
+    "h": 10
+   },
+   "datasource": {
+    "type": "grafana-clickhouse-datasource",
+    "uid": "clickhouse"
+   }
+  },
+  {
+   "type": "table",
+   "title": "Top paths (HTTP)",
+   "description": "",
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "grafana-clickhouse-datasource",
+      "uid": "clickhouse"
+     },
+     "editorType": "sql",
+     "format": 1,
+     "rawSql": "SELECT JSONExtractString(payload, 'method') AS method, JSONExtractString(payload, 'path') AS path, JSONExtractInt(payload, 'status') AS status, count() AS times FROM mirage.events WHERE $__timeFilter(ts) AND source != 'policy' AND ('${protocol}' = 'all' OR protocol = '${protocol}') AND (match('${src}', '^[0-9A-Fa-f:.]{0,45}$') AND ('${src}' = '' OR src_ip = '${src}')) AND class = 'http_activity' GROUP BY method, path, status ORDER BY times DESC LIMIT 50"
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "custom": {
+      "filterable": true,
+      "minWidth": 90
+     }
+    },
+    "overrides": [
+     {
+      "matcher": {
+       "id": "byRegexp",
+       "options": "^(ts|start_ts|stored_at|first_seen|last_seen|last|last_used)$"
+      },
+      "properties": [
+       {
+        "id": "custom.width",
+        "value": 185
+       }
+      ]
+     },
+     {
+      "matcher": {
+       "id": "byRegexp",
+       "options": "^(session_id|actor_id|a|b|exposed_in|token_id|request_id)$"
+      },
+      "properties": [
+       {
+        "id": "custom.width",
+        "value": 215
+       }
+      ]
+     },
+     {
+      "matcher": {
+       "id": "byRegexp",
+       "options": "^(sha256)$"
+      },
+      "properties": [
+       {
+        "id": "custom.width",
+        "value": 270
+       }
+      ]
+     },
+     {
+      "matcher": {
+       "id": "byRegexp",
+       "options": "^(source|protocol|outcome|type|action|reason|mime)$"
+      },
+      "properties": [
+       {
+        "id": "custom.width",
+        "value": 115
+       }
+      ]
+     },
+     {
+      "matcher": {
+       "id": "byRegexp",
+       "options": "^(class|src_ip|sensor|rule_id|location|used_in)$"
+      },
+      "properties": [
+       {
+        "id": "custom.width",
+        "value": 150
+       }
+      ]
+     },
+     {
+      "matcher": {
+       "id": "byRegexp",
+       "options": "^(seq|inputs|decisions|fallbacks|tokens|artifacts|logged_in|strength|times|size|n_sessions|sessions|attempts|succeeded|exposures|uses|logins|sources|honeytokens|auth_attempts|duration_s|latency_us|status)$"
+      },
+      "properties": [
+       {
+        "id": "custom.width",
+        "value": 95
+       }
+      ]
+     }
+    ]
+   },
+   "options": {
+    "showHeader": true,
+    "cellHeight": "sm",
+    "footer": {
+     "show": false
+    }
+   },
+   "id": 10,
+   "gridPos": {
+    "x": 8,
+    "y": 23,
+    "w": 8,
+    "h": 10
+   },
+   "datasource": {
+    "type": "grafana-clickhouse-datasource",
+    "uid": "clickhouse"
+   }
+  },
+  {
+   "type": "table",
+   "title": "Credentials tried",
+   "description": "",
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "grafana-clickhouse-datasource",
+      "uid": "clickhouse"
+     },
+     "editorType": "sql",
+     "format": 1,
+     "rawSql": "SELECT protocol, JSONExtractString(payload, 'username') AS username, JSONExtractString(payload, 'password') AS password, count() AS attempts, countIf(outcome = 'success') AS succeeded FROM mirage.events WHERE $__timeFilter(ts) AND source != 'policy' AND ('${protocol}' = 'all' OR protocol = '${protocol}') AND (match('${src}', '^[0-9A-Fa-f:.]{0,45}$') AND ('${src}' = '' OR src_ip = '${src}')) AND class = 'authentication' AND action = 'login' GROUP BY protocol, username, password ORDER BY attempts DESC LIMIT 100"
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "custom": {
+      "filterable": true,
+      "minWidth": 90
+     }
+    },
+    "overrides": [
+     {
+      "matcher": {
+       "id": "byRegexp",
+       "options": "^(ts|start_ts|stored_at|first_seen|last_seen|last|last_used)$"
+      },
+      "properties": [
+       {
+        "id": "custom.width",
+        "value": 185
+       }
+      ]
+     },
+     {
+      "matcher": {
+       "id": "byRegexp",
+       "options": "^(session_id|actor_id|a|b|exposed_in|token_id|request_id)$"
+      },
+      "properties": [
+       {
+        "id": "custom.width",
+        "value": 215
+       }
+      ]
+     },
+     {
+      "matcher": {
+       "id": "byRegexp",
+       "options": "^(sha256)$"
+      },
+      "properties": [
+       {
+        "id": "custom.width",
+        "value": 270
+       }
+      ]
+     },
+     {
+      "matcher": {
+       "id": "byRegexp",
+       "options": "^(source|protocol|outcome|type|action|reason|mime)$"
+      },
+      "properties": [
+       {
+        "id": "custom.width",
+        "value": 115
+       }
+      ]
+     },
+     {
+      "matcher": {
+       "id": "byRegexp",
+       "options": "^(class|src_ip|sensor|rule_id|location|used_in)$"
+      },
+      "properties": [
+       {
+        "id": "custom.width",
+        "value": 150
+       }
+      ]
+     },
+     {
+      "matcher": {
+       "id": "byRegexp",
+       "options": "^(seq|inputs|decisions|fallbacks|tokens|artifacts|logged_in|strength|times|size|n_sessions|sessions|attempts|succeeded|exposures|uses|logins|sources|honeytokens|auth_attempts|duration_s|latency_us|status)$"
+      },
+      "properties": [
+       {
+        "id": "custom.width",
+        "value": 95
+       }
+      ]
+     }
+    ]
+   },
+   "options": {
+    "showHeader": true,
+    "cellHeight": "sm",
+    "footer": {
+     "show": false
+    }
+   },
+   "id": 11,
+   "gridPos": {
+    "x": 16,
+    "y": 23,
+    "w": 8,
+    "h": 10
+   },
+   "datasource": {
+    "type": "grafana-clickhouse-datasource",
+    "uid": "clickhouse"
+   }
+  }
+ ]
 }

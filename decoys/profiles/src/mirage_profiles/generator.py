@@ -32,6 +32,7 @@ from typing import Any
 import yaml
 from faker import Faker
 
+from mirage_profiles.website import Site
 from mirage_tokens import Minter
 
 HERE = Path(__file__).resolve().parents[2]
@@ -267,6 +268,8 @@ compression = {",".join(comp)}
             c = self.db_cred
             salt = "".join(self.rng.choice(string.ascii_letters + string.digits) for _ in range(64))
             self.site_title = f"{self.rng.choice(self.p['site']['title_words'])} {self.rng.choice(self.p['site']['title_suffix'])}"
+            # One public domain for the site, its database rows and its cache keys.
+            self.site_domain = self.fake.domain_name()
             env = (
                 "APP_ENV=production\nAPP_DEBUG=false\n"
                 f"DB_HOST=127.0.0.1\nDB_PORT=3306\nDB_DATABASE={self.db_name}\n"
@@ -296,20 +299,17 @@ compression = {",".join(comp)}
         server = ng["404"]["headers"]["Server"]
         backup_url = self.tokens.url("http:/robots.txt", prefix="/backup-")
         title = self.site_title
-        page = lambda body: (
-            f'<!DOCTYPE html>\n<html lang="en-US">\n<head>\n<meta charset="UTF-8">\n'
-            f"<title>{title}</title>\n</head>\n<body>\n{body}\n</body>\n</html>\n"
+        users = self._mysql["databases"][self.db_name]["wp_users"]["rows"]
+        site = Site(
+            self.seed,
+            self.epoch,
+            title,
+            [{"id": r[0], "login": r[1], "email": r[3], "display_name": r[5]} for r in users],
+            self.p["site"]["wordpress_version"],
+            self.site_domain,
         )
         routes = [
-            {
-                "path": "/",
-                "methods": ["GET", "HEAD"],
-                "status": 200,
-                "content_type": "text/html; charset=UTF-8",
-                "body": page(
-                    f'<h1>{title}</h1>\n<p>{self.fake.catch_phrase()}.</p>\n<p><a href="/wp-login.php">Log in</a></p>'
-                ),
-            },
+            *site.routes(),
             {
                 "path": "/robots.txt",
                 "methods": ["GET", "HEAD"],
@@ -332,36 +332,6 @@ compression = {",".join(comp)}
                 "body": "[core]\n\trepositoryformatversion = 0\n\tfilemode = true\n\tbare = false\n\tlogallrefupdates = true\n"
                 f'[remote "origin"]\n\turl = git@{self.fake.domain_name()}:web/site.git\n\tfetch = +refs/heads/*:refs/remotes/origin/*\n'
                 '[branch "main"]\n\tremote = origin\n\tmerge = refs/heads/main\n',
-            },
-            {
-                "path": "/wp-login.php",
-                "methods": ["GET", "HEAD", "POST"],
-                "status": 200,
-                "content_type": "text/html; charset=UTF-8",
-                "capture": "credentials",
-                "fields": ["log", "pwd"],
-                "body": page(
-                    '<form name="loginform" id="loginform" action="/wp-login.php" method="post">\n'
-                    '<p><label for="user_login">Username or Email Address</label>\n<input type="text" name="log" id="user_login"></p>\n'
-                    '<p><label for="user_pass">Password</label>\n<input type="password" name="pwd" id="user_pass"></p>\n'
-                    '<p class="submit"><input type="submit" name="wp-submit" value="Log In"></p>\n</form>'
-                ),
-                "post_body": page(
-                    '<div id="login_error"><strong>Error:</strong> The password you entered for the username is incorrect.</div>'
-                ),
-            },
-            {
-                "path": "/phpmyadmin/",
-                "methods": ["GET", "HEAD", "POST"],
-                "status": 200,
-                "content_type": "text/html; charset=utf-8",
-                "capture": "credentials",
-                "fields": ["pma_username", "pma_password"],
-                "body": '<!DOCTYPE HTML>\n<html lang="en" dir="ltr">\n<head><meta charset="utf-8"><title>phpMyAdmin</title></head>\n<body>\n'
-                '<form method="post" action="index.php" name="login_form">\n<input type="text" name="pma_username">\n'
-                '<input type="password" name="pma_password">\n<input type="submit" value="Log in">\n</form>\n</body>\n</html>\n',
-                "post_body": '<!DOCTYPE HTML>\n<html lang="en" dir="ltr">\n<head><meta charset="utf-8"><title>phpMyAdmin</title></head>\n<body>\n'
-                '<div class="alert alert-danger" role="alert">mysqli::real_connect(): (HY000/1045): Access denied</div>\n</body>\n</html>\n',
             },
             {"path": "/server-status", "methods": ["GET", "HEAD"], "status": 403},
             {"path": "/backup.sql", "methods": ["GET", "HEAD"], "status": 403},
@@ -430,7 +400,7 @@ compression = {",".join(comp)}
                 },
                 "wp:options:siteurl": {
                     "type": "string",
-                    "value": f"https://{self.fake.domain_name()}",
+                    "value": f"https://{self.site_domain}",
                 },
                 "wp:options:blogname": {"type": "string", "value": self.site_title},
                 **{
@@ -555,7 +525,7 @@ compression = {",".join(comp)}
                 ["autoload", "varchar(20)", "NO", "", "yes", ""],
             ],
             "rows": [
-                [1, "siteurl", f"https://{self.fake.domain_name()}", "yes"],
+                [1, "siteurl", f"https://{self.site_domain}", "yes"],
                 [2, "blogname", self.site_title, "yes"],
                 [3, "admin_email", admin_email, "yes"],
                 [4, "users_can_register", "0", "yes"],
@@ -628,16 +598,19 @@ compression = {",".join(comp)}
         }
 
     def render(self, out: Path) -> None:
-        if out.exists():
-            shutil.rmtree(out)
-        out.mkdir(parents=True)
+        # Empty the directory rather than replace it: running containers bind-mount it, and a
+        # mount of a deleted directory keeps showing the old files.
+        out.mkdir(parents=True, exist_ok=True)
+        for child in out.iterdir():
+            shutil.rmtree(child) if child.is_dir() and not child.is_symlink() else child.unlink()
         _dump(out / "host.json", self.host())
         self.users()
-        self.web_files()  # fixes the site title, used by http, redis and mysql
+        self.web_files()  # fixes the site title and domain, used by http, redis and mysql
+        self._mysql = self.mysql()  # the site's WordPress users are its wp_users rows
         _dump(out / "http.json", self.http())
         self.cowrie(out)
         _dump(out / "redis.json", self.redis())
-        _dump(out / "mysql.json", self.mysql())
+        _dump(out / "mysql.json", self._mysql)
         # minted_at is wall-clock; pin it to the epoch so renders stay byte-identical.
         toks = [
             t.to_row() | {"minted_at": self.epoch.strftime("%Y-%m-%dT%H:%M:%SZ")}

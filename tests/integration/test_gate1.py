@@ -14,7 +14,7 @@ import asyncio
 import hashlib
 import io
 import json
-import statistics
+import math
 import time
 import uuid
 from datetime import UTC, datetime
@@ -295,7 +295,8 @@ def test_2_http_responses(http_run):
     r = http_run["r"]
     assert r["index"].status_code == 200
     assert r["env"].status_code == 200 and "DB_PASSWORD" in r["env"].text
-    assert r["login"].status_code == 200 and "incorrect" in r["login"].text
+    # A made-up user: WordPress says the username is not registered.
+    assert r["login"].status_code == 200 and "is not registered" in r["login"].text
     ng = REF["nginx"]
     assert r["missing"].status_code == 404 and r["missing"].text == ng["404"]["body"]
     assert r["big"].status_code == 413 and r["big"].text == ng["413"]["body"]
@@ -378,19 +379,24 @@ def test_5_token_chain_ssh_to_http(env, clickhouse, t0):
 # ----------------------------------------------------------------------------- test 9: latency
 
 
+# 100 inputs per protocol: with 25, a single slow decision (Docker Desktop's VM shows one now
+# and then, 25-45 ms) is the top 4% and decides the "p95" alone.
+N_LATENCY = 100
+
+
 def test_9_gating_latency_p95_under_20ms(env, clickhouse, t0):
     tag = uuid.uuid4().hex[:8]
     sh = Shell(int(env.get("SSH_PORT", "2222")))
     try:
-        for i in range(25):
-            sh.run(f"echo mirage-gate1-latency-{tag}-{i}", wait=0.3)
+        for i in range(N_LATENCY):
+            sh.run(f"echo mirage-gate1-latency-{tag}-{i}", wait=0.15)
     finally:
         sh.close()
     base = f"http://127.0.0.1:{env.get('HTTP_PORT', '8081')}"
     with httpx.Client(base_url=base, headers={"User-Agent": f"gate1-latency-{tag}"}) as c:
-        for i in range(25):
+        for i in range(N_LATENCY):
             c.get(f"/gate1-latency-{tag}-{i}")
-    for source, n in (("cowrie", 25), ("http-decoy", 25)):
+    for source, n in (("cowrie", N_LATENCY), ("http-decoy", N_LATENCY)):
         rows = poll(
             clickhouse,
             "SELECT JSONExtractFloat(payload, 'latency_ms') AS ms FROM mirage.events FINAL "
@@ -399,8 +405,8 @@ def test_9_gating_latency_p95_under_20ms(env, clickhouse, t0):
             lambda rows, n=n: len(rows) >= n,
         )
         ms = sorted(float(r["ms"]) for r in rows)
-        p95 = statistics.quantiles(ms, n=20)[18]
-        assert p95 < 20, f"{source}: p95 {p95:.1f} ms over {len(ms)} decisions: {ms}"
+        p95 = ms[math.ceil(0.95 * len(ms)) - 1]  # nearest rank
+        assert p95 < 20, f"{source}: p95 {p95:.1f} ms over {len(ms)} decisions: {ms[-10:]}"
 
 
 # ----------------------------------------------------------------------------- test 6: policy down

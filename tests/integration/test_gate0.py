@@ -129,7 +129,9 @@ def test_grafana_shows_session(session, env):
     )
     dash = httpx.get(f"{base}/api/dashboards/uid/mirage-sessions", auth=auth, timeout=10).json()
     panel = next(p for p in dash["dashboard"]["panels"] if p["title"] == "Recent sessions")
-    target = panel["targets"][0] | {"datasource": {"uid": "clickhouse"}}
+    # The browser substitutes the page's variables; the API does not. "All protocols, any source":
+    sql = panel["targets"][0]["rawSql"].replace("${protocol}", "all").replace("${src}", "")
+    target = panel["targets"][0] | {"datasource": {"uid": "clickhouse"}, "rawSql": sql}
     resp = httpx.post(
         f"{base}/api/ds/query",
         auth=auth,
@@ -137,6 +139,17 @@ def test_grafana_shows_session(session, env):
         json={"from": "now-1h", "to": "now", "queries": [target]},
     )
     resp.raise_for_status()
+    # The panel reads mirage.session_summary, which the sessioniser fills a moment after the
+    # session's events arrive.
+    deadline = time.time() + 30
+    while time.time() < deadline and not resp.json()["results"]["A"]["frames"][0]["data"]["values"]:
+        time.sleep(2)
+        resp = httpx.post(
+            f"{base}/api/ds/query",
+            auth=auth,
+            timeout=20,
+            json={"from": "now-1h", "to": "now", "queries": [target]},
+        )
     frame = resp.json()["results"]["A"]["frames"][0]
     names = [f["name"] for f in frame["schema"]["fields"]]
     ids = frame["data"]["values"][names.index("session_id")]

@@ -1,6 +1,6 @@
 COMPOSE := docker compose --env-file .env -f compose/docker-compose.yml
 
-.PHONY: help env profile profile-ref reference-image up migrate down nuke ps logs test itest lint fmt schema probe
+.PHONY: help env profile profile-ref reference-image dashboards up migrate down nuke ps logs test itest lint fmt schema probe
 
 help:
 	@grep -E '^[a-z-]+:.*?## ' $(MAKEFILE_LIST) | awk 'BEGIN{FS=":.*?## "}{printf "  %-12s %s\n",$$1,$$2}'
@@ -19,7 +19,12 @@ profile: env ## Render this deployment's profile into build/profile (seed from .
 
 up: profile ## Build and start the stack, then apply the ClickHouse DDL
 	$(COMPOSE) up -d --build --wait --remove-orphans
+	@# These read the profile once at start; compose does not restart them when it changes.
+	$(COMPOSE) restart http-decoy sessioniser
 	@$(MAKE) --no-print-directory migrate >/dev/null
+
+dashboards: ## Regenerate the Grafana dashboards (compose/grafana/dashboards)
+	uv run python tools/grafana_dashboards.py
 
 migrate: ## Re-apply ClickHouse DDL (idempotent) to a running stack
 	$(COMPOSE) exec -T clickhouse sh -c 'clickhouse-client --user "$$CLICKHOUSE_USER" --password "$$CLICKHOUSE_PASSWORD" --multiquery' < compose/clickhouse/init.sql

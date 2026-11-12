@@ -12,4 +12,7 @@ regular_users: {min: 1, max: 2}
 site:
   title_words: [Northwind, Bluepeak, Harbor, Meridian, Cedar, Atlas, Lumen, Oakridge]
   title_suffix: [Consulting, Logistics, Dental, Studio, Supplies, Partners, Systems]
+  # Shown in the site's generator meta tag and feed. Not a Debian package, so not in the
+  # reference; pick a release that was current around the profile's epoch.
+  wordpress_version: "6.6.2"
 crm_rows: 60
