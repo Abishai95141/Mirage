@@ -1,9 +1,14 @@
 """Export the labelled lab data from ClickHouse to Parquet (phase 2 spec, 2.2).
 
-This builds the **sessions** table: one row per sessioniser session, with structural features
-only -- counts, timings, outcomes -- plus the ground-truth actor class and the train/dev/test
-split. It reads no command text and writes none; the per-command table the tagger needs is
-built with the tagger, where command text is unavoidable.
+This builds two tables. The **sessions** table (one row per sessioniser session) has structural
+features only -- counts, timings, outcomes -- plus the ground-truth actor class and the split;
+it is the classifier's data and holds no command text. The **steps** table (one row per gated
+input) carries the input text and its ground-truth technique, for the tagger; the text passes
+from ClickHouse to Parquet and is never printed here.
+
+Only ``capture`` runs are exported. ``explore`` runs carry the bandit's logged actions and are
+kept apart (spec Q6). A session's split is its scenario's split, which is well defined because
+no scenario spans two splits (spec section 5).
 
 Only ``capture`` runs are exported. ``explore`` runs carry the bandit's logged actions and are
 kept apart (spec Q6). A session's split is its scenario's split, which is well defined because
@@ -74,6 +79,23 @@ FROM (SELECT * FROM mirage.sim_sessions FINAL WHERE mode = 'capture') AS ss
 INNER JOIN (SELECT * FROM mirage.session_summary FINAL) AS sm
     ON ss.logical_session_id = sm.session_id
 LEFT JOIN gaps AS g ON sm.session_id = g.session_id
+"""
+
+# One row per gated input (role='decision'), with the canonical input text the decoy logged,
+# and the ground-truth technique from its label. Capture runs only. No print path touches it.
+STEPS_SQL = """
+SELECT
+    l.event_id       AS event_id,
+    e.protocol       AS protocol,
+    l.procedure_id   AS procedure_id,
+    l.technique_id   AS technique_id,
+    l.scenario_id    AS scenario_id,
+    coalesce(nullIf(JSONExtractString(e.payload, 'input'), ''),
+             JSONExtractString(e.payload, 'command')) AS input
+FROM mirage.sim_labels_current AS l
+INNER JOIN mirage.events AS e ON l.event_id = e.event_id
+WHERE l.role = 'decision'
+  AND l.run_id IN (SELECT run_id FROM mirage.sim_runs FINAL WHERE mode = 'capture' AND final = 1)
 """
 
 # The columns a model may read (spec 2.3). Everything else is identity or ground truth.
@@ -162,7 +184,8 @@ def write_parquet(rows: list[dict[str, Any]], path: Path, manifest: dict) -> Non
     if rows:
         table = pa.Table.from_pylist(rows)
     else:
-        table = pa.table({k: pa.array([], type=pa.string()) for k in ("session_id", "actor_class")})
+        cols = manifest.get("columns") or ["id"]
+        table = pa.table({k: pa.array([], type=pa.string()) for k in cols})
     table = table.replace_schema_metadata({"mirage_manifest": json.dumps(manifest)})
     pq.write_table(table, path)
 
@@ -178,7 +201,33 @@ class FrozenSplit:
         return cls(doc.get("scenarios", {}), doc.get("catalogue_sha256", ""))
 
 
+def build_steps(
+    raw: list[dict[str, Any]], scenario_split: dict[str, str], catalogue: Catalogue
+) -> list[dict[str, Any]]:
+    """Per-input rows for the tagger: input text, ground-truth technique, source, split."""
+    out = []
+    for r in raw:
+        where = scenario_split.get(r["scenario_id"])
+        proc = catalogue.procedures.get(r["procedure_id"])
+        if where is None or proc is None or not r["input"]:
+            continue
+        out.append(
+            {
+                "event_id": r["event_id"],
+                "protocol": r["protocol"],
+                "input": r["input"],
+                "technique_id": r["technique_id"] or "",
+                "procedure_id": r["procedure_id"],
+                "source": proc.source,
+                "split": where,
+            }
+        )
+    return out
+
+
 def export(ch: ClickHouse, split: FrozenSplit, catalogue: Catalogue, out: Path) -> dict:
+    steps = build_steps(ch.rows(STEPS_SQL), split.scenario_split, catalogue)
+    write_parquet(steps, out / "steps.parquet", {"n_steps": len(steps), "columns": ["input"]})
     rows = build_rows(ch.rows(SESSIONS_SQL), split.scenario_split)
     by_split: dict[str, int] = {}
     by_class: dict[str, int] = {}
@@ -191,6 +240,7 @@ def export(ch: ClickHouse, split: FrozenSplit, catalogue: Catalogue, out: Path) 
         "code_version": os.environ.get("MIRAGE_CODE_VERSION", "dev"),
         "features": FEATURES,
         "n_sessions": len(rows),
+        "n_steps": len(steps),
         "by_split": by_split,
         "by_class": by_class,
         "rows_sha256": hashlib.sha256(json.dumps(rows, sort_keys=True).encode()).hexdigest(),

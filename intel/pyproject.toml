@@ -20,6 +20,7 @@ dependencies = [
 [project.scripts]
 mirage-dataset = "mirage_intel.dataset:main"
 mirage-classifier = "mirage_intel.classifier:main"
+mirage-tagger = "mirage_intel.tagger:main"
 
 [build-system]
 requires = ["hatchling>=1.25"]

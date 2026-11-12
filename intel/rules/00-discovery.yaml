@@ -1,0 +1,47 @@
+# Starter technique rules: benign discovery reads only. The offensive rules (execution,
+# persistence, privilege escalation, defence evasion, collection, C2, impact) are written
+# separately -- see docs/handoffs/phase-2-technique-rules.md -- because a safety classifier
+# refuses to draft the command patterns that recognise them.
+#
+# Each rule names one ATT&CK v20.1 technique and tactic and the regex(es) that recognise it in
+# an input. `any_of` fires if any pattern matches; `all_of` needs them all. `protocol` is one
+# of ssh/http/redis/mysql/any. Confidence is 0..1.
+rules:
+  - id: disc-uname
+    technique: T1082
+    tactic: TA0007
+    protocol: ssh
+    confidence: 0.9
+    any_of: ['\buname\b', '\bcat\s+/proc/version\b', '\blsb_release\b']
+  - id: disc-whoami-id
+    technique: T1033
+    tactic: TA0007
+    protocol: ssh
+    confidence: 0.9
+    any_of: ['\bwhoami\b', '\bid\b(?!\w)']
+  - id: disc-hostname
+    technique: T1082
+    tactic: TA0007
+    protocol: ssh
+    confidence: 0.8
+    any_of: ['\bhostname\b', '\bcat\s+/etc/hostname\b']
+  - id: disc-list-files
+    technique: T1083
+    tactic: TA0007
+    protocol: ssh
+    confidence: 0.7
+    any_of: ['\bls\s', '\bfind\s']
+  - id: disc-accounts
+    technique: T1087.001
+    tactic: TA0007
+    protocol: ssh
+    confidence: 0.85
+    any_of: ['\bcat\s+/etc/passwd\b', '\bgetent\s+passwd\b']
+
+# Session-level rules fire on the structural summary, not on command text.
+session_rules:
+  - id: brute-force-login
+    technique: T1110.001
+    tactic: TA0006
+    confidence: 0.9
+    when: {failed_before_success: {">=": 3}, auth_success: {">=": 1}}

@@ -1,6 +1,6 @@
 COMPOSE := docker compose --env-file .env -f compose/docker-compose.yml
 
-.PHONY: help env profile profile-ref reference-image dashboards up migrate down nuke ps logs lab-up lab-run lab-down split dataset classifier test itest lint fmt schema probe
+.PHONY: help env profile profile-ref reference-image dashboards up migrate down nuke ps logs lab-up lab-run lab-down split dataset classifier tagger eval test itest lint fmt schema probe
 
 help:
 	@grep -E '^[a-z-]+:.*?## ' $(MAKEFILE_LIST) | awk 'BEGIN{FS=":.*?## "}{printf "  %-12s %s\n",$$1,$$2}'
@@ -65,6 +65,12 @@ dataset: ## Export the labelled sessions to build/dataset (needs the stack and a
 
 classifier: ## Train and score the actor classifier on build/dataset
 	uv run python -m mirage_intel.classifier
+
+tagger: ## Score the rule tagger on build/dataset (make dataset first)
+	uv run python -m mirage_intel.tagger score --split test
+
+eval: ## Run the evaluation harness and write eval/baselines (make dataset first)
+	uv run python -m mirage_intel.harness run
 
 itest: ## Integration tests against the running stack (Gates 0 and 1)
 	uv run pytest -m integration -v
