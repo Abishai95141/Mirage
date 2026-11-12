@@ -35,6 +35,10 @@ volumes:
   policy-log:
   http-log:
   http-artifacts:
+  redis-log:
+  redis-artifacts:
+  mysql-log:
+  mysql-artifacts:
   vector-data:
   nats-data:
   clickhouse-data:
@@ -55,6 +59,7 @@ services:
     tmpfs: ["/tmp"]
     environment:
       COWRIE_MIRAGE_POLICY_TOKEN: ${POLICY_TOKEN:?run make env}
+      COWRIE_MIRAGE_POLICY_TIMEOUT_MS: ${POLICY_TIMEOUT_MS:-100}
     volumes:
       - cowrie-var:/cowrie/cowrie-git/var
       - ./cowrie/cowrie.cfg:/cowrie/cowrie-git/etc/cowrie.cfg:ro
@@ -75,7 +80,9 @@ services:
     environment: &decoy-env
       POLICY_URL: http://policy:8000/v1/decide
       POLICY_TOKEN: ${POLICY_TOKEN:?run make env}
-      POLICY_TIMEOUT_MS: "50"
+      POLICY_TIMEOUT_MS: ${POLICY_TIMEOUT_MS:-100}
+      # Keep gate connections 60 s, under the policy service's 75 s keep-alive (Gate 1).
+      POLICY_IDLE_MS: "60000"
       PROFILE_DIR: /profile
       ARTIFACT_DIR: /var/lib/mirage/artifacts
     volumes:
@@ -83,6 +90,40 @@ services:
       - http-log:/var/log/mirage
       - http-artifacts:/var/lib/mirage/artifacts
     depends_on: [policy]
+    mem_limit: 128m
+    pids_limit: 64
+
+  # Redis 7.0 and MariaDB 10.11 emulations (spec 1.5). Same image and hardening as the HTTP
+  # decoy; per-source state lives in memory only (P10), so the root filesystem stays read-only.
+  redis-decoy:
+    image: mirage/decoys:dev
+    <<: *hardening
+    command: ["mirage-redis-decoy"]
+    networks: [decoy, gate]
+    read_only: true
+    tmpfs: ["/tmp"]
+    environment: *decoy-env
+    volumes:
+      - ../build/profile:/profile:ro
+      - redis-log:/var/log/mirage
+      - redis-artifacts:/var/lib/mirage/artifacts
+    depends_on: [policy, http-decoy]  # http-decoy builds the shared image
+    mem_limit: 128m
+    pids_limit: 64
+
+  mysql-decoy:
+    image: mirage/decoys:dev
+    <<: *hardening
+    command: ["mirage-mysql-decoy"]
+    networks: [decoy, gate]
+    read_only: true
+    tmpfs: ["/tmp"]
+    environment: *decoy-env
+    volumes:
+      - ../build/profile:/profile:ro
+      - mysql-log:/var/log/mirage
+      - mysql-artifacts:/var/lib/mirage/artifacts
+    depends_on: [policy, http-decoy]
     mem_limit: 128m
     pids_limit: 64
 
@@ -111,9 +152,11 @@ services:
     ports:
       - "127.0.0.1:${SSH_PORT:-2222}:2222"
       - "127.0.0.1:${HTTP_PORT:-8081}:8080"
+      - "127.0.0.1:${REDIS_PORT:-6380}:6379"
+      - "127.0.0.1:${MYSQL_PORT:-3307}:3306"
     volumes:
       - ./edge/haproxy.cfg:/usr/local/etc/haproxy/haproxy.cfg:ro
-    depends_on: [cowrie, http-decoy]
+    depends_on: [cowrie, http-decoy, redis-decoy, mysql-decoy]
     mem_limit: 128m
 
   nats:
@@ -134,6 +177,8 @@ services:
       - cowrie-var:/cowrie-var:ro
       - policy-log:/policy-log:ro
       - http-log:/http-log:ro
+      - redis-log:/redis-log:ro
+      - mysql-log:/mysql-log:ro
       - vector-data:/var/lib/vector
     command: ["--config", "/etc/vector/vector.yaml"]
     depends_on: [nats]
@@ -227,10 +272,12 @@ services:
       CLICKHOUSE_URL: http://clickhouse:8123
       CLICKHOUSE_USER: ${CLICKHOUSE_USER}
       CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD}
-      ARTIFACT_DIRS: cowrie=/cowrie-var/lib/cowrie/downloads,http=/http-artifacts
+      ARTIFACT_DIRS: cowrie=/cowrie-var/lib/cowrie/downloads,http=/http-artifacts,redis=/redis-artifacts,mysql=/mysql-artifacts
     volumes:
       - cowrie-var:/cowrie-var:ro
       - http-artifacts:/http-artifacts:ro
+      - redis-artifacts:/redis-artifacts:ro
+      - mysql-artifacts:/mysql-artifacts:ro
     healthcheck:
       test: ["CMD", "python", "-c", "from mirage_pipeline.artifacts import healthcheck; healthcheck()"]
       interval: 10s

@@ -1,7 +1,7 @@
 """Default-tell checks (spec 1.3): does a decoy still look like an out-of-the-box honeypot?
 
     uv run python -m eval.probes.default_tells [--ssh 127.0.0.1:2222] [--http 127.0.0.1:8081]
-        [--password PW] [--profile build/profile]
+        [--redis 127.0.0.1:6380] [--mysql 127.0.0.1:3307] [--password PW] [--profile build/profile]
 
 Each check compares the running decoy with the Debian 12 reference
 (decoys/profiles/reference/debian-12.json) and reports pass, fail, or gap. A gap is a known
@@ -226,8 +226,134 @@ def check_http(target: str, ref: dict[str, Any]) -> list[Result]:
     return r
 
 
+def _hostport(target: str) -> tuple[str, int]:
+    host, _, port = target.rpartition(":")
+    return host, int(port)
+
+
+def _resp_cmd(sock: socket.socket, *args: str) -> bytes:
+    """Send one RESP command and return its reply bytes (simple, error, integer or bulk)."""
+    wire = f"*{len(args)}\r\n".encode()
+    for a in args:
+        wire += f"${len(a)}\r\n{a}\r\n".encode()
+    sock.sendall(wire)
+    buf = b""
+    while b"\r\n" not in buf:
+        chunk = sock.recv(65536)
+        if not chunk:
+            break
+        buf += chunk
+    if buf.startswith(b"$") and b"\r\n" in buf:
+        n = int(buf[1 : buf.index(b"\r\n")])
+        need = buf.index(b"\r\n") + 2 + max(n, 0) + 2
+        while len(buf) < need:
+            chunk = sock.recv(65536)
+            if not chunk:
+                break
+            buf += chunk
+    return buf
+
+
+def check_redis(target: str, ref: dict[str, Any]) -> list[Result]:
+    replies = ref["redis"]["replies"]
+    version = re.search(r"v=(\S+)", ref["redis"]["version"])
+    want_version = version.group(1) if version else ""
+    r: list[Result] = []
+    with socket.create_connection(_hostport(target), timeout=5) as sock:
+        info = _resp_cmd(sock, "INFO", "server").decode(errors="replace")
+        got = re.search(r"redis_version:(\S+)", info)
+        r.append(
+            Result(
+                "redis",
+                "redis_version is the reference's",
+                "pass" if got and got.group(1) == want_version else "fail",
+                got.group(1) if got else "no redis_version",
+            )
+        )
+        bad = []
+        for _ in range(5):
+            word = "x" + secrets.token_hex(4)
+            reply = _resp_cmd(sock, word, "a").decode(errors="replace")
+            want = f"-ERR unknown command '{word}', with args beginning with: 'a' \r\n"
+            if reply != want:
+                bad.append(reply.strip())
+        r.append(
+            Result(
+                "redis",
+                "unknown commands get Redis 7.0's error, byte for byte",
+                "pass" if not bad else "fail",
+                "; ".join(bad[:2]),
+            )
+        )
+        count = _resp_cmd(sock, "COMMAND", "COUNT")
+        r.append(
+            Result(
+                "redis",
+                "COMMAND COUNT is the reference's",
+                "pass" if count == replies["command_count"].encode() else "fail",
+                count.decode(errors="replace").strip(),
+            )
+        )
+    return r
+
+
+def check_mysql(target: str, ref: dict[str, Any]) -> list[Result]:
+    import pymysql
+
+    hs = ref["mysql"]["handshake"]
+    r: list[Result] = []
+    with socket.create_connection(_hostport(target), timeout=5) as sock:
+        header = b""
+        while len(header) < 4:
+            header += sock.recv(4 - len(header))
+        n = header[0] | header[1] << 8 | header[2] << 16
+        payload = b""
+        while len(payload) < n:
+            payload += sock.recv(n - len(payload))
+    end = payload.index(b"\0", 1)
+    version = payload[1:end].decode(errors="replace")
+    i = end + 1 + 4 + 8 + 1
+    cap_lo = int.from_bytes(payload[i : i + 2], "little")
+    cap_hi = int.from_bytes(payload[i + 5 : i + 7], "little")
+    caps = cap_lo | cap_hi << 16
+    r.append(
+        Result(
+            "mysql",
+            "handshake version is the reference's",
+            "pass" if version == hs["server_version"] else "fail",
+            version,
+        )
+    )
+    r.append(
+        Result(
+            "mysql",
+            "handshake capabilities are the reference's",
+            "pass" if caps == hs["capabilities"] else "fail",
+            hex(caps),
+        )
+    )
+    host, port = _hostport(target)
+    try:
+        pymysql.connect(
+            host=host, port=port, user="root", password=secrets.token_hex(8), connect_timeout=5
+        ).close()
+        status, detail = "fail", "a random root password was accepted"
+    except pymysql.MySQLError as e:
+        ok = e.args[0] == 1045 and re.fullmatch(
+            r"Access denied for user 'root'@'[^']+' \(using password: YES\)", str(e.args[1])
+        )
+        status, detail = ("pass" if ok else "fail"), f"{e.args[0]} {e.args[1]}"
+    r.append(Result("mysql", "wrong password gets MariaDB's 1045 text", status, detail))
+    return r
+
+
 def run(
-    ssh: str | None, http: str | None, password: str | None, profile: Path | None
+    ssh: str | None,
+    http: str | None,
+    password: str | None,
+    profile: Path | None,
+    redis: str | None = None,
+    mysql: str | None = None,
 ) -> list[Result]:
     ref = json.loads(REFERENCE.read_text())
     host_profile = (
@@ -240,6 +366,10 @@ def run(
         out += check_ssh(ssh, password, ref, host_profile)
     if http:
         out += check_http(http, ref)
+    if redis:
+        out += check_redis(redis, ref)
+    if mysql:
+        out += check_mysql(mysql, ref)
     return out
 
 
@@ -247,6 +377,8 @@ def main(argv: list[str] | None = None) -> None:
     ap = argparse.ArgumentParser(prog="default_tells")
     ap.add_argument("--ssh", default="127.0.0.1:2222")
     ap.add_argument("--http", default="127.0.0.1:8081")
+    ap.add_argument("--redis", default="127.0.0.1:6380")
+    ap.add_argument("--mysql", default="127.0.0.1:3307")
     ap.add_argument("--profile", type=Path, default=ROOT / "build/profile")
     ap.add_argument(
         "--password", help="a root password the decoy accepts (default: from the profile)"
@@ -256,10 +388,10 @@ def main(argv: list[str] | None = None) -> None:
     if password is None and (args.profile / "cowrie/userdb.txt").exists():
         lines = (args.profile / "cowrie/userdb.txt").read_text().splitlines()
         password = next(ln.split(":", 2)[2] for ln in lines if ln.startswith("root:"))
-    results = run(args.ssh, args.http, password, args.profile)
+    results = run(args.ssh, args.http, password, args.profile, args.redis, args.mysql)
     for res in results:
         print(
-            f"{res.status.upper():4}  {res.protocol:<5} {res.check}"
+            f"{res.status.upper():4}  {res.protocol:<6} {res.check}"
             + (f"  [{res.detail}]" if res.detail and res.status != "pass" else "")
         )
     fails = sum(r.status == "fail" for r in results)

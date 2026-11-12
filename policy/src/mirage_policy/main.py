@@ -1,8 +1,8 @@
 """Entry point: uvicorn on one dual-stack socket.
 
 Requirements measured in spike S1 (spec 1.2): dual-stack (Docker resolves names to IPv6 first,
-and an IPv4-only service costs 300 ms per connection), HTTP/1.1 keep-alive above the gate's 2 s
-idle timeout, and TCP_NODELAY (asyncio sets it on every TCP transport).
+and an IPv4-only service costs 300 ms per connection), HTTP/1.1 keep-alive above the gate's idle
+timeout, and TCP_NODELAY (asyncio sets it on every TCP transport).
 
 uvicorn's ``host="::"`` is not enough: asyncio sets IPV6_V6ONLY on the IPv6 socket it creates,
 so IPv4 clients are refused. The socket is made here with IPV6_V6ONLY off and handed over.
@@ -37,7 +37,9 @@ def main() -> None:
     app = create_app(Settings.from_env())
     config = uvicorn.Config(
         app,
-        timeout_keep_alive=5,
+        # Above the decoys' 60 s idle limit: they close first, so a request never races
+        # the server closing its end, and a pause between commands keeps the connection.
+        timeout_keep_alive=75,
         access_log=False,
         server_header=False,
         log_level=os.environ.get("LOG_LEVEL", "info").lower(),

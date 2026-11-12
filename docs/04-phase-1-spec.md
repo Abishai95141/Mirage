@@ -71,7 +71,7 @@ POST /v1/decide            Authorization: Bearer <POLICY_TOKEN>
 | `delay` | Wait `delay_ms`, then allow | same | same | same |
 | `terminate` | Close the channel | Close the connection | Close | Close |
 
-**Failure semantics**, unchanged from S1 and the same for every decoy: a missing, late, non-200, unauthorised or malformed reply means `allow`, and the decoy records a fallback with its reason. Each decoy's timeout is configurable, with a 50 ms target. A decoy never waits on the policy service longer than that.
+**Failure semantics**, unchanged from S1 and the same for every decoy: a missing, late, non-200, unauthorised or malformed reply means `allow`, and the decoy records a fallback with its reason. Each decoy's timeout is configurable (`POLICY_TIMEOUT_MS`), with a 50 ms target on a Linux host; the laptop stack uses 100 ms because Docker Desktop's VM stalls for 60-150 ms now and then (section 10). A decoy never waits on the policy service longer than its timeout.
 
 ## 4. Work packages
 
@@ -92,7 +92,7 @@ The fork is a patch series applied to pinned Cowrie v3.1.6 (`ea9513e`) at image 
 | Requirement | Acceptance |
 | --- | --- |
 | FastAPI under uvicorn, implementing contract v1 | Contract tests for every protocol and action, plus the bad-token, malformed-request and oversized-field cases |
-| Listens on IPv4 and IPv6; keep-alive timeout of at least 5 s (above the gate's 2 s idle); TCP_NODELAY | A test connects over each address family. Over 1,000 sequential decisions on one connection, none hits a stale-connection retry. |
+| Listens on IPv4 and IPv6; a 75 s keep-alive, above the decoys' 60 s idle limit so the client always closes first; TCP_NODELAY. Decoys resolve the service's address in the background and post to it directly, so no decision waits on a DNS lookup | A test connects over each address family. Over 1,000 sequential decisions on one connection, none hits a stale-connection retry. |
 | Server-side p95 under 10 ms on the laptop | Measured in the Gate 1 latency test |
 | Rules live in a YAML file (`policy/rules/default.yaml`), first match wins. A rule matches on protocol, `known`, `argv[0]`, a regex over the input, HTTP method and path, or SQL verb. | Every decision carries the `rule_id`, and the `rules_version` (a hash of the rules file) |
 | An invalid rules file stops the service from starting | Config errors fail closed at the service, and the decoys fail open to `allow` |
@@ -273,8 +273,10 @@ All of these run in CI (`tests/integration/test_gate1.py`, plus the updated cont
 | --- | --- |
 | HASSH-server differs from every real OpenSSH | Twisted implements none of chacha20-poly1305, AES-GCM, ETM MACs, sntrup761 or strict KEX (S3). Decision D12 settles this in phase 3: either a real OpenSSH front end, or accepting the limit. |
 | Cowrie rejects an `SSH-2.2` client; its error lines end in LF | Transport code; same decision |
-| Redis `HELLO 3` (RESP3) | Rare in attack traffic; answered with an error, a tell that is listed |
-| MySQL prepared statements | Rare in attack traffic; answered with a MariaDB error. (SQL-level `PREPARE` works on the reference; the gap is the binary `COM_STMT_PREPARE` protocol.) |
+| Redis gopher selectors | Only the measured `Host:` rule is reproduced (Redis 7.0 discards the batch's replies and closes); a bare `/selector` gopher request is unmeasured. |
+| Redis `used_memory` | A live estimate (startup + keyspace + clients), as the profile's `info_dynamic` list implies; a real server's exact figure is per-run state. |
+| MariaDB 1044 text | Unmeasured: the reference's probe account had global grants. The decoy sends MariaDB's documented format. |
+| MySQL prepared statements | Rare in attack traffic; `COM_STMT_PREPARE` and every other unhandled command get 1047. (SQL-level `PREPARE` returns OK, as on the reference.) `fake_error` without an `exit_code` uses 1105. |
 | Malformed HTTP request lines | h11 rejects them differently from nginx; measured in the tell checks and listed |
 | Profile-dependent commands Cowrie lacks (`lscpu`, `ss`, `free`) | Pre-rendered per profile in phase 3 (S2). Until then they get "command not found". |
 
@@ -289,16 +291,16 @@ The LLM responder, the bandit and any learned policy, PostgreSQL, `plant_token` 
 
 | WP | State | Where |
 | --- | --- | --- |
-| 1.1 Cowrie fork | Done. Six patches on v3.1.6; Cowrie's own suite passes (1,669 tests; one TFTP test fails without a network, as on the unpatched baseline). | `decoys/ssh/` |
+| 1.1 Cowrie fork | Done. Seven patches on v3.1.6; Cowrie's own suite passes (1,681 tests; one TFTP test fails without a network, as on the unpatched baseline). | `decoys/ssh/` |
 | 1.2 Policy service | Done | `policy/` |
-| 1.3 Profiles and tell checks | Done. 26 checks pass on the stack, one known gap (HASSH-server); the SSH checks fail on stock Cowrie. | `decoys/profiles/`, `eval/probes/default_tells.py` |
+| 1.3 Profiles and tell checks | Done. 32 checks pass on the stack (SSH, HTTP, Redis, MySQL), one known gap (HASSH-server); the SSH checks fail on stock Cowrie. | `decoys/profiles/`, `eval/probes/default_tells.py` |
 | 1.4 HTTP decoy | Done. The site is a generated WordPress-style company site (`decoys/profiles/src/mirage_profiles/website.py`): an original theme, pages, posts and feed, `/wp-json/` with the users from MySQL's `wp_users`, `xmlrpc.php`, the `/wp-admin/` redirect, a WordPress-style login that names unknown and known users as WordPress does, and a phpMyAdmin login. Pages are served as cached files, so nginx's framing and header order (what the tell checks measure) are unchanged. | `decoys/http/` |
-| 1.5 Database decoys | **Not built.** The reference answers they must reproduce are extracted (`redis` and `mysql` in `decoys/profiles/reference/debian-12.json`) and the generator renders their profiles (`redis.json`, `mysql.json`). `decoys/db/` holds an incomplete Redis framing layer only. | |
+| 1.5 Database decoys | Done. Redis 7.0 (RESP2/RESP3, inline commands, the measured gopher close on `Host:`) and MariaDB 10.11 (the measured handshake byte for byte, `mysql_native_password` against the profile's users, a SQL subset on a per-source in-memory SQLite copy of the profile's schema, reset 24 h after the source's first write). Measured replies and error texts come from the profile; the deviations are in section 8. SQLite is fenced: no ATTACH or PRAGMA, no file or extension functions, no table the profile does not have (1146), a 4 MiB value cap and a 250 ms statement budget (1317), so no client statement can touch the disk or hold the event loop. 34 unit tests. | `decoys/db/` |
 | 1.6 Honeytokens | Done: minted at render time; detected by the sessioniser, which records exposures (a session reaching a planted location) and uses (the value in any input) and emits `token.triggered` as a `detection_finding` from source `pipeline`. | `decoys/tokens/`, `pipeline/src/mirage_pipeline/analyst.py` |
 | 1.7 Sessioniser | Done. Summaries are recomputed from `mirage.events` for every touched session, so redelivery cannot double-count; state is rebuilt from ClickHouse on restart. | `pipeline/src/mirage_pipeline/sessioniser.py` |
 | 1.8 Artifact store | Done except eviction (section 8). The indexer runs as root with only `CAP_DAC_READ_SEARCH`, because the decoys write owner-only files as different users; every artifact mount is read-only. | `pipeline/src/mirage_pipeline/artifacts.py` |
 
-**Gate 1 on the laptop:** tests 1, 2, 5 (SSH to HTTP), 6, 7, 8, 9 and 10 pass (`tests/integration/test_gate1.py`, `test_containment.py`, `test_default_tells.py`); tests 3 and 4 are skipped until 1.5 lands. Gate 1 is therefore not yet passed.
+**Gate 1 on the laptop:** all ten tests pass (`tests/integration/test_gate1.py`, `test_containment.py`, `test_default_tells.py`; 42 integration tests in all). Test 5 runs the token chain twice, SSH to MySQL and SSH to HTTP. The default-tell checks cover all four protocols: 32 pass, one known gap (HASSH-server).
 
 **Dashboards.** Seven Grafana pages, generated by `tools/grafana_dashboards.py` (`make dashboards`): Overview, Sessions, Session (timeline, decisions, links, artifacts, the policy service's records), Actors (with a node graph of linked sessions), Honeytokens, Artifacts and Policy. `tests/integration/test_dashboards.py` runs every panel's query through Grafana. Grafana reads ClickHouse as `grafana`, a user that can only SELECT, because template variables reach SQL unescaped. The terminal replay is a `playlog` command shown on the Session page; a player in the browser is still open.
 

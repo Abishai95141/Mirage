@@ -97,7 +97,7 @@ POST /v1/decide
     "decision_id", "propensity" }
 ```
 
-Phase 1 extends this to contract v1, adding the `http`, `redis` and `mysql` protocols and the fields `deployment_id`, `seq`, `src`, `rule_id` and `rules_version`, plus a bearer token ([phase 1 spec §3](04-phase-1-spec.md#3-gate-contract-v1)). `plant_token` joins the action set in phase 2 with the bandit (phase 1 plants tokens statically), and `escalate` joins in phase 3. Any missing, late, non-200 or malformed reply means `allow`, and the shell behaves exactly like stock Cowrie. The decoy must never hang on the policy service. Config: `[mirage] policy_enabled`, `policy_url`, `policy_timeout_ms` (target 50), `policy_idle_ms` (2000).
+Phase 1 extends this to contract v1, adding the `http`, `redis` and `mysql` protocols and the fields `deployment_id`, `seq`, `src`, `rule_id` and `rules_version`, plus a bearer token ([phase 1 spec §3](04-phase-1-spec.md#3-gate-contract-v1)). `plant_token` joins the action set in phase 2 with the bandit (phase 1 plants tokens statically), and `escalate` joins in phase 3. Any missing, late, non-200 or malformed reply means `allow`, and the shell behaves exactly like stock Cowrie. The decoy must never hang on the policy service. Config: `[mirage] policy_enabled`, `policy_url`, `policy_timeout_ms` (target 50), `policy_idle_ms` (60000, under the policy service's 75 s keep-alive).
 
 **Requirements on the policy service**, all measured in S1: listen on IPv4 and IPv6 (Docker resolves names to IPv6 first, and an IPv4-only service costs 300 ms per connection); HTTP/1.1 keep-alive with an idle timeout above the gate's 2 s; TCP_NODELAY (otherwise about 40 ms per decision).
 

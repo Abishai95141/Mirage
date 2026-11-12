@@ -17,6 +17,14 @@ sources:
     type: file
     include: ["/http-log/http.json*"]
     read_from: beginning
+  redis_log:
+    type: file
+    include: ["/redis-log/redis.json*"]
+    read_from: beginning
+  mysql_log:
+    type: file
+    include: ["/mysql-log/mysql.json*"]
+    read_from: beginning
   policy_log:
     type: file
     include: ["/policy-log/decisions.json*"]
@@ -25,7 +33,7 @@ sources:
 transforms:
   parsed:
     type: remap
-    inputs: [cowrie_log, http_log, policy_log]
+    inputs: [cowrie_log, http_log, redis_log, mysql_log, policy_log]
     source: |
       src = string!(.file)
       parsed, err = parse_json(.message)
@@ -42,6 +50,8 @@ transforms:
     route:
       cowrie: 'starts_with(string!(.__mirage_src), "/cowrie-var/")'
       http: 'starts_with(string!(.__mirage_src), "/http-log/")'
+      redis: 'starts_with(string!(.__mirage_src), "/redis-log/")'
+      mysql: 'starts_with(string!(.__mirage_src), "/mysql-log/")'
       policy: 'starts_with(string!(.__mirage_src), "/policy-log/")'
   cowrie_out:
     type: remap
@@ -50,6 +60,14 @@ transforms:
   http_out:
     type: remap
     inputs: [route.http]
+    source: del(.__mirage_src)
+  redis_out:
+    type: remap
+    inputs: [route.redis]
+    source: del(.__mirage_src)
+  mysql_out:
+    type: remap
+    inputs: [route.mysql]
     source: del(.__mirage_src)
   policy_out:
     type: remap
@@ -70,6 +88,22 @@ sinks:
     inputs: [http_out]
     url: nats://nats:4222
     subject: raw.honeypot.http
+    jetstream: {enabled: true}
+    encoding: {codec: json}
+    acknowledgements: {enabled: true}
+  nats_redis:
+    type: nats
+    inputs: [redis_out]
+    url: nats://nats:4222
+    subject: raw.honeypot.redis
+    jetstream: {enabled: true}
+    encoding: {codec: json}
+    acknowledgements: {enabled: true}
+  nats_mysql:
+    type: nats
+    inputs: [mysql_out]
+    url: nats://nats:4222
+    subject: raw.honeypot.mysql
     jetstream: {enabled: true}
     encoding: {codec: json}
     acknowledgements: {enabled: true}

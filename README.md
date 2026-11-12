@@ -1,6 +1,6 @@
 # MIRAGE
 
-An adaptive honeypot and attack-simulation platform. Phase 0 (foundations) is built. Phase 1 (decoys and capture) is built except the Redis and MySQL decoys: a hardened SSH decoy and an HTTP decoy, both behind a policy gate; per-deployment profiles from a Debian 12 reference; honeytokens; sessions and actor links; an artifact index. Status and what is open: [phase 1 spec, section 10](docs/04-phase-1-spec.md#10-implementation-status-12-november-2026).
+An adaptive honeypot and attack-simulation platform. Phase 0 (foundations) is built. Phase 1 (decoys and capture) is built: a hardened SSH decoy, an HTTP decoy, and Redis and MySQL decoys, all behind a policy gate; per-deployment profiles from a Debian 12 reference; honeytokens; sessions and actor links; an artifact index. Status and what is open: [phase 1 spec, section 10](docs/04-phase-1-spec.md#10-implementation-status-12-november-2026).
 
 ## Quick start
 
@@ -51,7 +51,7 @@ uv run python tools/seed_sample.py replay data/seed/2025-06-27.json.sample.json
 | `schema/` | Event envelope (OCSF-aligned), ground-truth record, source mappings |
 | `pipeline/` | Normaliser (NATS → MirageEvent → ClickHouse), sessioniser (sessions, honeytoken findings, actor links), artifact indexer |
 | `policy/` | Policy service: gate contract v1, YAML rules, decision log |
-| `decoys/` | Cowrie patch series (`ssh/`), HTTP decoy, shared decoy library, profile generator and Debian 12 reference, honeytokens; `db/` is an unfinished Redis/MySQL decoy |
+| `decoys/` | Cowrie patch series (`ssh/`), HTTP decoy, shared decoy library, profile generator and Debian 12 reference, honeytokens, and the Redis and MySQL decoys (`db/`) |
 | `compose/` | Docker Compose stack and service configs |
 | `tests/integration/` | Gate 0, Gate 1, containment and default-tell tests |
 | `eval/probes/` | SSH transport probes and the default-tell checks |

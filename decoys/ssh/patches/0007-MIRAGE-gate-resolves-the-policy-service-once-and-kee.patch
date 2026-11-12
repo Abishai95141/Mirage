@@ -1,0 +1,241 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: MIRAGE <noreply@anthropic.com>
+Date: Thu, 12 Nov 2026 16:00:00 +0530
+Subject: [PATCH] MIRAGE: gate resolves the policy service once and keeps
+ connections longer
+
+Gate 1 measured two causes of fallbacks: every new connection looked the
+service's name up through Docker's DNS, which on Docker Desktop alone can use
+most of the 50 ms budget; and with a 2 s idle limit, an attacker's pause
+between commands meant a new connection (and a lookup) for the next one.
+
+The address is now resolved in the background (every policy_refresh_ms, and at
+once after a failed connect, e.g. when the service restarts at a new address),
+and requests go to it directly with the service's own Host header. The idle
+limit is a deployment setting; MIRAGE sets 60 s against the service's 75 s
+keep-alive.
+---
+ src/cowrie/mirage_gate.py             | 86 ++++++++++++++++++++++++++-
+ src/cowrie/test/test_mirage_phase1.py | 52 ++++++++++++++++
+ 2 files changed, 135 insertions(+), 3 deletions(-)
+
+diff --git a/src/cowrie/mirage_gate.py b/src/cowrie/mirage_gate.py
+index 185d25d..aba4543 100644
+--- a/src/cowrie/mirage_gate.py
++++ b/src/cowrie/mirage_gate.py
+@@ -26,10 +26,12 @@ command runs) and Ctrl-C cancels the pending command as it would a process.
+ 
+ from __future__ import annotations
+ 
++import ipaddress
+ import re
+ import time
+ import uuid
+ from typing import TYPE_CHECKING, Any
++from urllib.parse import urlsplit, urlunsplit
+ 
+ import treq
+ from twisted.internet import defer, reactor
+@@ -63,15 +65,37 @@ class PolicyGate:
+     * On dual-stack Docker networks the name resolves to IPv6 first; a service
+       listening on IPv4 only costs Twisted's 300 ms happy-eyeballs delay on
+       every new connection. The policy service must listen on both.
++
++    Measured in Gate 1 (phase 1): every new connection also looked the name up
++    through Docker's DNS, which on Docker Desktop alone can use most of the
++    50 ms budget, and with a 2 s idle limit an attacker's pause between commands
++    meant a new connection, and a lookup, for the next one. So the address is
++    resolved in the background (every ``refresh_s``, and at once after a failed
++    connect, e.g. when the service restarts at a new address) and requests go to
++    it directly with the service's own Host header; and the idle limit is set
++    just under a long server keep-alive (60 s against the service's 75 s).
+     """
+ 
+     def __init__(
+-        self, url: str, timeout_s: float, idle_s: float = 2.0, token: str = ""
++        self,
++        url: str,
++        timeout_s: float,
++        idle_s: float = 2.0,
++        token: str = "",
++        refresh_s: float = 30.0,
+     ) -> None:
+         from twisted.web.client import Agent, HTTPConnectionPool
+ 
+         self.url = url
+         self.timeout_s = timeout_s
++        parts = urlsplit(url)
++        self._parts = parts
++        self._hostname = parts.hostname or ""
++        self._host_header = parts.netloc
++        self.refresh_s = refresh_s
++        self._address: str | None = self._hostname if _is_ip(self._hostname) else None
++        self._loop: Any = None
++        self._resolving = False
+         pool = HTTPConnectionPool(reactor, persistent=True)
+         pool.maxPersistentPerHost = 8
+         pool.cachedConnectionTimeout = idle_s
+@@ -79,6 +103,46 @@ class PolicyGate:
+         self._http = treq.client.HTTPClient(Agent(reactor, pool=pool))
+         self._headers = {"Authorization": f"Bearer {token}"} if token else {}
+ 
++    # ---------------------------------------------------------------- address
++
++    def target(self) -> tuple[str, dict[str, str]]:
++        """The URL to post to, and its headers: the resolved address when known,
++        with the service's own name in Host; the configured URL otherwise."""
++        if self._address is None or self._address == self._hostname:
++            return self.url, dict(self._headers)
++        host = f"[{self._address}]" if ":" in self._address else self._address
++        netloc = f"{host}:{self._parts.port}" if self._parts.port else host
++        url = urlunsplit(self._parts._replace(netloc=netloc))
++        return url, {**self._headers, "Host": self._host_header}
++
++    def start_resolving(self) -> None:
++        if self._loop is not None or _is_ip(self._hostname) or not self._hostname:
++            return
++        from twisted.internet.task import LoopingCall
++
++        self._loop = LoopingCall(self.resolve)
++        self._loop.clock = reactor
++        self._loop.start(self.refresh_s, now=True)
++
++    def resolve(self) -> defer.Deferred | None:
++        if self._resolving:
++            return None
++        self._resolving = True
++
++        def done(address: str) -> None:
++            self._address = address
++
++        def failed(_failure: Any) -> None:
++            pass  # keep the last good address; the hostname is used until there is one
++
++        def finished(_: Any) -> None:
++            self._resolving = False
++
++        d = reactor.resolve(self._hostname, timeout=(1, 2))
++        d.addCallbacks(done, failed)
++        d.addBoth(finished)
++        return d
++
+     @classmethod
+     def from_config(cls) -> PolicyGate | None:
+         if not CowrieConfig.getboolean("mirage", "policy_enabled", fallback=False):
+@@ -86,21 +150,29 @@ class PolicyGate:
+         url = CowrieConfig.get("mirage", "policy_url", fallback="http://policy:8000/v1/decide")
+         timeout_ms = CowrieConfig.getint("mirage", "policy_timeout_ms", fallback=50)
+         idle_ms = CowrieConfig.getint("mirage", "policy_idle_ms", fallback=2000)
++        refresh_ms = CowrieConfig.getint("mirage", "policy_refresh_ms", fallback=30000)
+         # The token comes from the environment (COWRIE_MIRAGE_POLICY_TOKEN), not a file.
+         token = CowrieConfig.get("mirage", "policy_token", fallback="")
+-        return cls(url, timeout_ms / 1000.0, idle_ms / 1000.0, token)
++        return cls(url, timeout_ms / 1000.0, idle_ms / 1000.0, token, refresh_ms / 1000.0)
+ 
+     def decide(self, request: dict[str, Any]) -> defer.Deferred[dict[str, Any] | None]:
+         deadline = time.monotonic() + self.timeout_s
++        self.start_resolving()
+ 
+         def attempt() -> defer.Deferred:
+-            d = self._http.post(self.url, json=request, headers=self._headers)
++            url, headers = self.target()
++            d = self._http.post(url, json=request, headers=headers)
+             d.addCallback(_json_or_none)
+             return d
+ 
+         def retry_stale(failure: Any) -> Any:
++            from twisted.internet.error import ConnectError, DNSLookupError
+             from twisted.web._newclient import ResponseNeverReceived
+ 
++            if failure.check(ConnectError, DNSLookupError):
++                # The service may have restarted at a new address: look it up
++                # again now rather than at the next refresh.
++                self.resolve()
+             if failure.check(ResponseNeverReceived) and time.monotonic() < deadline:
+                 return attempt()
+             return failure
+@@ -112,6 +184,14 @@ class PolicyGate:
+         return d
+ 
+ 
++def _is_ip(host: str) -> bool:
++    try:
++        ipaddress.ip_address(host)
++    except ValueError:
++        return False
++    return True
++
++
+ def set_tcp_nodelay(ssh_transport: Any) -> None:
+     """Disable Nagle on the attacker's TCP connection, as OpenSSH does for an
+     interactive (pty) session.
+diff --git a/src/cowrie/test/test_mirage_phase1.py b/src/cowrie/test/test_mirage_phase1.py
+index f1ce899..0abb1b5 100644
+--- a/src/cowrie/test/test_mirage_phase1.py
++++ b/src/cowrie/test/test_mirage_phase1.py
+@@ -4,6 +4,7 @@
+ 
+ from __future__ import annotations
+ 
++import unittest
+ from typing import Any
+ 
+ from twisted.conch.ssh.common import NS, getNS
+@@ -95,3 +96,54 @@ class KexInitTests(GateTestBase):
+         t = HoneyPotSSHTransport()
+         payload = b"\x02" * 16 + NS(b"curve25519-sha256") + NS(b"ssh-ed25519")
+         self.assertEqual(t._mirage_strip_ext_info_s(payload), payload)
++
++
++class PolicyAddressTests(unittest.TestCase):
++    """The gate resolves the policy service once and posts to the address
++    (phase 1, Gate 1: per-connection DNS lookups cost most of the budget)."""
++
++    def gate(self, url: str = "http://policy:8000/v1/decide") -> Any:
++        from cowrie.mirage_gate import PolicyGate
++
++        return PolicyGate(url, 0.05, 60.0, "tok")
++
++    def test_hostname_until_resolved_then_address_with_host_header(self) -> None:
++        g = self.gate()
++        url, headers = g.target()
++        self.assertEqual(url, "http://policy:8000/v1/decide")
++        self.assertNotIn("Host", headers)
++        g._address = "172.20.0.5"
++        url, headers = g.target()
++        self.assertEqual(url, "http://172.20.0.5:8000/v1/decide")
++        self.assertEqual(headers["Host"], "policy:8000")
++        self.assertEqual(headers["Authorization"], "Bearer tok")
++
++    def test_ipv6_address_is_bracketed(self) -> None:
++        g = self.gate()
++        g._address = "fd00::5"
++        self.assertEqual(g.target()[0], "http://[fd00::5]:8000/v1/decide")
++
++    def test_literal_address_is_used_as_given(self) -> None:
++        g = self.gate("http://10.1.2.3:8000/v1/decide")
++        self.assertEqual(g.target(), ("http://10.1.2.3:8000/v1/decide", {"Authorization": "Bearer tok"}))
++        g.start_resolving()
++        self.assertIsNone(g._loop)  # nothing to look up
++
++    def test_decide_posts_to_the_resolved_address(self) -> None:
++        from twisted.internet import defer
++
++        g = self.gate()
++        g._address = "172.20.0.5"
++        g.start_resolving = lambda: None  # no reactor in this test
++        posted: list[tuple[str, dict[str, str]]] = []
++
++        def post(url: str, json: Any, headers: dict[str, str]) -> Any:
++            posted.append((url, headers))
++            return defer.fail(RuntimeError("no server in this test"))
++
++        g._http.post = post
++        results: list[Any] = []
++        g.decide({"request_id": "r"}).addCallback(results.append)
++        self.assertEqual(posted[0][0], "http://172.20.0.5:8000/v1/decide")
++        self.assertEqual(posted[0][1]["Host"], "policy:8000")
++        self.assertEqual(results, [{"_fallback": "error:RuntimeError"}])
+-- 
+2.50.1 (Apple Git-155)
+

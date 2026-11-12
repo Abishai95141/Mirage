@@ -116,7 +116,12 @@ def test_positive_control_probe_detects_egress():
     assert results["dns example.com"].startswith("resolved:")
 
 
-DECOYS = {"cowrie": COWRIE_PY, "http-decoy": "/usr/local/bin/python"}
+DECOYS = {
+    "cowrie": COWRIE_PY,
+    "http-decoy": "/usr/local/bin/python",
+    "redis-decoy": "/usr/local/bin/python",
+    "mysql-decoy": "/usr/local/bin/python",
+}
 
 
 def _networks(service: str) -> set[str]:

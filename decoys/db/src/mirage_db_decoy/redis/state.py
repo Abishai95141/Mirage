@@ -139,6 +139,43 @@ class Registry:
         self.profile = profile
         self.states: dict[str, SourceState] = {}
         self.clients: dict[str, list[Any]] = {}
+        self._ids = 0
+
+    def next_id(self) -> int:
+        """A process-wide counter for client ids and fd numbers (CLIENT LIST, HELLO)."""
+        self._ids += 1
+        return self._ids
+
+    def client_count(self) -> int:
+        return sum(len(v) for v in self.clients.values())
+
+    def client_list(self) -> str:
+        """One CLIENT LIST line per open connection, in the reference's field order."""
+        lines = []
+        for peers in self.clients.values():
+            for c in peers:
+                lines.append(c.client_list_line())
+        return "".join(lines)
+
+    def ensure_capacity(self, st: SourceState, extra: int) -> bool:
+        """Write admission under the container's memory budget: drop idle sources first,
+        then refuse the write (Redis's OOM reply)."""
+        if st.nbytes() + extra > SOURCE_BUDGET:
+            return False
+        if self.total_bytes() + extra > TOTAL_BUDGET:
+            self._evict_idle(exclude=st)
+            return self.total_bytes() + extra <= TOTAL_BUDGET
+        return True
+
+    def _evict_idle(self, exclude: SourceState) -> None:
+        busy = {id(c) for peers in self.clients.values() for c in peers}
+        idle = [
+            ip
+            for ip, s in self.states.items()
+            if s is not exclude and not any(id(c) in busy for c in self.clients.get(ip, []))
+        ]
+        for ip in idle:
+            del self.states[ip]
 
     def fresh(self) -> SourceState:
         p = self.profile
@@ -156,6 +193,9 @@ class Registry:
                 self._evict()
             st = self.states[ip] = self.fresh()
         return st
+
+    # P10 reads better at the call site spelled out.
+    state_for = get
 
     def _evict(self) -> None:
         idle = [ip for ip in self.states if not self.clients.get(ip)]

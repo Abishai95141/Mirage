@@ -7,6 +7,7 @@ them with a fixed message naming the variable and the script's SHA-1, which we c
 
 from __future__ import annotations
 
+import hashlib
 import re
 
 from mirage_db_decoy.redis.resp import Error, err
@@ -167,11 +168,14 @@ _RETURN = re.compile(
 )
 
 
+def sha1_hex(script: bytes) -> str:
+    """The name Redis knows a script by (EVALSHA lookup key)."""
+    return hashlib.sha1(script).hexdigest()  # noqa: S324 - Redis names scripts by SHA-1
+
+
 def evaluate(script: bytes, keys: list[bytes], args: list[bytes]) -> object:
     """The reply Redis 7.0 gives for ``script``, as far as static reading can tell."""
-    import hashlib
-
-    sha = hashlib.sha1(script).hexdigest()  # noqa: S324 - Redis names scripts by SHA-1
+    sha = sha1_hex(script)
     src = script.decode("utf-8", errors="replace")
     missing = first_missing_global(src)
     if missing:

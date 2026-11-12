@@ -20,7 +20,7 @@ profile: env ## Render this deployment's profile into build/profile (seed from .
 up: profile ## Build and start the stack, then apply the ClickHouse DDL
 	$(COMPOSE) up -d --build --wait --remove-orphans
 	@# These read the profile once at start; compose does not restart them when it changes.
-	$(COMPOSE) restart http-decoy sessioniser
+	$(COMPOSE) restart http-decoy redis-decoy mysql-decoy sessioniser
 	@$(MAKE) --no-print-directory migrate >/dev/null
 
 dashboards: ## Regenerate the Grafana dashboards (compose/grafana/dashboards)

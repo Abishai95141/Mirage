@@ -25,7 +25,10 @@ def test_stack_passes_default_tell_checks(env):
         f"127.0.0.1:{env.get('HTTP_PORT', '8081')}",
         _root_password(),
         ROOT / "build/profile",
+        redis=f"127.0.0.1:{env.get('REDIS_PORT', '6380')}",
+        mysql=f"127.0.0.1:{env.get('MYSQL_PORT', '3307')}",
     )
+    assert {"redis", "mysql"} <= {r.protocol for r in results}
     fails = [r for r in results if r.status == "fail"]
     assert fails == [], fails
     assert {r.check for r in results if r.status == "gap"} == {"HASSH-server equals OpenSSH 9.2p1"}

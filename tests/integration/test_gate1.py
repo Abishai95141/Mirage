@@ -1,9 +1,8 @@
 """Gate 1 (docs/04-phase-1-spec.md section 6), against the running stack (`make up`).
 
-Tests 7 and 8 are in test_containment.py and test_default_tells.py. Tests 3 and 4 (Redis and
-MySQL) are skipped: the database decoys are not built. Test 5's token chain therefore runs
-SSH -> HTTP: the SSH session reads the planted database password from /var/www/html/.env and
-a separate HTTP session uses it on the phpMyAdmin login form.
+Tests 7 and 8 are in test_containment.py and test_default_tells.py. Test 5's token chain runs
+twice: the SSH session reads the planted database password from /var/www/html/.env, then a
+separate session uses it - on the phpMyAdmin login form (HTTP) and as a MySQL login.
 
 The tests run in file order: test 6 stops the policy service and restarts it.
 """
@@ -22,6 +21,7 @@ from typing import Any
 
 import httpx
 import paramiko
+import pymysql
 import pytest
 
 from .conftest import ROOT, container_ip, docker
@@ -314,49 +314,205 @@ def test_2_http_session_captured(http_run, clickhouse):
     assert row["auth_attempts"] == 1 and row["auth_success"] == 0
 
 
-@pytest.mark.skip(reason="Gate 1 test 3: the Redis decoy is not built (spec 1.5)")
-def test_3_redis_session():
-    pass
+def db_session_of(query, protocol: str, marker: str, t0: str) -> str:
+    """The DB decoy session whose gated input contains ``marker``."""
+    rows = poll(
+        query,
+        "SELECT session_id FROM mirage.events FINAL WHERE source = 'db-decoy' "
+        f"AND protocol = '{protocol}' AND class = 'policy_decision' AND ts >= '{t0}' "
+        f"AND position(JSONExtractString(payload, 'command'), '{marker}') > 0",
+    )
+    return rows[0]["session_id"]
 
 
-@pytest.mark.skip(reason="Gate 1 test 4: the MySQL decoy is not built (spec 1.5)")
-def test_4_mysql_session():
-    pass
+class Resp:
+    """A raw RESP client: the edge adds the PROXY header, as for any client."""
+
+    def __init__(self, port: int) -> None:
+        import socket
+
+        self.sock = socket.create_connection(("127.0.0.1", port), timeout=10)
+        self.buf = b""
+
+    def cmd(self, *args: str) -> bytes:
+        out = f"*{len(args)}\r\n".encode()
+        for a in args:
+            out += f"${len(a.encode())}\r\n".encode() + a.encode() + b"\r\n"
+        self.sock.sendall(out)
+        return self._reply()
+
+    def _line(self) -> bytes:
+        while b"\r\n" not in self.buf:
+            chunk = self.sock.recv(65536)
+            if not chunk:
+                raise ConnectionError("closed")
+            self.buf += chunk
+        line, self.buf = self.buf.split(b"\r\n", 1)
+        return line + b"\r\n"
+
+    def _reply(self) -> bytes:
+        line = self._line()
+        if line[:1] in (b"$", b"="):
+            n = int(line[1:-2])
+            if n >= 0:
+                while len(self.buf) < n + 2:
+                    self.buf += self.sock.recv(65536)
+                line += self.buf[: n + 2]
+                self.buf = self.buf[n + 2 :]
+        elif line[:1] == b"*":
+            for _ in range(max(int(line[1:-2]), 0)):
+                line += self._reply()
+        return line
+
+    def close(self) -> None:
+        self.sock.close()
+
+
+# The isolation leg forges two client addresses, so it has to reach redis-decoy:6379 from
+# inside the decoy network (the edge always stamps the real one). It runs in a throwaway
+# container of the decoy image, which carries the PROXY header builder.
+REDIS_AS = r"""
+import socket, sys
+from mirage_decoy_common.proxyproto import build_header
+src, key, cmd = sys.argv[1], sys.argv[2], sys.argv[3]
+s = socket.create_connection(("redis-decoy", 6379), timeout=10)
+s.sendall(build_header(src, 40000, "10.0.0.5", 6379))
+args = [cmd, key] + (["1"] if cmd == "SET" else [])
+crlf = bytes([13, 10])
+wire = b"*%d" % len(args) + crlf
+for a in args:
+    wire += b"$%d" % len(a) + crlf + a.encode() + crlf
+s.sendall(wire)
+print(s.recv(4096).decode().strip())
+"""
+
+
+def redis_as(src: str, cmd: str, key: str) -> str:
+    return docker(
+        "run",
+        "--rm",
+        "--network",
+        "mirage_decoy",
+        "--read-only",
+        "--cap-drop",
+        "ALL",
+        "--entrypoint",
+        "python",
+        "mirage/decoys:dev",
+        "-c",
+        REDIS_AS,
+        src,
+        key,
+        cmd,
+        timeout=60,
+    ).stdout.strip()
+
+
+def test_3_redis_session(env, clickhouse, t0):
+    tag = uuid.uuid4().hex[:8]
+    ref = REF["redis"]["replies"]
+    c = Resp(int(env.get("REDIS_PORT", "6380")))
+    try:
+        assert c.cmd("PING") == b"+PONG\r\n"
+        version = json.loads((ROOT / "build/profile/redis.json").read_text())["version"]
+        assert b"redis_version:" + version.encode() in c.cmd("INFO", "server")
+        assert c.cmd("CONFIG", "SET", "dir", "/var/spool/cron") == ref["config_set_dir"].encode()
+        assert c.cmd("CONFIG", "SET", "dbfilename", "root") == ref["config_set_dbfilename"].encode()
+        assert c.cmd("SET", f"gate1-{tag}", "payload") == b"+OK\r\n"
+        assert c.cmd("SAVE") == ref["save"].encode()
+        assert c.cmd("SLAVEOF", "192.0.2.10", "6379") == ref["slaveof"].encode()
+        assert c.cmd("SLAVEOF", "NO", "ONE") == ref["slaveof_no_one"].encode()
+    finally:
+        c.close()
+
+    sid = db_session_of(clickhouse, "redis", f"gate1-{tag}", t0)
+    row = summary(clickhouse, sid, lambda r: r["inputs"] >= 8 and r["decisions"] == r["inputs"])
+    assert row["protocol"] == "redis"
+    assert row["inputs"] == row["decisions"] == 8 and row["fallbacks"] == 0
+    changes = [
+        json.loads(r["payload"])
+        for r in clickhouse(
+            "SELECT payload FROM mirage.events FINAL "
+            f"WHERE session_id = '{sid}' AND action = 'state_change' ORDER BY ts"
+        )
+    ]
+    slaveof = [ch for ch in changes if ch.get("op") == "slaveof"]
+    assert (slaveof[0]["host"], slaveof[0]["port"]) == ("192.0.2.10", 6379)
+    assert any(ch.get("op") == "set" and ch.get("key") == f"gate1-{tag}" for ch in changes)
+
+    # State is per source: visible to the address that wrote it, invisible to another.
+    key = f"gate1-iso-{tag}"
+    assert redis_as("198.51.100.7", "SET", key) == "+OK"
+    assert redis_as("198.51.100.7", "EXISTS", key) == ":1"
+    assert redis_as("198.51.100.8", "EXISTS", key) == ":0"
+
+
+def _mysql(env, **kw) -> pymysql.connections.Connection:
+    user = json.loads((ROOT / "build/profile/mysql.json").read_text())["users"][0]
+    args = {
+        "host": "127.0.0.1",
+        "port": int(env.get("MYSQL_PORT", "3307")),
+        "user": user["user"],
+        "password": user["password"],
+        "connect_timeout": 10,
+        "read_timeout": 10,
+        "autocommit": True,
+        **kw,
+    }
+    return pymysql.connect(**args)
+
+
+def test_4_mysql_session(env, clickhouse, t0):
+    tag = uuid.uuid4().hex[:8]
+    conn = _mysql(env)
+    try:
+        with conn.cursor() as cur:
+            cur.execute(f"SELECT 'gate1-{tag}'")
+            assert cur.fetchall() == ((f"gate1-{tag}",),)
+            cur.execute("SHOW DATABASES")
+            dbs = [r[0] for r in cur.fetchall()]
+            assert "crm" in dbs and "wordpress" in dbs
+            cur.execute("SELECT COUNT(*) FROM crm.customers")
+            (before,) = cur.fetchone()
+            cur.execute(f"INSERT INTO crm.customers (first_name) VALUES ('gate1-{tag}')")
+            assert cur.rowcount == 1
+            cur.execute(f"SELECT COUNT(*) FROM crm.customers WHERE first_name = 'gate1-{tag}'")
+            assert cur.fetchone() == (1,)
+            ref = REF["mysql"]["queries"]
+            for sql in ("SELECT 1 INTO OUTFILE '/tmp/mirage_probe.txt'", "SELEC 1"):
+                with pytest.raises(pymysql.MySQLError) as info:
+                    cur.execute(sql)
+                want = ref[sql]["error"]
+                assert info.value.args == (want["code"], want["message"])
+    finally:
+        conn.close()
+    assert before > 0
+
+    sid = db_session_of(clickhouse, "mysql", f"gate1-{tag}", t0)
+    row = summary(clickhouse, sid, lambda r: r["inputs"] >= 7 and r["decisions"] == r["inputs"])
+    assert row["protocol"] == "mysql"
+    assert row["decisions"] == row["inputs"] and row["fallbacks"] == 0
+    assert row["auth_attempts"] == 1 and row["auth_success"] == 1
+    assert clickhouse(
+        f"SELECT 1 FROM mirage.events FINAL WHERE session_id = '{sid}' AND action = 'state_change' "
+        "AND JSONExtractString(payload, 'op') = 'insert'"
+    )
 
 
 # ----------------------------------------------------------------------------- test 5: tokens
 
 
-def test_5_token_chain_ssh_to_http(env, clickhouse, t0):
-    token = _db_token()
-    tag = uuid.uuid4().hex[:8]
-    sh = Shell(int(env.get("SSH_PORT", "2222")))
-    try:
-        sh.run(f"echo mirage-gate1-chain-{tag}")
-        leaked = sh.run("cat /var/www/html/.env", wait=1.2)
-    finally:
-        sh.close()
-    assert token["value"] in leaked  # the SSH side really exposes the planted password
-    ssh_sid = ssh_session_id(clickhouse, t0, f"mirage-gate1-chain-{tag}")
-
-    base = f"http://127.0.0.1:{env.get('HTTP_PORT', '8081')}"
-    with httpx.Client(base_url=base, headers={"User-Agent": f"gate1-chain-{tag}"}) as c:
-        c.get(f"/phpmyadmin/?gate1-chain-{tag}")
-        c.post(
-            "/phpmyadmin/",
-            data={"pma_username": token["username"], "pma_password": token["value"]},
-        )
-    http_sid = http_session_of(clickhouse, "/phpmyadmin/", t0)
-
+def _chain_checks(clickhouse, token: dict, ssh_sid: str, other_sid: str) -> None:
+    """token.triggered for the second session, a honeytoken link, one actor for both."""
     finding = poll(
         clickhouse,
         "SELECT payload FROM mirage.events FINAL WHERE action = 'token_triggered' "
         f"AND JSONExtractString(payload, 'token_id') = '{token['token_id']}' "
-        f"AND JSONExtractString(payload, 'session') = '{http_sid}'",
+        f"AND JSONExtractString(payload, 'session') = '{other_sid}'",
     )
     p = json.loads(finding[0]["payload"])
     assert p["planted_at"] == token["planted_at"]
-    a, b = sorted((ssh_sid, http_sid))
+    a, b = sorted((ssh_sid, other_sid))
     (link,) = poll(
         clickhouse,
         "SELECT * FROM mirage.actor_links FINAL "
@@ -366,14 +522,55 @@ def test_5_token_chain_ssh_to_http(env, clickhouse, t0):
     actors = poll(
         clickhouse,
         "SELECT session_id, actor_id FROM mirage.session_summary FINAL "
-        f"WHERE session_id IN ('{ssh_sid}', '{http_sid}')",
+        f"WHERE session_id IN ('{ssh_sid}', '{other_sid}')",
         lambda rows: len(rows) == 2 and rows[0]["actor_id"] == rows[1]["actor_id"],
     )
     assert actors[0]["actor_id"].startswith("actor-")
     (s,) = clickhouse(
-        f"SELECT tokens FROM mirage.session_summary FINAL WHERE session_id = '{http_sid}'"
+        f"SELECT tokens FROM mirage.session_summary FINAL WHERE session_id = '{other_sid}'"
     )
     assert token["token_id"] in s["tokens"]
+
+
+def _ssh_reads_the_token(env, clickhouse, t0, token: dict, tag: str) -> str:
+    sh = Shell(int(env.get("SSH_PORT", "2222")))
+    try:
+        sh.run(f"echo mirage-gate1-chain-{tag}")
+        leaked = sh.run("cat /var/www/html/.env", wait=1.2)
+    finally:
+        sh.close()
+    assert token["value"] in leaked  # the SSH side really exposes the planted password
+    return ssh_session_id(clickhouse, t0, f"mirage-gate1-chain-{tag}")
+
+
+def test_5_token_chain_ssh_to_mysql(env, clickhouse, t0):
+    token = _db_token()
+    tag = uuid.uuid4().hex[:8]
+    ssh_sid = _ssh_reads_the_token(env, clickhouse, t0, token, tag)
+    conn = _mysql(env, user=token["username"], password=token["value"])
+    try:
+        with conn.cursor() as cur:
+            cur.execute(f"SELECT 'gate1-chain-{tag}'")
+    finally:
+        conn.close()
+    mysql_sid = db_session_of(clickhouse, "mysql", f"gate1-chain-{tag}", t0)
+    _chain_checks(clickhouse, token, ssh_sid, mysql_sid)
+
+
+def test_5_token_chain_ssh_to_http(env, clickhouse, t0):
+    token = _db_token()
+    tag = uuid.uuid4().hex[:8]
+    ssh_sid = _ssh_reads_the_token(env, clickhouse, t0, token, tag)
+
+    base = f"http://127.0.0.1:{env.get('HTTP_PORT', '8081')}"
+    with httpx.Client(base_url=base, headers={"User-Agent": f"gate1-chain-{tag}"}) as c:
+        c.get(f"/phpmyadmin/?gate1-chain-{tag}")
+        c.post(
+            "/phpmyadmin/",
+            data={"pma_username": token["username"], "pma_password": token["value"]},
+        )
+    http_sid = http_session_of(clickhouse, "/phpmyadmin/", t0)
+    _chain_checks(clickhouse, token, ssh_sid, http_sid)
 
 
 # ----------------------------------------------------------------------------- test 9: latency
@@ -439,16 +636,31 @@ def test_6_decoys_fail_open_when_policy_is_down(env, clickhouse, t0, policy_stop
     with httpx.Client(base_url=base, timeout=10) as c:
         r = c.get(f"/gate1-down-{tag}")
     assert r.status_code == 404 and r.text == REF["nginx"]["404"]["body"]
-    for source in ("cowrie", "http-decoy"):
+    c = Resp(int(env.get("REDIS_PORT", "6380")))
+    try:
+        assert c.cmd("SET", f"gate1-down-{tag}", "1") == b"+OK\r\n"
+    finally:
+        c.close()
+    conn = _mysql(env)
+    try:
+        with conn.cursor() as cur:
+            cur.execute(f"SELECT 'gate1-down-{tag}'")
+            assert cur.fetchall() == ((f"gate1-down-{tag}",),)
+    finally:
+        conn.close()
+    for source in ("cowrie", "http-decoy", "db-decoy"):
+        want = 2 if source == "db-decoy" else 1  # db-decoy: one from Redis, one from MySQL
         rows = poll(
             clickhouse,
             "SELECT payload FROM mirage.events FINAL WHERE class = 'policy_decision' "
             f"AND source = '{source}' AND ts >= '{t0}' "
             f"AND position(JSONExtractString(payload, 'command'), 'gate1-down-{tag}') > 0",
+            lambda r, w=want: len(r) >= w,
         )
-        p = json.loads(rows[0]["payload"])
-        assert p["fallback"] is True and p["action"] == "allow", (source, p)
-        assert p["fallback_reason"], (source, p)
+        for row in rows:
+            p = json.loads(row["payload"])
+            assert p["fallback"] is True and p["action"] == "allow", (source, p)
+            assert p["fallback_reason"], (source, p)
 
 
 # ----------------------------------------------------------------------------- test 10: pipeline

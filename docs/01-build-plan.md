@@ -125,7 +125,7 @@ The full specification, with acceptance criteria for every package, is in [04-ph
 | 1.7 Sessioniser | `session_summary` for all protocols; fingerprints; `actor_links` (honeytoken use, HASSH plus credentials, source address) |
 | 1.8 Artifact store | Files named by hash, mode 0400, on volumes mounted read-write only by their writer; an index table; size caps; never executed |
 
-**Status (12 November 2026):** built and tested on the laptop except 1.5, the database decoys. Gate 1 tests 1, 2, 5 (as SSH to HTTP), 6, 7, 8, 9 and 10 pass; 3 and 4 wait for 1.5, so the gate is not yet passed. Details: [spec section 10](04-phase-1-spec.md#10-implementation-status-12-november-2026).
+**Status (12 November 2026):** built and tested on the laptop, including 1.5 (the Redis and MySQL decoys). All ten Gate 1 tests pass. Details: [spec section 10](04-phase-1-spec.md#10-implementation-status-12-november-2026).
 
 **Gate 1:** the ten tests in [spec section 6](04-phase-1-spec.md#6-gate-1) pass in CI. In short:
 

@@ -40,9 +40,11 @@ def test_proxy_rejects_garbage_and_v1():
 class _Policy(BaseHTTPRequestHandler):
     protocol_version = "HTTP/1.1"
     mode = "ok"
+    hosts: list[str | None] = []  # noqa: RUF012 test-only shared record
 
     def do_POST(self):
         body = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
+        _Policy.hosts.append(self.headers.get("Host"))
         if self.headers.get("Authorization") != "Bearer secret-token-xxxxxxxx":
             self.send_response(401)
             self.send_header("Content-Length", "0")
@@ -111,6 +113,29 @@ async def test_gate_falls_back_to_allow(policy_url, mode, token, reason):
     assert a.action is Action.ALLOW and a.fallback and a.fallback_reason == reason
     assert a.latency_ms < 250
     await g.close()
+
+
+async def test_gate_resolves_the_name_once_and_keeps_its_host_header(policy_url):
+    url = policy_url.replace("127.0.0.1", "localhost")
+    g = GateClient(url, "secret-token-xxxxxxxx", timeout_ms=1000)
+    assert g.target() == (url, {})  # nothing resolved yet
+    _Policy.hosts.clear()
+    first = await g.decide(REQ)
+    await asyncio.sleep(0.05)  # the background lookup has run
+    target, headers = g.target()
+    assert target == policy_url and headers == {"Host": url.split("/")[2]}
+    second = await g.decide(REQ)
+    assert not first.fallback and not second.fallback
+    assert _Policy.hosts[-1] == url.split("/")[2]  # the server still sees its own name
+    await g.close()
+
+
+def test_gate_address_forms():
+    g = GateClient("http://policy:8000/v1/decide")
+    g._address = "fd00::5"
+    assert g.target() == ("http://[fd00::5]:8000/v1/decide", {"Host": "policy:8000"})
+    lit = GateClient("http://10.1.2.3:8000/v1/decide")
+    assert lit.target() == ("http://10.1.2.3:8000/v1/decide", {})
 
 
 async def test_gate_service_down_and_disabled():
