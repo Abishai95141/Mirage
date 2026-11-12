@@ -1,0 +1,8 @@
+id: smoke-redis-poke
+actor: {class: scripted_bot, timing: bot-fast, patience: 3}
+sessions:
+  - protocol: redis
+    steps:
+      - {id: s1, procedure: redis-ping, expect: "PONG"}
+      - {id: s2, procedure: redis-server-info, expect: "redis_version"}
+      - {id: s3, procedure: redis-list-keys}

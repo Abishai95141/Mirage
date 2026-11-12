@@ -1,0 +1,22 @@
+# Benign read-only procedures over HTTP, Redis and MySQL: enough to prove the drivers and the
+# label join on every protocol. The offensive catalogue (miner, persistence, exploit, theft)
+# is written separately; these are plain fetches and discovery reads.
+attack_version: "20.1"
+procedures:
+  # ---- HTTP
+  - {id: web-get-index, source: own, protocol: http, template: "GET /"}
+  - {id: web-get-login-page, source: own, protocol: http, template: "GET /wp-login.php"}
+  - {id: web-probe-missing, source: own, protocol: http, template: "GET /{{word}}"}
+  # ---- Redis
+  - {id: redis-ping, source: own, protocol: redis, template: "PING"}
+  - {id: redis-server-info, technique: T1082, tactic: TA0007, source: own, protocol: redis,
+     template: "INFO server"}
+  - {id: redis-list-keys, technique: T1083, tactic: TA0007, source: own, protocol: redis,
+     template: "KEYS *"}
+  # ---- MySQL
+  - {id: mysql-login, kind: auth, source: own, protocol: mysql}
+  - {id: mysql-select-one, source: own, protocol: mysql, template: "SELECT 1"}
+  - {id: mysql-show-databases, technique: T1082, tactic: TA0007, source: own, protocol: mysql,
+     template: "SHOW DATABASES"}
+  - {id: mysql-count-rows, technique: T1005, tactic: TA0009, source: own, protocol: mysql,
+     template: "SELECT COUNT(*) FROM crm.customers"}

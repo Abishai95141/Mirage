@@ -39,6 +39,17 @@ COMMON_PASSWORDS = (
     "123456", "password", "admin", "root", "12345678", "qwerty", "123123", "1234", "abc123",
     "toor", "changeme", "letmein", "welcome", "P@ssw0rd", "111111", "test", "ubuntu", "raspberry",
 )  # fmt: skip
+# Client strings a web scanner or tool might send; one per actor (used by the HTTP driver).
+HTTP_USER_AGENTS = (
+    "curl/8.5.0",
+    "Wget/1.21.4",
+    "python-requests/2.32.3",
+    "Go-http-client/1.1",
+    "Mozilla/5.0 (X11; Linux x86_64) Gecko/20100101 Firefox/128.0",
+    "Mozilla/5.0 (compatible; masscan/1.3)",
+    "zgrab/0.x",
+    "libwww-perl/6.77",
+)
 ANSI = re.compile(r"\x1b\[[0-9;?]*[a-zA-Z]")
 PROMPT = re.compile(r"[#$] $")
 
@@ -53,6 +64,7 @@ class Fingerprint:
     def __init__(self, rng: random.Random) -> None:
         self.banner = rng.choice(BANNERS)
         self.seed = rng.getrandbits(32)
+        self.user_agent = rng.choice(HTTP_USER_AGENTS)
 
     def apply(self, transport: paramiko.Transport) -> None:
         transport.local_version = f"SSH-2.0-{self.banner}"

@@ -174,6 +174,8 @@ def lint(
             proc = catalogue.procedures.get(session.login.procedure)
             if proc is None or proc.kind != "auth" or proc.protocol != session.protocol:
                 out.append(f"{where}: login procedure must be an auth procedure for this protocol")
+            elif session.protocol not in ("ssh", "mysql"):
+                out.append(f"{where}: only SSH and MySQL sessions authenticate")
             elif splits is not None:
                 used_splits.add(splits.get(proc.id, "unassigned"))
         for i, step in enumerate(session.steps):
@@ -186,6 +188,8 @@ def lint(
                 out.append(f"{at}: procedure is for {proc.protocol}, session is {session.protocol}")
             if proc.kind == "auth":
                 out.append(f"{at}: an auth procedure belongs under login, not in steps")
+            if proc.kind == "upload" and proc.protocol != "ssh":
+                out.append(f"{at}: only SSH procedures can upload")
             if step.expect_status is not None and session.channel != "exec":
                 out.append(f"{at}: expect_status needs an exec channel")
             if isinstance(step.on_fail, Goto):

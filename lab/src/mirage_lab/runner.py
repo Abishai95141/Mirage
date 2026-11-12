@@ -9,6 +9,7 @@ of them.
 from __future__ import annotations
 
 import hashlib
+import json
 import os
 import random
 import re
@@ -18,8 +19,10 @@ from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import Any
 
 from mirage_lab.drivers.base import Result
+from mirage_lab.drivers.plain import HTTPDriver, MySQLDriver, RedisDriver
 from mirage_lab.drivers.ssh import Fingerprint, SSHDriver
 from mirage_lab.models import (
     Catalogue,
@@ -73,6 +76,15 @@ def root_password(profile_dir: Path, user: str) -> str:
         if len(parts) == 3 and parts[0] == user and not parts[2].startswith("!"):
             return parts[2]
     raise ValueError(f"the profile has no password for {user!r}")
+
+
+def db_password(profile_dir: Path, user: str) -> str:
+    """A MySQL user's password, from the deployment profile."""
+    data = json.loads((profile_dir / "mysql.json").read_text())
+    for row in data.get("users", []):
+        if row.get("user") == user:
+            return str(row.get("password", ""))
+    raise ValueError(f"the profile has no MySQL user {user!r}")
 
 
 def endpoint(ip: str, port: int) -> dict:
@@ -146,18 +158,29 @@ class ActorRun:
 
     # ------------------------------------------------------------------ one session
 
+    def _make_driver(self, spec: SessionSpec) -> Any:
+        """The client for this session's protocol. All share the SSH driver's interface."""
+        if spec.protocol == "ssh":
+            password = root_password(self.settings.profile_dir, spec.login.user)
+            return self.driver_factory(
+                self.dialer, self.timing, self.fingerprint, spec.login.user, password, spec.channel
+            )
+        if spec.protocol == "http":
+            return HTTPDriver(self.dialer, self.timing, self.fingerprint.user_agent)
+        if spec.protocol == "redis":
+            return RedisDriver(self.dialer, self.timing)
+        if spec.protocol == "mysql":
+            password = db_password(self.settings.profile_dir, spec.login.user)
+            return MySQLDriver(self.dialer, self.timing, spec.login.user, password)
+        raise NotImplementedError(f"no driver for {spec.protocol}")
+
     def session(self, index: int, spec: SessionSpec) -> None:
-        if spec.protocol != "ssh":
-            raise NotImplementedError(f"no driver for {spec.protocol} yet")
         session_ref = f"{self.actor_ref}/{index}"
         if spec.gap_s:
             time.sleep(spec.gap_s * self.settings.time_scale)
         started = now()
         first_conn = len(self.dialer.opened)
-        password = root_password(self.settings.profile_dir, spec.login.user)
-        driver = self.driver_factory(
-            self.dialer, self.timing, self.fingerprint, spec.login.user, password, spec.channel
-        )
+        driver = self._make_driver(spec)
         try:
             login = driver.login(spec.login.guesses)
             if spec.login.procedure:
@@ -204,7 +227,7 @@ class ActorRun:
             )
         )
 
-    def _steps(self, session_ref: str, spec: SessionSpec, driver: SSHDriver) -> None:
+    def _steps(self, session_ref: str, spec: SessionSpec, driver: Any) -> None:
         steps, index, budget = spec.steps, 0, MAX_STEPS_PER_SESSION
         tries: dict[str, int] = {}
         done: set[str] = set()
@@ -253,7 +276,7 @@ class ActorRun:
             proc = self.catalogue.procedures[step.procedure]
             self._step_record(session_ref, step.id, proc, None, None, "skipped")
 
-    def _send(self, step: Step, proc: Procedure, driver: SSHDriver) -> Result:
+    def _send(self, step: Step, proc: Procedure, driver: Any) -> Result:
         values = self.slots.fill(proc.slots(), step.with_)
         text = render(proc.template or "", values)
         problems = check_input(text, (proc.id, self.scenario.id))

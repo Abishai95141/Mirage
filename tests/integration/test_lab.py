@@ -192,3 +192,43 @@ def test_each_simulated_actor_is_its_own_source_and_actor(smoke_run, clickhouse)
         pipeline_actors.setdefault(s["actor_ref"], set()).add(actor_of[s["session_id"]])
     assert all(len(a) == 1 for a in pipeline_actors.values()), pipeline_actors
     assert len({next(iter(a)) for a in pipeline_actors.values()}) == 6, pipeline_actors
+
+
+# ------------------------------------------------------------------ protocol coverage
+
+
+@pytest.fixture(scope="module")
+def proto_run(clickhouse):
+    out = runner("run", "/lab/scenarios/smoke-proto", "--seed", str(int(time.time())))
+    summary = json.loads(out.stdout.strip().splitlines()[-1])
+    assert summary["errors"] == []
+    (row,) = poll(
+        clickhouse,
+        f"SELECT * FROM mirage.sim_runs FINAL WHERE run_id = '{summary['run_id']}' AND final = 1",
+        lambda rows: len(rows) == 1,
+    )
+    return summary, row
+
+
+def test_http_redis_mysql_sessions_all_join_cleanly(proto_run, clickhouse):
+    summary, row = proto_run
+    assert row["no_event"] == 0 and row["mismatch"] == 0, row["problems"]
+    assert row["connections_unmatched"] == 0, row["problems"]
+    assert row["matched"] == summary["steps"]["ran"]
+    rows = clickhouse(
+        "SELECT protocol, sim_role, technique_id, class, action FROM mirage.events_labelled "
+        f"WHERE sim_run_id = '{summary['run_id']}'"
+    )
+    by_proto: dict[str, set[str]] = {}
+    for r in rows:
+        by_proto.setdefault(r["protocol"], set()).add(r["sim_role"])
+    assert set(by_proto) == {"http", "redis", "mysql"}
+    # every protocol has both the content event and its gate decision labelled
+    assert all(roles >= {"input", "decision"} for roles in by_proto.values()), by_proto
+    # the input labels sit on the right event classes per protocol
+    inputs = {(r["protocol"], r["class"]) for r in rows if r["sim_role"] == "input"}
+    assert ("http", "http_activity") in inputs
+    assert ("redis", "datastore_activity") in inputs
+    assert ("mysql", "datastore_activity") in inputs
+    assert ("mysql", "authentication") in inputs  # the login step
+    assert {r["technique_id"] for r in rows if r["technique_id"]} >= {"T1082", "T1083", "T1005"}

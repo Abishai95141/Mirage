@@ -1,0 +1,8 @@
+id: smoke-http-scan
+actor: {class: scanner, timing: scan, patience: 3}
+sessions:
+  - protocol: http
+    steps:
+      - {id: s1, procedure: web-get-index, expect: "200"}
+      - {id: s2, procedure: web-get-login-page}
+      - {id: s3, procedure: web-probe-missing, expect: "404"}
