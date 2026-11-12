@@ -1,3 +1,4 @@
+import json
 from datetime import UTC, datetime, timedelta
 
 import pytest
@@ -9,7 +10,10 @@ from mirage_schema import (
     GroundTruth,
     Label,
     MirageEvent,
+    SessionTruth,
     Source,
+    input_hash,
+    parse_record,
 )
 from mirage_schema.export import schemas
 
@@ -75,20 +79,72 @@ def test_actor_label_needs_no_attack_version():
 
 def _gt(**kw):
     base = dict(
+        run_id="r1",
         scenario_id="s1",
+        session_ref="s1/0",
+        protocol="ssh",
         step_id="1",
         procedure_id="p-cron-persist",
         technique_id="T1053.003",
         tactic="TA0003",
         attack_version="20.1",
-        src={"ip": "10.10.0.5"},
+        src={"ip": "198.18.0.5", "port": 40001},
         dst={"ip": "10.10.0.2", "port": 2222},
+        input_sha256=input_hash("crontab -l"),
         start_ts=NOW,
         end_ts=NOW + timedelta(seconds=2),
         status="ran",
     )
     base.update(kw)
     return GroundTruth(**base)
+
+
+def _session(**kw):
+    base = dict(
+        run_id="r1",
+        scenario_id="s1",
+        session_ref="s1/0",
+        protocol="ssh",
+        actor_ref="a1",
+        actor_class="scripted_bot",
+        timing_profile="bot-fast",
+        mode="capture",
+        connections=[
+            {
+                "src": {"ip": "198.18.0.5", "port": 40001},
+                "dst": {"ip": "10.10.0.2", "port": 2222},
+                "opened_ts": NOW,
+            }
+        ],
+        start_ts=NOW,
+        end_ts=NOW + timedelta(seconds=9),
+    )
+    base.update(kw)
+    return SessionTruth(**base)
+
+
+def test_step_without_a_technique_is_an_explicit_negative():
+    assert _gt(technique_id=None, tactic=None).technique_id is None
+    with pytest.raises(ValidationError):
+        _gt(tactic=None)  # a technique without its tactic
+
+
+def test_session_truth_needs_an_addressed_connection():
+    assert _session().connections[0].src.port == 40001
+    with pytest.raises(ValidationError):
+        _session(connections=[])
+    with pytest.raises(ValidationError):
+        _session(connections=[{"src": {"ip": "198.18.0.5"}, "dst": {"port": 22}, "opened_ts": NOW}])
+    with pytest.raises(ValidationError):
+        _session(actor_class="robot")
+
+
+def test_parse_record_dispatches_on_kind():
+    step = json.loads(_gt().model_dump_json())
+    assert isinstance(parse_record(step), GroundTruth)
+    step.pop("kind")
+    assert isinstance(parse_record(step), GroundTruth)  # phase 0 records had no kind
+    assert isinstance(parse_record(json.loads(_session().model_dump_json())), SessionTruth)
 
 
 def test_ground_truth_valid():
@@ -112,3 +168,5 @@ def test_json_schema_export():
     assert "class" in ev["properties"]
     assert "class_uid" in ev["properties"]
     assert "technique_id" in out["ground-truth.schema.json"]["properties"]
+    assert "connections" in out["session-truth.schema.json"]["properties"]
+    assert "catalogue_sha256" in out["run-record.schema.json"]["properties"]

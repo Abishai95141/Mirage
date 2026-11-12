@@ -7,7 +7,7 @@ import json
 from pathlib import Path
 
 from mirage_schema.events import SCHEMA_VERSION, MirageEvent
-from mirage_schema.groundtruth import GroundTruth
+from mirage_schema.groundtruth import GroundTruth, RunRecord, SessionTruth
 
 
 def schemas() -> dict[str, dict]:
@@ -16,6 +16,8 @@ def schemas() -> dict[str, dict]:
             by_alias=True, mode="serialization"
         ),
         "ground-truth.schema.json": GroundTruth.model_json_schema(mode="serialization"),
+        "session-truth.schema.json": SessionTruth.model_json_schema(mode="serialization"),
+        "run-record.schema.json": RunRecord.model_json_schema(mode="serialization"),
     }
 
 

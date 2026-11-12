@@ -1,0 +1,203 @@
+{
+  "$defs": {
+    "Connection": {
+      "additionalProperties": false,
+      "properties": {
+        "closed_ts": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Closed Ts"
+        },
+        "dst": {
+          "$ref": "#/$defs/Endpoint"
+        },
+        "opened_ts": {
+          "format": "date-time",
+          "title": "Opened Ts",
+          "type": "string"
+        },
+        "src": {
+          "$ref": "#/$defs/Endpoint"
+        }
+      },
+      "required": [
+        "src",
+        "dst",
+        "opened_ts"
+      ],
+      "title": "Connection",
+      "type": "object"
+    },
+    "Endpoint": {
+      "additionalProperties": false,
+      "properties": {
+        "asn": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Asn"
+        },
+        "country": {
+          "anyOf": [
+            {
+              "maxLength": 2,
+              "minLength": 2,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Country"
+        },
+        "ip": {
+          "anyOf": [
+            {
+              "format": "ipvanyaddress",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Ip"
+        },
+        "port": {
+          "anyOf": [
+            {
+              "maximum": 65535,
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Port"
+        },
+        "pseudonym": {
+          "anyOf": [
+            {
+              "maxLength": 128,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Pseudonym"
+        }
+      },
+      "title": "Endpoint",
+      "type": "object"
+    }
+  },
+  "$id": "https://mirage.invalid/schema/0.3.0/session-truth.schema.json",
+  "additionalProperties": false,
+  "properties": {
+    "actor_class": {
+      "enum": [
+        "scanner",
+        "scripted_bot",
+        "human",
+        "llm_agent"
+      ],
+      "title": "Actor Class",
+      "type": "string"
+    },
+    "actor_ref": {
+      "title": "Actor Ref",
+      "type": "string"
+    },
+    "connections": {
+      "items": {
+        "$ref": "#/$defs/Connection"
+      },
+      "minItems": 1,
+      "title": "Connections",
+      "type": "array"
+    },
+    "end_ts": {
+      "format": "date-time",
+      "title": "End Ts",
+      "type": "string"
+    },
+    "kind": {
+      "const": "session",
+      "default": "session",
+      "title": "Kind",
+      "type": "string"
+    },
+    "mode": {
+      "enum": [
+        "capture",
+        "explore"
+      ],
+      "title": "Mode",
+      "type": "string"
+    },
+    "protocol": {
+      "title": "Protocol",
+      "type": "string"
+    },
+    "real": {
+      "default": false,
+      "title": "Real",
+      "type": "boolean"
+    },
+    "run_id": {
+      "title": "Run Id",
+      "type": "string"
+    },
+    "scenario_id": {
+      "title": "Scenario Id",
+      "type": "string"
+    },
+    "session_ref": {
+      "title": "Session Ref",
+      "type": "string"
+    },
+    "start_ts": {
+      "format": "date-time",
+      "title": "Start Ts",
+      "type": "string"
+    },
+    "timing_profile": {
+      "title": "Timing Profile",
+      "type": "string"
+    }
+  },
+  "required": [
+    "run_id",
+    "scenario_id",
+    "session_ref",
+    "protocol",
+    "actor_ref",
+    "actor_class",
+    "timing_profile",
+    "mode",
+    "connections",
+    "start_ts",
+    "end_ts"
+  ],
+  "title": "SessionTruth",
+  "type": "object"
+}

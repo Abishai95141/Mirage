@@ -2,7 +2,7 @@
 
 Status: draft for review · 11 November 2026, phase 1 tightened and built (except 1.5) 12 November
 Inputs: the technical report (11 Nov 2026) and the research in [`reports/MIRAGE honeypot build research.md`](../reports/MIRAGE%20honeypot%20build%20research.md)
-Companion docs: [architecture](02-architecture.md) · [AI/ML design](03-ai-ml-design.md) · [phase 1 spec](04-phase-1-spec.md)
+Companion docs: [architecture](02-architecture.md) · [AI/ML design](03-ai-ml-design.md) · [phase 1 spec](04-phase-1-spec.md) · [phase 2 spec](05-phase-2-spec.md)
 
 ## 1. What we are building first
 
@@ -152,6 +152,8 @@ Goal: the loop closes. Labelled data exists, models are trained on it, and the b
 | 2.7 Dashboard v1 | Grafana: session list, replay link, tactic heatmap, alerts |
 | 2.8 Demos 1 and 2 | Run in CI; expected tags and alerts asserted |
 | 2.9 First external sensor (optional) | One hardened SSH decoy on the Linux host, only after the exposure checklist in section 7 is signed off |
+
+Specified in the [phase 2 spec](05-phase-2-spec.md) (draft, 12 November 2026), which redefines demos 1 and 2 for what phases 0 to 2 contain, moves `plant_token` to phase 3 and leaves 2.9 out of the gate.
 
 **Gate 2 (MVP):** demos 1 and 2 pass in CI with the expected tactic tags; the tagger and classifier report metrics on a held-out split that shares no procedures with training; the bandit has logged propensities for at least a few hundred lab sessions.
 

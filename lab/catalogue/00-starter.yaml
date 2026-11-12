@@ -1,0 +1,55 @@
+# Starter catalogue: enough procedures to prove the runner and the label join end to end.
+# The full catalogue (spec 2.1) replaces this. Technique and tactic IDs are ATT&CK v20.1.
+attack_version: "20.1"
+procedures:
+  - id: ssh-password-guessing
+    technique: T1110.001
+    tactic: TA0006
+    source: own
+    protocol: ssh
+    kind: auth
+  - id: sysinfo-uname-all
+    technique: T1082
+    tactic: TA0007
+    source: own
+    protocol: ssh
+    template: "uname -a"
+  - id: owner-id
+    technique: T1033
+    tactic: TA0007
+    source: own
+    protocol: ssh
+    template: "id"
+  - id: owner-w
+    technique: T1033
+    tactic: TA0007
+    source: own
+    protocol: ssh
+    template: "w"
+  - id: accounts-passwd
+    technique: T1087.001
+    tactic: TA0007
+    source: own
+    protocol: ssh
+    template: "cat /etc/passwd"
+  - id: files-list-dir
+    technique: T1083
+    tactic: TA0007
+    source: own
+    protocol: ssh
+    template: "ls -la {{dir}}"
+  - id: change-dir
+    source: own
+    protocol: ssh
+    template: "cd {{dir}}"
+  - id: transfer-sftp-put
+    technique: T1105
+    tactic: TA0011
+    source: own
+    protocol: ssh
+    kind: upload
+    template: "/tmp/{{file}}"
+  - id: probe-missing-tool
+    source: own
+    protocol: ssh
+    template: "{{word}} --version"

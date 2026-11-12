@@ -1,0 +1,20 @@
+[project]
+name = "mirage-lab"
+version = "0.1.0"
+description = "MIRAGE simulation lab: scenario runner that drives the decoys and records ground truth"
+requires-python = ">=3.12,<3.14"
+license = "Apache-2.0"
+dependencies = ["mirage-schema", "pydantic>=2.9", "pyyaml>=6.0", "paramiko>=3.5"]
+
+[project.scripts]
+mirage-lab = "mirage_lab.cli:main"
+
+[build-system]
+requires = ["hatchling>=1.25"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/mirage_lab"]
+
+[tool.uv.sources]
+mirage-schema = { workspace = true }

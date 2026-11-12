@@ -1,6 +1,6 @@
 COMPOSE := docker compose --env-file .env -f compose/docker-compose.yml
 
-.PHONY: help env profile profile-ref reference-image dashboards up migrate down nuke ps logs test itest lint fmt schema probe
+.PHONY: help env profile profile-ref reference-image dashboards up migrate down nuke ps logs lab-up lab-run lab-down test itest lint fmt schema probe
 
 help:
 	@grep -E '^[a-z-]+:.*?## ' $(MAKEFILE_LIST) | awk 'BEGIN{FS=":.*?## "}{printf "  %-12s %s\n",$$1,$$2}'
@@ -29,11 +29,11 @@ dashboards: ## Regenerate the Grafana dashboards (compose/grafana/dashboards)
 migrate: ## Re-apply ClickHouse DDL (idempotent) to a running stack
 	$(COMPOSE) exec -T clickhouse sh -c 'clickhouse-client --user "$$CLICKHOUSE_USER" --password "$$CLICKHOUSE_PASSWORD" --multiquery' < compose/clickhouse/init.sql
 
-down: ## Stop the stack (keeps data)
-	$(COMPOSE) down
+down: ## Stop the stack, the lab included (keeps data)
+	$(COMPOSE) --profile lab down
 
 nuke: ## Stop the stack and delete all data volumes
-	$(COMPOSE) down -v
+	$(COMPOSE) --profile lab down -v
 
 ps: ## Show service status
 	$(COMPOSE) ps
@@ -43,6 +43,19 @@ logs: ## Follow logs
 
 test: ## Unit tests
 	uv run pytest
+
+LAB := $(COMPOSE) --profile lab
+SCENARIOS ?= /lab/scenarios/smoke
+
+lab-up: ## Start the lab edge and the label join (never on an exposed sensor)
+	$(LAB) up -d --build --wait lab-edge sim-join
+	$(LAB) build -q runner
+
+lab-run: ## Run scenarios in the lab: make lab-run SCENARIOS=/lab/scenarios/smoke ARGS="--repeat 3"
+	$(LAB) run --rm -e MIRAGE_CODE_VERSION=$$(git rev-parse --short HEAD) runner run $(SCENARIOS) $(ARGS)
+
+lab-down: ## Stop the lab containers; the decoys and the pipeline keep running
+	$(LAB) stop lab-edge sim-join
 
 itest: ## Integration tests against the running stack (Gates 0 and 1)
 	uv run pytest -m integration -v

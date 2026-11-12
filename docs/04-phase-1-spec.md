@@ -281,7 +281,7 @@ All of these run in CI (`tests/integration/test_gate1.py`, plus the updated cont
 | Profile-dependent commands Cowrie lacks (`lscpu`, `ss`, `free`) | Pre-rendered per profile in phase 3 (S2). Until then they get "command not found". |
 
 | Artifact eviction | The 50 MiB per-file cap is enforced (Cowrie's `download_limit_size`, the decoys' `ArtifactStore`). The 5 GiB per-deployment cap is not: only the writing decoy may delete, and no decoy evicts yet. |
-| Cowrie behaviours found while testing | An exec channel's close ends the whole connection, so paramiko's `exec_command` fails. `ls` with several directories prints no headers. Globs such as `/home/*` are not expanded. All upstream; candidates for the fork in phase 3. |
+| Cowrie behaviours found while testing | `ls` with several directories prints no headers. Globs such as `/home/*` are not expanded. Both upstream; candidates for the fork in phase 3. (An earlier note here said an exec channel's close ends the connection. Phase 2 tested exec requests in 14 forms, alone and mixed with a shell and SFTP, and all work and are gated.) |
 
 ## 9. Out of scope
 

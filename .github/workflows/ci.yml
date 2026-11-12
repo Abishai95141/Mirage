@@ -22,7 +22,8 @@ jobs:
       - run: uv run pytest
 
   integration:
-    # Gates 0 and 1, containment and the default-tell checks, against the real compose stack.
+    # Gates 0 and 1, containment, the default-tell checks and the phase 2 lab (runner
+    # isolation, a scenario run, label-join health), against the real compose stack.
     runs-on: ubuntu-24.04
     needs: lint-unit
     steps:
@@ -35,9 +36,10 @@ jobs:
       # produce are committed (decoys/profiles/reference/debian-12.json), so CI only builds it.
       - run: make env && make reference-image
       - run: make up
+      - run: make lab-up
       - run: make itest
       - if: failure()
-        run: docker compose --env-file .env -f compose/docker-compose.yml logs --tail=200
+        run: docker compose --env-file .env -f compose/docker-compose.yml --profile lab logs --tail=200
       - if: always()
         run: make nuke
 

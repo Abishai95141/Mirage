@@ -8,6 +8,7 @@ members = [
     "mirage-db-decoy",
     "mirage-decoy-common",
     "mirage-http-decoy",
+    "mirage-lab",
     "mirage-pipeline",
     "mirage-policy",
     "mirage-profiles",
@@ -354,6 +355,7 @@ dev = [
     { name = "mirage-db-decoy" },
     { name = "mirage-decoy-common" },
     { name = "mirage-http-decoy" },
+    { name = "mirage-lab" },
     { name = "mirage-pipeline" },
     { name = "mirage-policy" },
     { name = "mirage-profiles" },
@@ -376,6 +378,7 @@ dev = [
     { name = "mirage-db-decoy", editable = "decoys/db" },
     { name = "mirage-decoy-common", editable = "decoys/common" },
     { name = "mirage-http-decoy", editable = "decoys/http" },
+    { name = "mirage-lab", editable = "lab" },
     { name = "mirage-pipeline", editable = "pipeline" },
     { name = "mirage-policy", editable = "policy" },
     { name = "mirage-profiles", editable = "decoys/profiles" },
@@ -437,6 +440,25 @@ requires-dist = [
     { name = "h11", specifier = ">=0.14" },
     { name = "mirage-decoy-common", editable = "decoys/common" },
     { name = "mirage-schema", editable = "schema" },
+]
+
+[[package]]
+name = "mirage-lab"
+version = "0.1.0"
+source = { editable = "lab" }
+dependencies = [
+    { name = "mirage-schema" },
+    { name = "paramiko" },
+    { name = "pydantic" },
+    { name = "pyyaml" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "mirage-schema", editable = "schema" },
+    { name = "paramiko", specifier = ">=3.5" },
+    { name = "pydantic", specifier = ">=2.9" },
+    { name = "pyyaml", specifier = ">=6.0" },
 ]
 
 [[package]]

@@ -27,7 +27,7 @@ from pydantic import (
     model_validator,
 )
 
-SCHEMA_VERSION = "0.2.0"
+SCHEMA_VERSION = "0.3.0"
 
 
 class Source(StrEnum):

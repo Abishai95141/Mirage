@@ -9,7 +9,7 @@ license = "Apache-2.0"
 package = false
 
 [tool.uv.workspace]
-members = ["schema", "pipeline", "policy", "decoys/common", "decoys/profiles", "decoys/tokens", "decoys/http", "decoys/db"]
+members = ["schema", "pipeline", "policy", "decoys/common", "decoys/profiles", "decoys/tokens", "decoys/http", "decoys/db", "lab"]
 
 [tool.uv.sources]
 mirage-schema = { workspace = true }
@@ -20,6 +20,7 @@ mirage-profiles = { workspace = true }
 mirage-tokens = { workspace = true }
 mirage-http-decoy = { workspace = true }
 mirage-db-decoy = { workspace = true }
+mirage-lab = { workspace = true }
 
 [dependency-groups]
 dev = [
@@ -31,6 +32,7 @@ dev = [
     "mirage-tokens",
     "mirage-http-decoy",
     "mirage-db-decoy",
+    "mirage-lab",
     "redis>=5.2",
     "pymysql>=1.1",
     "pytest>=8.3",
@@ -42,7 +44,7 @@ dev = [
 ]
 
 [tool.pytest.ini_options]
-testpaths = ["schema/tests", "pipeline/tests", "policy/tests", "decoys", "tests", "eval"]
+testpaths = ["schema/tests", "pipeline/tests", "policy/tests", "decoys", "lab", "tests", "eval"]
 markers = [
     "integration: needs the docker compose stack running (make up)",
 ]
@@ -60,7 +62,7 @@ select = ["E", "F", "W", "I", "B", "UP", "S", "SIM", "RUF"]
 ignore = ["S101"]  # assert is fine in tests
 
 [tool.ruff.lint.isort]
-known-first-party = ["mirage_schema", "mirage_pipeline", "mirage_policy", "mirage_decoy_common", "mirage_profiles", "mirage_tokens", "mirage_http_decoy", "mirage_db_decoy"]
+known-first-party = ["mirage_schema", "mirage_pipeline", "mirage_policy", "mirage_decoy_common", "mirage_profiles", "mirage_tokens", "mirage_http_decoy", "mirage_db_decoy", "mirage_lab"]
 
 [tool.ruff.lint.per-file-ignores]
 # Tests and spikes embed long SQL and JSON strings.
@@ -75,5 +77,9 @@ known-first-party = ["mirage_schema", "mirage_pipeline", "mirage_policy", "mirag
 # Decoys listen on all interfaces of their own container; the networks decide reachability.
 "decoys/common/src/**" = ["S104"]
 "decoys/ssh/build_fs.py" = ["S301", "S403", "E501"]
-# Unfinished Redis decoy modules (parked; see docs/04-phase-1-spec.md status): long tables.
+# The scenario runner draws everything from seeded generators so a run can be repeated (S311),
+# names world-writable directories in the commands it types (S108), and is a client of a
+# decoy whose host key it has no reason to check (S507).
+"lab/src/**" = ["S311", "S108", "S507"]
+# Redis decoy command and reply tables.
 "decoys/db/src/mirage_db_decoy/redis/*.py" = ["E501"]

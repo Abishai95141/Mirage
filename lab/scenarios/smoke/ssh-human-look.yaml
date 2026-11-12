@@ -1,0 +1,12 @@
+# Someone at a keyboard: typed key by key, with corrections and pauses to read.
+id: smoke-human-look
+actor: {class: human, timing: human, patience: 3}
+sessions:
+  - protocol: ssh
+    channel: shell
+    login: {user: root}
+    steps:
+      - {id: s1, procedure: owner-w}
+      - {id: s2, procedure: sysinfo-uname-all, expect: "Linux"}
+      - {id: s3, procedure: files-list-dir}
+      - {id: s4, procedure: accounts-passwd, expect: "root:"}

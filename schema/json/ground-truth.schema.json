@@ -74,7 +74,7 @@
       "type": "object"
     }
   },
-  "$id": "https://mirage.invalid/schema/0.2.0/ground-truth.schema.json",
+  "$id": "https://mirage.invalid/schema/0.3.0/ground-truth.schema.json",
   "additionalProperties": false,
   "properties": {
     "attack_version": {
@@ -89,12 +89,64 @@
       "title": "End Ts",
       "type": "string"
     },
+    "evidence": {
+      "default": "input",
+      "enum": [
+        "input",
+        "upload",
+        "auth",
+        "connect"
+      ],
+      "title": "Evidence",
+      "type": "string"
+    },
+    "input_sha256": {
+      "anyOf": [
+        {
+          "pattern": "^[0-9a-f]{64}$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Input Sha256"
+    },
+    "kind": {
+      "const": "step",
+      "default": "step",
+      "title": "Kind",
+      "type": "string"
+    },
+    "outcome": {
+      "default": "unchecked",
+      "enum": [
+        "ok",
+        "failed",
+        "unchecked"
+      ],
+      "title": "Outcome",
+      "type": "string"
+    },
     "procedure_id": {
       "title": "Procedure Id",
       "type": "string"
     },
+    "protocol": {
+      "title": "Protocol",
+      "type": "string"
+    },
+    "run_id": {
+      "title": "Run Id",
+      "type": "string"
+    },
     "scenario_id": {
       "title": "Scenario Id",
+      "type": "string"
+    },
+    "session_ref": {
+      "title": "Session Ref",
       "type": "string"
     },
     "src": {
@@ -119,23 +171,40 @@
       "type": "string"
     },
     "tactic": {
-      "pattern": "^TA\\d{4}$",
-      "title": "Tactic",
-      "type": "string"
+      "anyOf": [
+        {
+          "pattern": "^TA\\d{4}$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Tactic"
     },
     "technique_id": {
-      "pattern": "^T\\d{4}(\\.\\d{3})?$",
-      "title": "Technique Id",
-      "type": "string"
+      "anyOf": [
+        {
+          "pattern": "^T\\d{4}(\\.\\d{3})?$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Technique Id"
     }
   },
   "required": [
+    "run_id",
     "scenario_id",
+    "session_ref",
     "step_id",
     "procedure_id",
-    "technique_id",
-    "tactic",
     "attack_version",
+    "protocol",
     "src",
     "dst",
     "start_ts",

@@ -1,4 +1,4 @@
--- MIRAGE storage, schema version 0.2.0. Runs on first start of an empty volume, and again by
+-- MIRAGE storage, schema version 0.3.0. Runs on first start of an empty volume, and again by
 -- `make migrate` (every statement is idempotent).
 
 CREATE DATABASE IF NOT EXISTS mirage;
@@ -190,3 +190,133 @@ LEFT JOIN
     WHERE class = 'file_activity' AND JSONExtractString(payload, 'sha256') != ''
     GROUP BY sha256
 ) AS r ON f.sha256 = r.sha256;
+
+-- ---------------------------------------------------------------- phase 2 (spec section 3)
+-- The simulation lab's ground truth and the label join's result. Written by sim-join.
+-- Rows of one join carry one version; a run's current labels are the rows whose version
+-- equals the run's row in sim_runs, so joining a run again replaces its result cleanly.
+
+-- Every ground-truth record as the runner wrote it. kind: step, session or run.
+CREATE TABLE IF NOT EXISTS mirage.sim_truth
+(
+    run_id    String,
+    kind      LowCardinality(String),
+    key       String,
+    ts        DateTime64(6, 'UTC'),
+    record    String,
+    ingested  DateTime64(6, 'UTC') DEFAULT now64(6)
+)
+ENGINE = ReplacingMergeTree(ingested)
+ORDER BY (run_id, kind, key);
+
+-- One row per run: what produced it, and the join's health. no_event and mismatch must be
+-- zero for a run to be used in a dataset.
+CREATE TABLE IF NOT EXISTS mirage.sim_runs
+(
+    run_id                 String,
+    version                UInt64,
+    mode                   LowCardinality(String),
+    started_ts             DateTime64(6, 'UTC'),
+    ended_ts               DateTime64(6, 'UTC'),
+    seed                   Int64,
+    attack_version         LowCardinality(String),
+    catalogue_sha256       String,
+    scenarios_sha256       String,
+    code_version           String,
+    scenarios              Array(String),
+    sessions               UInt32,
+    steps                  UInt32,
+    final                  UInt8,
+    matched                UInt32,
+    no_event               UInt32,
+    mismatch               UInt32,
+    not_run                UInt32,
+    connections            UInt32,
+    connections_unmatched  UInt32,
+    problems               String
+)
+ENGINE = ReplacingMergeTree(version)
+ORDER BY run_id;
+
+-- One row per scenario step, with the state the join gave it.
+CREATE TABLE IF NOT EXISTS mirage.sim_steps
+(
+    run_id        String,
+    session_ref   String,
+    step_id       String,
+    version       UInt64,
+    scenario_id   String,
+    procedure_id  String,
+    technique_id  LowCardinality(String),
+    tactic        LowCardinality(String),
+    protocol      LowCardinality(String),
+    evidence      LowCardinality(String),
+    status        LowCardinality(String),
+    outcome       LowCardinality(String),
+    state         LowCardinality(String),
+    session_id    String,
+    events        UInt32,
+    detail        String,
+    start_ts      DateTime64(6, 'UTC'),
+    end_ts        DateTime64(6, 'UTC')
+)
+ENGINE = ReplacingMergeTree(version)
+ORDER BY (run_id, session_ref, step_id);
+
+-- One row per decoy session (connection) that belongs to a simulated session.
+-- logical_session_id is the sessioniser's session (it groups HTTP connections).
+CREATE TABLE IF NOT EXISTS mirage.sim_sessions
+(
+    session_id          String,
+    version             UInt64,
+    run_id              String,
+    scenario_id         String,
+    session_ref         String,
+    logical_session_id  String,
+    protocol            LowCardinality(String),
+    actor_ref           String,
+    actor_class         LowCardinality(String),
+    timing_profile      LowCardinality(String),
+    real                UInt8,
+    mode                LowCardinality(String),
+    src_ip              String,
+    src_port            UInt16
+)
+ENGINE = ReplacingMergeTree(version)
+ORDER BY session_id;
+
+-- One row per labelled event. role: 'input' for the event that carries the content,
+-- 'decision' for a gate decision made for it. An empty technique_id is an explicit negative.
+CREATE TABLE IF NOT EXISTS mirage.sim_labels
+(
+    event_id        String,
+    version         UInt64,
+    run_id          String,
+    scenario_id     String,
+    session_ref     String,
+    step_id         String,
+    procedure_id    String,
+    technique_id    LowCardinality(String),
+    tactic          LowCardinality(String),
+    attack_version  LowCardinality(String),
+    role            LowCardinality(String),
+    session_id      String
+)
+ENGINE = ReplacingMergeTree(version)
+ORDER BY (event_id, version);
+
+-- The current labels: only rows from each run's latest join.
+CREATE OR REPLACE VIEW mirage.sim_labels_current AS
+SELECT l.*
+FROM mirage.sim_labels AS l
+INNER JOIN (SELECT run_id, version FROM mirage.sim_runs FINAL) AS r
+    ON l.run_id = r.run_id AND l.version = r.version;
+
+-- Captured events with their ground truth beside them. Never a model input as it stands:
+-- the dataset builder takes its features from an allowlist (spec 2.3).
+CREATE OR REPLACE VIEW mirage.events_labelled AS
+SELECT e.*, l.run_id AS sim_run_id, l.session_ref AS sim_session_ref, l.step_id AS sim_step,
+       l.procedure_id AS procedure_id, l.technique_id AS technique_id, l.tactic AS tactic,
+       l.attack_version AS attack_version, l.role AS sim_role
+FROM mirage.events AS e
+INNER JOIN mirage.sim_labels_current AS l ON e.event_id = l.event_id;

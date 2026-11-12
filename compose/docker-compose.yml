@@ -7,6 +7,8 @@
 #   gate   internal: the decoys and the policy service, nothing else. The edge is not on it.
 #   core   pipeline, storage, dashboards. Neither decoys nor the policy service are on it;
 #          they write logs to volumes that Vector reads.
+#   lab    internal, compose profile "lab" only (docs/05-phase-2-spec.md section 2): the
+#          scenario runner and lab-edge, nothing else. Never started on an exposed sensor.
 #
 # Every published port binds to 127.0.0.1. Nothing here is meant to face the internet; see the
 # exposure checklist in docs/01-build-plan.md section 7 before changing that.
@@ -27,6 +29,9 @@ networks:
     internal: true
   edge:
     name: mirage_edge
+  lab:
+    name: mirage_lab
+    internal: true
   core:
     name: mirage_core
 
@@ -39,6 +44,7 @@ volumes:
   redis-artifacts:
   mysql-log:
   mysql-artifacts:
+  lab-out:
   vector-data:
   nats-data:
   clickhouse-data:
@@ -159,6 +165,46 @@ services:
     depends_on: [cowrie, http-decoy, redis-decoy, mysql-decoy]
     mem_limit: 128m
 
+  # The lab's way in: accepts the runner's PROXY header and passes the simulated source
+  # address on to the decoys. Profile "lab" only.
+  lab-edge:
+    profiles: ["lab"]
+    image: haproxy:3.2-alpine
+    <<: *hardening
+    networks: [decoy, lab]
+    volumes:
+      - ./lab/haproxy.cfg:/usr/local/etc/haproxy/haproxy.cfg:ro
+    depends_on: [cowrie, http-decoy, redis-decoy, mysql-decoy]
+    mem_limit: 128m
+
+  # The scenario runner: run on demand with `make lab-run`. On the lab network only, so its one
+  # reachable peer is lab-edge; it checks that itself before opening anything (safety.py).
+  runner:
+    profiles: ["lab"]
+    build:
+      context: ..
+      dockerfile: lab/Dockerfile
+    image: mirage/lab:dev
+    <<: *hardening
+    restart: "no"
+    networks: [lab]
+    read_only: true
+    tmpfs: ["/tmp"]
+    environment:
+      LAB_TARGET: lab-edge
+      LAB_OUT: /var/lib/mirage-lab
+      LAB_CATALOGUE: /lab/catalogue
+      PROFILE_DIR: /profile
+      MIRAGE_CODE_VERSION: ${MIRAGE_CODE_VERSION:-dev}
+    volumes:
+      - ../build/profile:/profile:ro
+      - ../lab/catalogue:/lab/catalogue:ro
+      - ../lab/scenarios:/lab/scenarios:ro
+      - lab-out:/var/lib/mirage-lab
+    depends_on: [lab-edge]
+    mem_limit: 256m
+    pids_limit: 256
+
   nats:
     image: nats:2.15.2
     <<: *hardening
@@ -179,6 +225,7 @@ services:
       - http-log:/http-log:ro
       - redis-log:/redis-log:ro
       - mysql-log:/mysql-log:ro
+      - lab-out:/lab-out:ro
       - vector-data:/var/lib/vector
     command: ["--config", "/etc/vector/vector.yaml"]
     depends_on: [nats]
@@ -249,6 +296,29 @@ services:
       - ../build/profile:/profile:ro
     healthcheck:
       test: ["CMD", "python", "-c", "from mirage_pipeline.sessioniser import healthcheck; healthcheck()"]
+      interval: 10s
+      timeout: 3s
+      retries: 6
+    depends_on:
+      normaliser: {condition: service_started}
+    mem_limit: 256m
+
+  # Label join (phase 2 spec section 3): ground truth from the lab -> labels on events.
+  sim-join:
+    profiles: ["lab"]
+    image: mirage/normaliser:dev
+    <<: *hardening
+    command: ["mirage-sim-join"]
+    networks: [core]
+    read_only: true
+    tmpfs: ["/tmp"]
+    environment:
+      NATS_URL: nats://nats:4222
+      CLICKHOUSE_URL: http://clickhouse:8123
+      CLICKHOUSE_USER: ${CLICKHOUSE_USER}
+      CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD}
+    healthcheck:
+      test: ["CMD", "python", "-c", "from mirage_pipeline.simjoin import healthcheck; healthcheck()"]
       interval: 10s
       timeout: 3s
       retries: 6

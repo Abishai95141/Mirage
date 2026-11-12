@@ -1,7 +1,8 @@
 """MIRAGE event schema.
 
 One envelope (:class:`MirageEvent`) for every source, aligned to OCSF class names, plus the
-ground-truth record (:class:`GroundTruth`) published by the simulation lab.
+ground-truth records (:class:`GroundTruth`, :class:`SessionTruth`, :class:`RunRecord`)
+published by the simulation lab.
 """
 
 from mirage_schema.events import (
@@ -16,11 +17,19 @@ from mirage_schema.events import (
     SimRef,
     Source,
 )
-from mirage_schema.groundtruth import GroundTruth
+from mirage_schema.groundtruth import (
+    Connection,
+    GroundTruth,
+    RunRecord,
+    SessionTruth,
+    input_hash,
+    parse_record,
+)
 
 __all__ = [
     "OCSF_CLASS_UID",
     "SCHEMA_VERSION",
+    "Connection",
     "Endpoint",
     "EventClass",
     "GroundTruth",
@@ -28,6 +37,10 @@ __all__ = [
     "MirageEvent",
     "Outcome",
     "PolicyRef",
+    "RunRecord",
+    "SessionTruth",
     "SimRef",
     "Source",
+    "input_hash",
+    "parse_record",
 ]

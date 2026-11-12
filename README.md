@@ -1,6 +1,6 @@
 # MIRAGE
 
-An adaptive honeypot and attack-simulation platform. Phase 0 (foundations) is built. Phase 1 (decoys and capture) is built: a hardened SSH decoy, an HTTP decoy, and Redis and MySQL decoys, all behind a policy gate; per-deployment profiles from a Debian 12 reference; honeytokens; sessions and actor links; an artifact index. Status and what is open: [phase 1 spec, section 10](docs/04-phase-1-spec.md#10-implementation-status-12-november-2026).
+An adaptive honeypot and attack-simulation platform. Phase 0 (foundations) is built. Phase 1 (decoys and capture) is built: a hardened SSH decoy, an HTTP decoy, and Redis and MySQL decoys, all behind a policy gate; per-deployment profiles from a Debian 12 reference; honeytokens; sessions and actor links; an artifact index. Status and what is open: [phase 1 spec, section 10](docs/04-phase-1-spec.md#10-implementation-status-12-november-2026). Phase 2 (lab, labels and first models) is under way: the scenario runner and the label join work for SSH; the models are not started. See the [phase 2 spec](docs/05-phase-2-spec.md#12-implementation-status-12-november-2026).
 
 ## Quick start
 
@@ -49,7 +49,8 @@ uv run python tools/seed_sample.py replay data/seed/2025-06-27.json.sample.json
 | Path | Contents |
 | --- | --- |
 | `schema/` | Event envelope (OCSF-aligned), ground-truth record, source mappings |
-| `pipeline/` | Normaliser (NATS → MirageEvent → ClickHouse), sessioniser (sessions, honeytoken findings, actor links), artifact indexer |
+| `pipeline/` | Normaliser (NATS → MirageEvent → ClickHouse), sessioniser (sessions, honeytoken findings, actor links), artifact indexer, label join for lab runs |
+| `lab/` | Simulation lab: the scenario runner, its procedure catalogue and scenarios. Runs only on its own isolated network (`make lab-up`, `make lab-run`). |
 | `policy/` | Policy service: gate contract v1, YAML rules, decision log |
 | `decoys/` | Cowrie patch series (`ssh/`), HTTP decoy, shared decoy library, profile generator and Debian 12 reference, honeytokens, and the Redis and MySQL decoys (`db/`) |
 | `compose/` | Docker Compose stack and service configs |

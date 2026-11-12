@@ -10,6 +10,7 @@ dependencies = ["mirage-schema", "mirage-tokens", "nats-py>=2.9", "httpx>=0.28",
 mirage-normaliser = "mirage_pipeline.normaliser:main"
 mirage-sessioniser = "mirage_pipeline.sessioniser:main"
 mirage-artifact-indexer = "mirage_pipeline.artifacts:main"
+mirage-sim-join = "mirage_pipeline.simjoin:main"
 
 [build-system]
 requires = ["hatchling>=1.25"]

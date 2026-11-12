@@ -1,0 +1,15 @@
+# A bot that guesses its way in, looks around in a shell and pushes a file.
+id: smoke-shell-recon
+actor: {class: scripted_bot, timing: bot-fast, patience: 3}
+sessions:
+  - protocol: ssh
+    channel: shell
+    login: {user: root, guesses: 4, procedure: ssh-password-guessing}
+    steps:
+      - {id: s1, procedure: sysinfo-uname-all, expect: "Linux"}
+      - {id: s2, procedure: owner-id, expect: "uid=0"}
+      - {id: s3, procedure: change-dir}
+      - {id: s4, procedure: files-list-dir}
+      - {id: s5, procedure: accounts-passwd, expect: "root:"}
+      - {id: s6, procedure: transfer-sftp-put}
+      - {id: s7, procedure: owner-w}

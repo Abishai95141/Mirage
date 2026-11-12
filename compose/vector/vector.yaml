@@ -25,6 +25,10 @@ sources:
     type: file
     include: ["/mysql-log/mysql.json*"]
     read_from: beginning
+  sim_log:
+    type: file
+    include: ["/lab-out/groundtruth.json*"]
+    read_from: beginning
   policy_log:
     type: file
     include: ["/policy-log/decisions.json*"]
@@ -33,7 +37,7 @@ sources:
 transforms:
   parsed:
     type: remap
-    inputs: [cowrie_log, http_log, redis_log, mysql_log, policy_log]
+    inputs: [cowrie_log, http_log, redis_log, mysql_log, policy_log, sim_log]
     source: |
       src = string!(.file)
       parsed, err = parse_json(.message)
@@ -53,6 +57,7 @@ transforms:
       redis: 'starts_with(string!(.__mirage_src), "/redis-log/")'
       mysql: 'starts_with(string!(.__mirage_src), "/mysql-log/")'
       policy: 'starts_with(string!(.__mirage_src), "/policy-log/")'
+      sim: 'starts_with(string!(.__mirage_src), "/lab-out/")'
   cowrie_out:
     type: remap
     inputs: [route.cowrie]
@@ -68,6 +73,10 @@ transforms:
   mysql_out:
     type: remap
     inputs: [route.mysql]
+    source: del(.__mirage_src)
+  sim_out:
+    type: remap
+    inputs: [route.sim]
     source: del(.__mirage_src)
   policy_out:
     type: remap
@@ -104,6 +113,16 @@ sinks:
     inputs: [mysql_out]
     url: nats://nats:4222
     subject: raw.honeypot.mysql
+    jetstream: {enabled: true}
+    encoding: {codec: json}
+    acknowledgements: {enabled: true}
+  # The lab's ground truth (phase 2). The runner writes it to a volume; it has no network
+  # path to NATS.
+  nats_sim:
+    type: nats
+    inputs: [sim_out]
+    url: nats://nats:4222
+    subject: sim.groundtruth
     jetstream: {enabled: true}
     encoding: {codec: json}
     acknowledgements: {enabled: true}

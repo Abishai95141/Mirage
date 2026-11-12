@@ -1,0 +1,89 @@
+{
+  "$id": "https://mirage.invalid/schema/0.3.0/run-record.schema.json",
+  "additionalProperties": false,
+  "properties": {
+    "attack_version": {
+      "title": "Attack Version",
+      "type": "string"
+    },
+    "catalogue_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Catalogue Sha256",
+      "type": "string"
+    },
+    "code_version": {
+      "title": "Code Version",
+      "type": "string"
+    },
+    "ended_ts": {
+      "format": "date-time",
+      "title": "Ended Ts",
+      "type": "string"
+    },
+    "kind": {
+      "const": "run",
+      "default": "run",
+      "title": "Kind",
+      "type": "string"
+    },
+    "mode": {
+      "enum": [
+        "capture",
+        "explore"
+      ],
+      "title": "Mode",
+      "type": "string"
+    },
+    "run_id": {
+      "title": "Run Id",
+      "type": "string"
+    },
+    "scenarios": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Scenarios",
+      "type": "array"
+    },
+    "scenarios_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Scenarios Sha256",
+      "type": "string"
+    },
+    "seed": {
+      "title": "Seed",
+      "type": "integer"
+    },
+    "sessions": {
+      "minimum": 0,
+      "title": "Sessions",
+      "type": "integer"
+    },
+    "started_ts": {
+      "format": "date-time",
+      "title": "Started Ts",
+      "type": "string"
+    },
+    "steps": {
+      "minimum": 0,
+      "title": "Steps",
+      "type": "integer"
+    }
+  },
+  "required": [
+    "run_id",
+    "mode",
+    "started_ts",
+    "ended_ts",
+    "seed",
+    "attack_version",
+    "catalogue_sha256",
+    "scenarios_sha256",
+    "code_version",
+    "scenarios",
+    "sessions",
+    "steps"
+  ],
+  "title": "RunRecord",
+  "type": "object"
+}

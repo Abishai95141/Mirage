@@ -1,0 +1,14 @@
+# A tool that sends one command per exec request and reacts to what comes back: when its
+# first probe is not installed it falls back to another, and it leaves if the host looks wrong.
+id: smoke-exec-react
+actor: {class: scripted_bot, timing: bot-slow, patience: 2}
+sessions:
+  - protocol: ssh
+    channel: exec
+    login: {user: root}
+    steps:
+      - {id: s1, procedure: sysinfo-uname-all, expect: "Linux", expect_status: 0, on_fail: leave}
+      - {id: s2, procedure: probe-missing-tool, expect_status: 0, on_fail: {goto: s4}}
+      - {id: s3, procedure: files-list-dir}
+      - {id: s4, procedure: owner-id, expect: "uid="}
+      - {id: s5, procedure: accounts-passwd}
