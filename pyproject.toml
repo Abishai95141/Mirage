@@ -9,7 +9,7 @@ license = "Apache-2.0"
 package = false
 
 [tool.uv.workspace]
-members = ["schema", "pipeline", "policy", "decoys/common", "decoys/profiles", "decoys/tokens", "decoys/http", "decoys/db", "lab"]
+members = ["schema", "pipeline", "policy", "decoys/common", "decoys/profiles", "decoys/tokens", "decoys/http", "decoys/db", "lab", "intel"]
 
 [tool.uv.sources]
 mirage-schema = { workspace = true }
@@ -21,6 +21,7 @@ mirage-tokens = { workspace = true }
 mirage-http-decoy = { workspace = true }
 mirage-db-decoy = { workspace = true }
 mirage-lab = { workspace = true }
+mirage-intel = { workspace = true }
 
 [dependency-groups]
 dev = [
@@ -33,6 +34,7 @@ dev = [
     "mirage-http-decoy",
     "mirage-db-decoy",
     "mirage-lab",
+    "mirage-intel",
     "redis>=5.2",
     "pymysql>=1.1",
     "pytest>=8.3",
@@ -44,11 +46,12 @@ dev = [
 ]
 
 [tool.pytest.ini_options]
-testpaths = ["schema/tests", "pipeline/tests", "policy/tests", "decoys", "lab", "tests", "eval"]
+testpaths = ["schema/tests", "pipeline/tests", "policy/tests", "decoys", "lab", "intel", "tests", "eval"]
 markers = [
     "integration: needs the docker compose stack running (make up)",
+    "ml: needs the ML libraries (uv sync installs them; deselected from the fast unit run)",
 ]
-addopts = "-m 'not integration'"
+addopts = "-m 'not integration and not ml'"
 asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "function"
 

@@ -1,0 +1,33 @@
+[project]
+name = "mirage-intel"
+version = "0.1.0"
+description = "MIRAGE intelligence models: dataset export, actor classifier, tagger, bandit"
+requires-python = ">=3.12,<3.14"
+license = "Apache-2.0"
+dependencies = [
+    "mirage-schema",
+    "mirage-lab",
+    "pydantic>=2.9",
+    "numpy>=2.1",
+    "pyarrow>=18",
+    "duckdb>=1.1",
+    "scikit-learn>=1.5",
+    "lightgbm>=4.5",
+    "vowpalwabbit>=9.10",
+    "httpx>=0.28",
+]
+
+[project.scripts]
+mirage-dataset = "mirage_intel.dataset:main"
+mirage-classifier = "mirage_intel.classifier:main"
+
+[build-system]
+requires = ["hatchling>=1.25"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/mirage_intel"]
+
+[tool.uv.sources]
+mirage-schema = { workspace = true }
+mirage-lab = { workspace = true }

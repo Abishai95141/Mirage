@@ -21,6 +21,19 @@ jobs:
       - run: uv run ruff format --check .
       - run: uv run pytest
 
+  ml:
+    # The intel models (dataset export, classifier, bandit estimators). Their libraries are
+    # heavy, so they are deselected from the fast unit job and run here on synthetic data.
+    runs-on: ubuntu-24.04
+    needs: lint-unit
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.12"
+      - run: uv sync --frozen || uv sync
+      - run: uv run pytest -m ml
+
   integration:
     # Gates 0 and 1, containment, the default-tell checks and the phase 2 lab (runner
     # isolation, a scenario run, label-join health), against the real compose stack.
