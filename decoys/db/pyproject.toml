@@ -1,0 +1,22 @@
+[project]
+name = "mirage-db-decoy"
+version = "0.1.0"
+description = "MIRAGE database decoys: Redis 7.0 (RESP2) and MariaDB 10.11 (wire protocol, SQL subset)"
+requires-python = ">=3.12,<3.14"
+license = "Apache-2.0"
+dependencies = ["mirage-schema", "mirage-decoy-common", "sqlglot>=25"]
+
+[project.scripts]
+mirage-redis-decoy = "mirage_db_decoy.redis.main:main"
+mirage-mysql-decoy = "mirage_db_decoy.mysql.main:main"
+
+[build-system]
+requires = ["hatchling>=1.25"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/mirage_db_decoy"]
+
+[tool.uv.sources]
+mirage-schema = { workspace = true }
+mirage-decoy-common = { workspace = true }

@@ -9,16 +9,30 @@ license = "Apache-2.0"
 package = false
 
 [tool.uv.workspace]
-members = ["schema", "pipeline"]
+members = ["schema", "pipeline", "policy", "decoys/common", "decoys/profiles", "decoys/tokens", "decoys/http", "decoys/db"]
 
 [tool.uv.sources]
 mirage-schema = { workspace = true }
 mirage-pipeline = { workspace = true }
+mirage-policy = { workspace = true }
+mirage-decoy-common = { workspace = true }
+mirage-profiles = { workspace = true }
+mirage-tokens = { workspace = true }
+mirage-http-decoy = { workspace = true }
+mirage-db-decoy = { workspace = true }
 
 [dependency-groups]
 dev = [
     "mirage-schema",
     "mirage-pipeline",
+    "mirage-policy",
+    "mirage-decoy-common",
+    "mirage-profiles",
+    "mirage-tokens",
+    "mirage-http-decoy",
+    "mirage-db-decoy",
+    "redis>=5.2",
+    "pymysql>=1.1",
     "pytest>=8.3",
     "pytest-asyncio>=0.25",
     "ruff>=0.8",
@@ -28,7 +42,7 @@ dev = [
 ]
 
 [tool.pytest.ini_options]
-testpaths = ["schema/tests", "pipeline/tests", "tests", "eval"]
+testpaths = ["schema/tests", "pipeline/tests", "policy/tests", "decoys", "tests", "eval"]
 markers = [
     "integration: needs the docker compose stack running (make up)",
 ]
@@ -46,7 +60,7 @@ select = ["E", "F", "W", "I", "B", "UP", "S", "SIM", "RUF"]
 ignore = ["S101"]  # assert is fine in tests
 
 [tool.ruff.lint.isort]
-known-first-party = ["mirage_schema", "mirage_pipeline"]
+known-first-party = ["mirage_schema", "mirage_pipeline", "mirage_policy", "mirage_decoy_common", "mirage_profiles", "mirage_tokens", "mirage_http_decoy", "mirage_db_decoy"]
 
 [tool.ruff.lint.per-file-ignores]
 # Tests and spikes embed long SQL and JSON strings.
@@ -55,3 +69,11 @@ known-first-party = ["mirage_schema", "mirage_pipeline"]
 "eval/**" = ["S"]
 "spikes/**" = ["S", "E501"]
 "tools/**" = ["S", "E501"]
+# The profile generator and reference extractor are offline dev tools full of template data:
+# seeded (not cryptographic) randomness, MariaDB's SHA-1 password hash, docker subprocesses.
+"decoys/profiles/**" = ["S", "E501", "E731"]
+# Decoys listen on all interfaces of their own container; the networks decide reachability.
+"decoys/common/src/**" = ["S104"]
+"decoys/ssh/build_fs.py" = ["S301", "S403", "E501"]
+# Unfinished Redis decoy modules (parked; see docs/04-phase-1-spec.md status): long tables.
+"decoys/db/src/mirage_db_decoy/redis/*.py" = ["E501"]

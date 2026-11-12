@@ -27,7 +27,7 @@ from pydantic import (
     model_validator,
 )
 
-SCHEMA_VERSION = "0.1.0"
+SCHEMA_VERSION = "0.2.0"
 
 
 class Source(StrEnum):
@@ -38,6 +38,8 @@ class Source(StrEnum):
     SURICATA = "suricata"
     POLICY = "policy"
     SIM = "sim"
+    # Derived by the pipeline itself (the sessioniser's token.triggered findings).
+    PIPELINE = "pipeline"
 
 
 class EventClass(StrEnum):
@@ -48,6 +50,11 @@ class EventClass(StrEnum):
     PROCESS_ACTIVITY = "process_activity"
     FILE_ACTIVITY = "file_activity"
     POLICY_DECISION = "policy_decision"
+    # Database decoys. Mapped to OCSF's Application Activity category; the class UID is left
+    # unset until checked against the OCSF 1.9 schema (spec section 7), so class_uid is 0.
+    DATASTORE_ACTIVITY = "datastore_activity"
+    # A honeytoken was used (spec 1.6). OCSF Findings category, Detection Finding.
+    DETECTION_FINDING = "detection_finding"
     UNKNOWN = "unknown"
 
 
@@ -59,6 +66,7 @@ OCSF_CLASS_UID: dict[EventClass, int] = {
     EventClass.NETWORK_ACTIVITY: 4001,
     EventClass.HTTP_ACTIVITY: 4002,
     EventClass.SSH_ACTIVITY: 4007,
+    EventClass.DETECTION_FINDING: 2004,
 }
 
 

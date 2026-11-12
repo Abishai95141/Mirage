@@ -1,4 +1,5 @@
--- MIRAGE storage, schema version 0.1.0. Runs once, on first start of an empty volume.
+-- MIRAGE storage, schema version 0.2.0. Runs on first start of an empty volume, and again by
+-- `make migrate` (every statement is idempotent).
 
 CREATE DATABASE IF NOT EXISTS mirage;
 
@@ -76,3 +77,116 @@ SELECT
 FROM mirage.events FINAL
 WHERE session_id != ''
 GROUP BY session_id;
+
+-- ---------------------------------------------------------------- phase 1 (spec 1.6-1.8)
+-- Written by the sessioniser and the artifact indexer. Every table is a ReplacingMergeTree
+-- on a version column, so re-running a batch replaces rows instead of adding them.
+
+-- One row per session on any protocol. HTTP sessions group connections by source address and
+-- user agent (30 minutes idle); `connections` lists the decoy's connection IDs.
+CREATE TABLE IF NOT EXISTS mirage.session_summary
+(
+    session_id     String,
+    version        UInt64,
+    protocol       LowCardinality(String),
+    source         LowCardinality(String),
+    sensor         LowCardinality(String),
+    src_ip         String,
+    start_ts       DateTime64(6, 'UTC'),
+    end_ts         DateTime64(6, 'UTC'),
+    inputs         UInt32,
+    decisions      UInt32,
+    fallbacks      UInt32,
+    auth_attempts  UInt32,
+    auth_success   UInt8,
+    credentials    Array(Tuple(String, String)),
+    fingerprints   String,
+    tokens         Array(String),
+    artifacts      Array(String),
+    connections    Array(String),
+    actor_id       String
+)
+ENGINE = ReplacingMergeTree(version)
+ORDER BY session_id;
+
+-- Links between sessions; a < b. actor_id in session_summary is the connected component.
+CREATE TABLE IF NOT EXISTS mirage.actor_links
+(
+    a         String,
+    b         String,
+    reason    LowCardinality(String),   -- honeytoken | ssh_fingerprint_credential | same_source_24h
+    strength  UInt8,                    -- 3, 2, 1
+    evidence  String,
+    ts        DateTime64(6, 'UTC'),
+    version   UInt64
+)
+ENGINE = ReplacingMergeTree(version)
+ORDER BY (a, b, reason);
+
+CREATE TABLE IF NOT EXISTS mirage.session_map
+(
+    conn_id     String,
+    session_id  String,
+    version     UInt64
+)
+ENGINE = ReplacingMergeTree(version)
+ORDER BY conn_id;
+
+-- Planted honeytokens, loaded from the profile at sessioniser start (spec 1.6).
+CREATE TABLE IF NOT EXISTS mirage.tokens
+(
+    token_id       String,
+    type           LowCardinality(String),
+    value          String,
+    username       String,
+    deployment_id  LowCardinality(String),
+    planted_at     String,
+    minted_at      String,
+    note           String,
+    loaded_at      DateTime64(6, 'UTC')
+)
+ENGINE = ReplacingMergeTree(loaded_at)
+ORDER BY token_id;
+
+-- A session reached a place a token is planted (read /var/www/html/.env, fetched /.env).
+CREATE TABLE IF NOT EXISTS mirage.token_exposures
+(
+    token_id    String,
+    session_id  String,
+    ts          DateTime64(6, 'UTC'),
+    location    String,
+    event_id    String,
+    version     UInt64
+)
+ENGINE = ReplacingMergeTree(version)
+ORDER BY (token_id, session_id, event_id);
+
+-- Every stored artifact file, hashed and typed by the indexer.
+CREATE TABLE IF NOT EXISTS mirage.artifact_files
+(
+    sha256        String,
+    size          UInt64,
+    mime          LowCardinality(String),
+    source        LowCardinality(String),
+    stored_at     DateTime64(6, 'UTC'),
+    name_matches  UInt8,
+    indexed_at    DateTime64(6, 'UTC')
+)
+ENGINE = ReplacingMergeTree(indexed_at)
+ORDER BY (sha256, source);
+
+-- spec 1.8's index: each file with the sessions and times its hash appears in events.
+CREATE OR REPLACE VIEW mirage.artifacts AS
+SELECT
+    f.sha256 AS sha256, f.size AS size, f.mime AS mime, f.source AS source,
+    f.stored_at AS stored_at, r.first_seen AS first_seen, r.last_seen AS last_seen,
+    r.sessions AS sessions
+FROM (SELECT * FROM mirage.artifact_files FINAL) AS f
+LEFT JOIN
+(
+    SELECT JSONExtractString(payload, 'sha256') AS sha256, min(ts) AS first_seen,
+           max(ts) AS last_seen, groupUniqArray(session_id) AS sessions
+    FROM mirage.events
+    WHERE class = 'file_activity' AND JSONExtractString(payload, 'sha256') != ''
+    GROUP BY sha256
+) AS r ON f.sha256 = r.sha256;

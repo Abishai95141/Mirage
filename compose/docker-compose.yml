@@ -1,9 +1,12 @@
-# MIRAGE phase 0 stack. Start with `make up` from the repo root.
+# MIRAGE stack (phase 1). Start with `make up` from the repo root.
 #
-# Networks
-#   decoy  internal (no gateway): decoys live here and can reach nothing outside it.
-#   edge   the only attacker-facing path; ssh-edge forwards 127.0.0.1:2222 -> cowrie:2222.
-#   core   pipeline, storage, dashboards. Decoys are not attached to it.
+# Networks (docs/04-phase-1-spec.md section 2)
+#   edge   the only attacker-facing path; the edge forwards each published port to its decoy
+#          with a PROXY v2 header.
+#   decoy  internal (no gateway): decoys and the edge's inside leg. Reaches nothing outside.
+#   gate   internal: the decoys and the policy service, nothing else. The edge is not on it.
+#   core   pipeline, storage, dashboards. Neither decoys nor the policy service are on it;
+#          they write logs to volumes that Vector reads.
 #
 # Every published port binds to 127.0.0.1. Nothing here is meant to face the internet; see the
 # exposure checklist in docs/01-build-plan.md section 7 before changing that.
@@ -19,6 +22,9 @@ networks:
   decoy:
     name: mirage_decoy
     internal: true
+  gate:
+    name: mirage_gate
+    internal: true
   edge:
     name: mirage_edge
   core:
@@ -26,6 +32,9 @@ networks:
 
 volumes:
   cowrie-var:
+  policy-log:
+  http-log:
+  http-artifacts:
   vector-data:
   nats-data:
   clickhouse-data:
@@ -33,25 +42,78 @@ volumes:
 
 services:
   cowrie:
-    image: cowrie/cowrie:3.1.6
+    # Cowrie v3.1.6 + decoys/ssh/patches, with this deployment's filesystem built in.
+    build:
+      context: ..
+      dockerfile: decoys/ssh/Dockerfile
+      additional_contexts:
+        profile: ../build/profile
+    image: mirage/cowrie:dev
     <<: *hardening
-    networks: [decoy]
+    networks: [decoy, gate]
     read_only: true
     tmpfs: ["/tmp"]
+    environment:
+      COWRIE_MIRAGE_POLICY_TOKEN: ${POLICY_TOKEN:?run make env}
     volumes:
       - cowrie-var:/cowrie/cowrie-git/var
       - ./cowrie/cowrie.cfg:/cowrie/cowrie-git/etc/cowrie.cfg:ro
+    depends_on: [policy]
     mem_limit: 512m
     pids_limit: 256
 
-  ssh-edge:
+  http-decoy:
+    build:
+      context: ..
+      dockerfile: decoys/Dockerfile
+    image: mirage/decoys:dev
+    <<: *hardening
+    command: ["mirage-http-decoy"]
+    networks: [decoy, gate]
+    read_only: true
+    tmpfs: ["/tmp"]
+    environment: &decoy-env
+      POLICY_URL: http://policy:8000/v1/decide
+      POLICY_TOKEN: ${POLICY_TOKEN:?run make env}
+      POLICY_TIMEOUT_MS: "50"
+      PROFILE_DIR: /profile
+      ARTIFACT_DIR: /var/lib/mirage/artifacts
+    volumes:
+      - ../build/profile:/profile:ro
+      - http-log:/var/log/mirage
+      - http-artifacts:/var/lib/mirage/artifacts
+    depends_on: [policy]
+    mem_limit: 128m
+    pids_limit: 64
+
+  policy:
+    build:
+      context: ..
+      dockerfile: policy/Dockerfile
+    image: mirage/policy:dev
+    <<: *hardening
+    networks: [gate]
+    read_only: true
+    tmpfs: ["/tmp"]
+    environment:
+      POLICY_TOKEN: ${POLICY_TOKEN:?run make env}
+      # Loads the selftest rules the integration tests use. Never on an exposed sensor.
+      POLICY_SELFTEST: ${POLICY_SELFTEST:-0}
+    volumes:
+      - policy-log:/var/log/mirage-policy
+    mem_limit: 128m
+    pids_limit: 64
+
+  edge:
     image: haproxy:3.2-alpine
     <<: *hardening
     networks: [decoy, edge]
-    ports: ["127.0.0.1:${SSH_PORT:-2222}:2222"]
+    ports:
+      - "127.0.0.1:${SSH_PORT:-2222}:2222"
+      - "127.0.0.1:${HTTP_PORT:-8081}:8080"
     volumes:
-      - ./ssh-edge/haproxy.cfg:/usr/local/etc/haproxy/haproxy.cfg:ro
-    depends_on: [cowrie]
+      - ./edge/haproxy.cfg:/usr/local/etc/haproxy/haproxy.cfg:ro
+    depends_on: [cowrie, http-decoy]
     mem_limit: 128m
 
   nats:
@@ -70,6 +132,8 @@ services:
     volumes:
       - ./vector/vector.yaml:/etc/vector/vector.yaml:ro
       - cowrie-var:/cowrie-var:ro
+      - policy-log:/policy-log:ro
+      - http-log:/http-log:ro
       - vector-data:/var/lib/vector
     command: ["--config", "/etc/vector/vector.yaml"]
     depends_on: [nats]
@@ -114,6 +178,70 @@ services:
       nats: {condition: service_started}
       clickhouse: {condition: service_healthy}
     mem_limit: 256m
+
+  sessioniser:
+    # Sessions, honeytoken findings and actor links (spec 1.6, 1.7).
+    build:
+      context: ..
+      dockerfile: pipeline/Dockerfile
+    image: mirage/normaliser:dev
+    <<: *hardening
+    command: ["mirage-sessioniser"]
+    networks: [core]
+    read_only: true
+    tmpfs: ["/tmp"]
+    environment:
+      NATS_URL: nats://nats:4222
+      CLICKHOUSE_URL: http://clickhouse:8123
+      CLICKHOUSE_USER: ${CLICKHOUSE_USER}
+      CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD}
+      TOKENS_FILE: /profile/tokens.json
+    volumes:
+      - ../build/profile/tokens.json:/profile/tokens.json:ro
+    healthcheck:
+      test: ["CMD", "python", "-c", "from mirage_pipeline.sessioniser import healthcheck; healthcheck()"]
+      interval: 10s
+      timeout: 3s
+      retries: 6
+    depends_on:
+      normaliser: {condition: service_started}
+    mem_limit: 256m
+
+  artifact-indexer:
+    # Hashes and types stored artifacts (spec 1.8). Every artifact mount is read-only, and the
+    # indexer reads nothing beyond hashing and type detection.
+    build:
+      context: ..
+      dockerfile: pipeline/Dockerfile
+    image: mirage/normaliser:dev
+    <<: *hardening
+    command: ["mirage-artifact-indexer"]
+    networks: [core]
+    read_only: true
+    tmpfs: ["/tmp"]
+    environment:
+      CLICKHOUSE_URL: http://clickhouse:8123
+      CLICKHOUSE_USER: ${CLICKHOUSE_USER}
+      CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD}
+      ARTIFACT_DIRS: cowrie=/cowrie-var/lib/cowrie/downloads,http=/http-artifacts
+    volumes:
+      - cowrie-var:/cowrie-var:ro
+      - http-artifacts:/http-artifacts:ro
+    healthcheck:
+      test: ["CMD", "python", "-c", "from mirage_pipeline.artifacts import healthcheck; healthcheck()"]
+      interval: 10s
+      timeout: 3s
+      retries: 6
+    # Decoys write artifacts owner-only (Cowrie's SFTP uploads 0600 as uid 999, the HTTP decoy
+    # 0400 as uid 10001), so no single unprivileged user can read both. The indexer runs as
+    # root with every capability dropped except DAC_READ_SEARCH, which bypasses read checks
+    # only; it cannot write, and the mounts are read-only anyway.
+    user: "0:0"
+    cap_add: ["DAC_READ_SEARCH"]
+    depends_on:
+      clickhouse: {condition: service_healthy}
+    mem_limit: 128m
+    pids_limit: 32
 
   grafana:
     image: grafana/grafana:13.2.6

@@ -1,18 +1,25 @@
 COMPOSE := docker compose --env-file .env -f compose/docker-compose.yml
 
-.PHONY: help env up migrate down nuke ps logs test itest lint fmt schema probe
+.PHONY: help env profile profile-ref reference-image up migrate down nuke ps logs test itest lint fmt schema probe
 
 help:
-	@grep -E '^[a-z-]+:.*?## ' $(MAKEFILE_LIST) | awk 'BEGIN{FS=":.*?## "}{printf "  %-8s %s\n",$$1,$$2}'
+	@grep -E '^[a-z-]+:.*?## ' $(MAKEFILE_LIST) | awk 'BEGIN{FS=":.*?## "}{printf "  %-12s %s\n",$$1,$$2}'
 
-env: ## Create .env with random passwords (once)
-	@test -f .env && echo ".env exists, leaving it" || { \
-	  sed -e "s/^CLICKHOUSE_PASSWORD=.*/CLICKHOUSE_PASSWORD=$$(openssl rand -hex 16)/" \
-	      -e "s/^GRAFANA_ADMIN_PASSWORD=.*/GRAFANA_ADMIN_PASSWORD=$$(openssl rand -hex 16)/" \
-	      .env.example > .env && chmod 600 .env && echo "wrote .env"; }
+env: ## Create or complete .env (random secrets; never printed)
+	@python3 tools/env_fill.py
 
-up: env ## Build and start the stack
-	$(COMPOSE) up -d --build --wait
+reference-image: ## Build the Debian 12 reference image (the SSH decoy's build needs it)
+	docker build -t mirage/reference:debian-12 decoys/profiles/reference
+
+profile-ref: reference-image ## Build the reference image and re-extract its facts
+	uv run python -m mirage_profiles.reference
+
+profile: env ## Render this deployment's profile into build/profile (seed from .env)
+	uv run mirage-profile render decoys/profiles/web-db.yaml --seed $$(grep '^MIRAGE_SEED=' .env | cut -d= -f2) --out build/profile
+
+up: profile ## Build and start the stack, then apply the ClickHouse DDL
+	$(COMPOSE) up -d --build --wait --remove-orphans
+	@$(MAKE) --no-print-directory migrate >/dev/null
 
 migrate: ## Re-apply ClickHouse DDL (idempotent) to a running stack
 	$(COMPOSE) exec -T clickhouse sh -c 'clickhouse-client --user "$$CLICKHOUSE_USER" --password "$$CLICKHOUSE_PASSWORD" --multiquery' < compose/clickhouse/init.sql
@@ -32,7 +39,7 @@ logs: ## Follow logs
 test: ## Unit tests
 	uv run pytest
 
-itest: ## Integration tests against the running stack (Gate 0)
+itest: ## Integration tests against the running stack (Gates 0 and 1)
 	uv run pytest -m integration -v
 
 lint: ## Lint and format check

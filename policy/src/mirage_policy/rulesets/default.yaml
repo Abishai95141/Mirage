@@ -1,0 +1,7 @@
+# Policy rules v0. First match wins; the last rule must match everything.
+# Phase 1 only proves the plumbing and the record (spec 1.2): everything is allowed, so every
+# decoy behaves as its unmodified emulation would. Phase 2's bandit chooses among actions.
+version: 1
+rules:
+  - id: default-allow
+    action: allow

@@ -1,6 +1,20 @@
+# Build context is the repository root; send only what images need.
 **
 !schema/pyproject.toml
 !schema/src/**
 !pipeline/pyproject.toml
 !pipeline/src/**
+!policy/pyproject.toml
+!policy/src/**
+!decoys/common/pyproject.toml
+!decoys/common/src/**
+!decoys/tokens/pyproject.toml
+!decoys/tokens/src/**
+!decoys/http/pyproject.toml
+!decoys/http/src/**
+!decoys/db/pyproject.toml
+!decoys/db/src/**
+!decoys/ssh/patches/**
+!decoys/ssh/remove.txt
+!decoys/ssh/build_fs.py
 **/__pycache__

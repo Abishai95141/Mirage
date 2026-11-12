@@ -82,6 +82,8 @@
         "process_activity",
         "file_activity",
         "policy_decision",
+        "datastore_activity",
+        "detection_finding",
         "unknown"
       ],
       "title": "EventClass",
@@ -211,13 +213,14 @@
         "zeek",
         "suricata",
         "policy",
-        "sim"
+        "sim",
+        "pipeline"
       ],
       "title": "Source",
       "type": "string"
     }
   },
-  "$id": "https://mirage.invalid/schema/0.1.0/mirage-event.schema.json",
+  "$id": "https://mirage.invalid/schema/0.2.0/mirage-event.schema.json",
   "additionalProperties": false,
   "properties": {
     "action": {
@@ -301,7 +304,7 @@
       "type": "object"
     },
     "schema_version": {
-      "default": "0.1.0",
+      "default": "0.2.0",
       "title": "Schema Version",
       "type": "string"
     },

@@ -1,6 +1,7 @@
-"""Containment baseline (work package 0.4).
+"""Containment (work package 0.4, extended for phase 1: spec section 2 and Gate 1 test 7).
 
-A decoy must not be able to reach the internet, the pipeline, or the host. The probe runs with
+A decoy must not be able to reach the internet, the pipeline, or the host. Its only permitted
+destination is the policy service's port on the gate network, which only decoys share. The probe runs with
 Cowrie's own Python both inside the running Cowrie container and in a throwaway container on
 the decoy network, so the check covers the network, not just one container's configuration.
 A positive control from the edge network proves the probe can detect egress when it exists.
@@ -96,12 +97,6 @@ def _assert_blocked(results: dict[str, str]) -> None:
     assert leaks == {}, f"decoy network leaks: {leaks}"
 
 
-def test_running_cowrie_has_no_egress():
-    targets = _targets()
-    results = _run_in(["exec", "mirage-cowrie-1", COWRIE_PY], targets)
-    _assert_blocked(results)
-
-
 def test_any_container_on_decoy_network_has_no_egress():
     targets = _targets()
     results = _run_in(["run", "--rm", "--network", "mirage_decoy", COWRIE_IMAGE], targets)
@@ -121,14 +116,126 @@ def test_positive_control_probe_detects_egress():
     assert results["dns example.com"].startswith("resolved:")
 
 
-def test_cowrie_is_only_on_decoy_network():
-    nets = json.loads(docker("inspect", "mirage-cowrie-1").stdout)[0]["NetworkSettings"]["Networks"]
-    assert set(nets) == {"mirage_decoy"}
+DECOYS = {"cowrie": COWRIE_PY, "http-decoy": "/usr/local/bin/python"}
 
 
-def test_decoy_network_is_internal():
-    info = json.loads(docker("network", "inspect", "mirage_decoy").stdout)[0]
-    assert info["Internal"] is True
+def _networks(service: str) -> set[str]:
+    out = docker("inspect", f"mirage-{service}-1").stdout
+    return set(json.loads(out)[0]["NetworkSettings"]["Networks"])
+
+
+def test_network_membership():
+    for decoy in DECOYS:
+        assert _networks(decoy) == {"mirage_decoy", "mirage_gate"}, decoy
+    assert _networks("policy") == {"mirage_gate"}
+    assert _networks("edge") == {"mirage_decoy", "mirage_edge"}
+
+
+def test_decoy_and_gate_networks_are_internal():
+    for net in ("mirage_decoy", "mirage_gate"):
+        info = json.loads(docker("network", "inspect", net).stdout)[0]
+        assert info["Internal"] is True, net
+
+
+def test_running_decoys_have_no_egress():
+    targets = _targets()
+    for decoy, py in DECOYS.items():
+        _assert_blocked(_run_in(["exec", f"mirage-{decoy}-1", py], targets))
+
+
+def test_decoys_reach_only_the_policy_port_on_the_gate():
+    policy_ip = container_ip("policy", "mirage_gate")
+    others = [container_ip(d, "mirage_gate") for d in DECOYS]
+    targets = {
+        "tcp": [[policy_ip, 8000], [policy_ip, 22], [policy_ip, 8080], [policy_ip, 4222]]
+        + [[ip, p] for ip in others for p in (2222, 8080)],
+        "dns": [],
+        "udp_dns": [policy_ip],
+    }
+    for decoy, py in DECOYS.items():
+        res = _run_in(["exec", f"mirage-{decoy}-1", py], targets)
+        assert res[f"tcp {policy_ip}:8000"] == "connected", (decoy, res)
+        leaks = {k: v for k, v in res.items() if v in ("connected", "answered")}
+        leaks.pop(f"tcp {policy_ip}:8000")
+        # Decoys share the decoy network, so they may reach each other's service ports there
+        # (one profile is one host). On the gate they reach only the policy port.
+        leaks = {k: v for k, v in leaks.items() if not any(ip in k for ip in others)}
+        assert leaks == {}, (decoy, leaks)
+
+
+def test_policy_service_has_no_egress():
+    _assert_blocked(_run_in(["exec", "mirage-policy-1", "python"], _targets()))
+
+
+def test_edge_side_cannot_reach_the_policy_service():
+    policy_ip = container_ip("policy", "mirage_gate")
+    res = _run_in(
+        ["run", "--rm", "--network", "mirage_decoy", COWRIE_IMAGE],
+        {"tcp": [[policy_ip, 8000], ["policy", 8000]], "dns": ["policy"], "udp_dns": []},
+    )
+    assert not any(
+        v in ("connected", "answered") or v.startswith("resolved:") for v in res.values()
+    ), res
+
+
+POLICY_POST = r"""
+import json, sys, urllib.request, urllib.error
+req = urllib.request.Request("http://policy:8000/v1/decide", data=json.dumps(
+    {"request_id": "containment", "protocol": "ssh", "argv": ["id"]}).encode(),
+    headers={"Content-Type": "application/json", "Authorization": sys.argv[1]})
+try:
+    print(urllib.request.urlopen(req, timeout=3).status)
+except urllib.error.HTTPError as e:
+    print(e.code)
+"""
+
+
+def test_policy_refuses_a_wrong_or_missing_token():
+    for auth in ("Bearer wrong-token-0000000000000000", ""):
+        out = docker("exec", "mirage-cowrie-1", COWRIE_PY, "-c", POLICY_POST, auth).stdout.strip()
+        assert out == "401", (auth[:6], out)
+
+
+def test_emulated_shell_cannot_reach_the_policy_service(env):
+    import time
+
+    import paramiko
+
+    from .conftest import ROOT
+
+    password = next(
+        line.split(":", 2)[2]
+        for line in (ROOT / "build/profile/cowrie/userdb.txt").read_text().splitlines()
+        if line.startswith("root:")
+    )
+    policy_ip = container_ip("policy", "mirage_gate")
+    client = paramiko.SSHClient()
+    client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+    client.connect(
+        "127.0.0.1",
+        int(env.get("SSH_PORT", 2222)),
+        "root",
+        password,
+        look_for_keys=False,
+        allow_agent=False,
+        timeout=10,
+    )
+    chan = client.invoke_shell()
+    time.sleep(1)
+    chan.recv(65536)
+    out = b""
+    for cmd in (
+        f"curl -s http://{policy_ip}:8000/healthz",
+        f"wget -O - http://{policy_ip}:8000/healthz",
+    ):
+        chan.send((cmd + "\n").encode())
+        time.sleep(4)
+        while chan.recv_ready():
+            out += chan.recv(65536)
+    client.close()
+    text = out.decode(errors="replace")
+    # The service answers /healthz with "ok"; the emulated tools must never get that far.
+    assert "\nok" not in text and "200 OK" not in text, text
 
 
 def test_published_ports_bind_localhost_only():

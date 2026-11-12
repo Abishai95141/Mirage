@@ -8,8 +8,16 @@ import pytest
 ROOT = Path(__file__).parents[2]
 
 
-def read_env() -> dict[str, str]:
-    env = {}
+class Env(dict):
+    """The .env values. Its repr shows key names only, so a failing test's traceback (pytest
+    prints fixture arguments) never puts secrets in a log."""
+
+    def __repr__(self) -> str:
+        return f"Env(keys={sorted(self)})"
+
+
+def read_env() -> Env:
+    env = Env()
     for line in (ROOT / ".env").read_text().splitlines():
         if line and not line.startswith("#") and "=" in line:
             k, v = line.split("=", 1)
@@ -29,7 +37,7 @@ def container_ip(service: str, network: str) -> str:
 
 
 @pytest.fixture(scope="session")
-def env() -> dict[str, str]:
+def env() -> Env:
     if not (ROOT / ".env").exists():
         pytest.skip("no .env; run make up")
     return read_env()

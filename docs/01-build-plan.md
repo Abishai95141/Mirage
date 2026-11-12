@@ -1,6 +1,6 @@
 # MIRAGE build plan
 
-Status: draft for review · 11 November 2026, phase 1 tightened 12 November
+Status: draft for review · 11 November 2026, phase 1 tightened and built (except 1.5) 12 November
 Inputs: the technical report (11 Nov 2026) and the research in [`reports/MIRAGE honeypot build research.md`](../reports/MIRAGE%20honeypot%20build%20research.md)
 Companion docs: [architecture](02-architecture.md) · [AI/ML design](03-ai-ml-design.md) · [phase 1 spec](04-phase-1-spec.md)
 
@@ -124,6 +124,8 @@ The full specification, with acceptance criteria for every package, is in [04-ph
 | 1.6 Honeytokens | A library and CLI. Tokens are minted and planted by the profile generator; a pipeline matcher emits `token.triggered` |
 | 1.7 Sessioniser | `session_summary` for all protocols; fingerprints; `actor_links` (honeytoken use, HASSH plus credentials, source address) |
 | 1.8 Artifact store | Files named by hash, mode 0400, on volumes mounted read-write only by their writer; an index table; size caps; never executed |
+
+**Status (12 November 2026):** built and tested on the laptop except 1.5, the database decoys. Gate 1 tests 1, 2, 5 (as SSH to HTTP), 6, 7, 8, 9 and 10 pass; 3 and 4 wait for 1.5, so the gate is not yet passed. Details: [spec section 10](04-phase-1-spec.md#10-implementation-status-12-november-2026).
 
 **Gate 1:** the ten tests in [spec section 6](04-phase-1-spec.md#6-gate-1) pass in CI. In short:
 

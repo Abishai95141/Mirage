@@ -1,0 +1,15 @@
+# Default phase 1 profile: a small Debian 12 web server with a WordPress-style site, MariaDB and
+# Redis on the same host (spec P8). Distribution facts come from reference/debian-12.json;
+# everything listed here is chosen per deployment from the seed.
+profile_id: web-db
+distro: debian-12
+machine: x86_64
+hostnames: [web01, web02, www1, app01, srv-web1, prod-web01, wp01, site01]
+# Accepted root passwords: the generator picks 1-3 of these per deployment. Anything else is
+# rejected (no wildcard entries), as on a host with a weak but specific password.
+root_passwords: ["123456", "admin", "root123", "password", "P@ssw0rd", "qwerty123", "toor", "1q2w3e4r"]
+regular_users: {min: 1, max: 2}
+site:
+  title_words: [Northwind, Bluepeak, Harbor, Meridian, Cedar, Atlas, Lumen, Oakridge]
+  title_suffix: [Consulting, Logistics, Dental, Studio, Supplies, Partners, Systems]
+crm_rows: 60

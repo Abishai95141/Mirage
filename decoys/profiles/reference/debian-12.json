@@ -1,0 +1,3477 @@
+{
+ "container_hostname": "3d7b9d6e04f7",
+ "extracted_at": "2026-11-12T07:49:19Z",
+ "image": "mirage/reference:debian-12",
+ "image_id": "sha256:909f7e6b8a51221aee4beb62d32ac8bf07f5757ff68f06e572c9eecc257f6276",
+ "mysql": {
+  "errors": {
+   "connect_unknown_db": {
+    "code": 1049,
+    "message": "Unknown database 'nosuchdb'"
+   },
+   "denied_nopassword": {
+    "code": 1698,
+    "message": "Access denied for user 'admin'@'172.17.0.1'"
+   },
+   "denied_password": {
+    "code": 1045,
+    "message": "Access denied for user 'root'@'172.17.0.1' (using password: YES)"
+   },
+   "denied_unknown_user": {
+    "code": 1045,
+    "message": "Access denied for user 'nosuchuser'@'172.17.0.1' (using password: YES)"
+   },
+   "max_allowed_packet": {
+    "code": 1153,
+    "message": "Got a packet bigger than 'max_allowed_packet' bytes"
+   }
+  },
+  "handshake": {
+   "auth_data_len": 21,
+   "auth_plugin": "mysql_native_password",
+   "capabilities": 2181036030,
+   "charset": 45,
+   "packet_hex_len": 100,
+   "protocol": 10,
+   "reserved_hex": "0000000000001d000000",
+   "server_version": "5.5.5-10.11.19-MariaDB-0+deb12u1",
+   "status": 2,
+   "thread_id_sample": 5
+  },
+  "queries": {
+   "CREATE FUNCTION sys_exec RETURNS INTEGER SONAME 'lib_mysqludf_sys.so'": {
+    "error": {
+     "code": 1126,
+     "message": "Can't open shared library 'lib_mysqludf_sys.so' (errno: 2, cannot open shared object file: No such file or directory)"
+    }
+   },
+   "DESCRIBE probe.t": {
+    "column_types": [
+     253,
+     252,
+     253,
+     253,
+     252,
+     253
+    ],
+    "columns": [
+     "Field",
+     "Type",
+     "Null",
+     "Key",
+     "Default",
+     "Extra"
+    ],
+    "rows": [
+     [
+      "id",
+      "int(11)",
+      "NO",
+      "PRI",
+      null,
+      ""
+     ],
+     [
+      "name",
+      "varchar(32)",
+      "YES",
+      "",
+      null,
+      ""
+     ]
+    ]
+   },
+   "DROP DATABASE probe_nosuch": {
+    "error": {
+     "code": 1008,
+     "message": "Can't drop database 'probe_nosuch'; database doesn't exist"
+    }
+   },
+   "INSERT INTO probe.nosuch VALUES (1)": {
+    "error": {
+     "code": 1146,
+     "message": "Table 'probe.nosuch' doesn't exist"
+    }
+   },
+   "PREPARE s FROM 'SELECT 1'": {
+    "column_types": [],
+    "columns": [],
+    "rows": []
+   },
+   "SELEC 1": {
+    "error": {
+     "code": 1064,
+     "message": "You have an error in your SQL syntax; check the manual that corresponds to your MariaDB server version for the right syntax to use near 'SELEC 1' at line 1"
+    }
+   },
+   "SELECT * FROM probe.nosuch": {
+    "error": {
+     "code": 1146,
+     "message": "Table 'probe.nosuch' doesn't exist"
+    }
+   },
+   "SELECT 1": {
+    "column_types": [
+     3
+    ],
+    "columns": [
+     "1"
+    ],
+    "rows": [
+     [
+      1
+     ]
+    ]
+   },
+   "SELECT 1 INTO DUMPFILE '/var/lib/mysql/mirage_probe.so'": {
+    "error": {
+     "code": 1227,
+     "message": "Access denied; you need (at least one of) the FILE privilege(s) for this operation"
+    }
+   },
+   "SELECT 1 INTO OUTFILE '/tmp/mirage_probe.txt'": {
+    "error": {
+     "code": 1227,
+     "message": "Access denied; you need (at least one of) the FILE privilege(s) for this operation"
+    }
+   },
+   "SELECT @@basedir": {
+    "column_types": [
+     253
+    ],
+    "columns": [
+     "@@basedir"
+    ],
+    "rows": [
+     [
+      "/usr"
+     ]
+    ]
+   },
+   "SELECT @@datadir": {
+    "column_types": [
+     253
+    ],
+    "columns": [
+     "@@datadir"
+    ],
+    "rows": [
+     [
+      "/var/lib/mysql/"
+     ]
+    ]
+   },
+   "SELECT @@hostname": {
+    "column_types": [
+     253
+    ],
+    "columns": [
+     "@@hostname"
+    ],
+    "rows": [
+     [
+      "3d7b9d6e04f7"
+     ]
+    ]
+   },
+   "SELECT @@max_allowed_packet": {
+    "column_types": [
+     8
+    ],
+    "columns": [
+     "@@max_allowed_packet"
+    ],
+    "rows": [
+     [
+      16777216
+     ]
+    ]
+   },
+   "SELECT @@secure_file_priv": {
+    "column_types": [
+     253
+    ],
+    "columns": [
+     "@@secure_file_priv"
+    ],
+    "rows": [
+     [
+      null
+     ]
+    ]
+   },
+   "SELECT @@version": {
+    "column_types": [
+     253
+    ],
+    "columns": [
+     "@@version"
+    ],
+    "rows": [
+     [
+      "10.11.19-MariaDB-0+deb12u1"
+     ]
+    ]
+   },
+   "SELECT @@version_comment LIMIT 1": {
+    "column_types": [
+     253
+    ],
+    "columns": [
+     "@@version_comment"
+    ],
+    "rows": [
+     [
+      "Debian 12"
+     ]
+    ]
+   },
+   "SELECT @@version_compile_os, @@version_compile_machine": {
+    "column_types": [
+     253,
+     253
+    ],
+    "columns": [
+     "@@version_compile_os",
+     "@@version_compile_machine"
+    ],
+    "rows": [
+     [
+      "debian-linux-gnu",
+      "aarch64"
+     ]
+    ]
+   },
+   "SELECT COUNT(*) FROM probe.t": {
+    "column_types": [
+     8
+    ],
+    "columns": [
+     "COUNT(*)"
+    ],
+    "rows": [
+     [
+      0
+     ]
+    ]
+   },
+   "SELECT CURRENT_USER()": {
+    "column_types": [
+     253
+    ],
+    "columns": [
+     "CURRENT_USER()"
+    ],
+    "rows": [
+     [
+      "probe@%"
+     ]
+    ]
+   },
+   "SELECT DATABASE()": {
+    "column_types": [
+     253
+    ],
+    "columns": [
+     "DATABASE()"
+    ],
+    "rows": [
+     [
+      null
+     ]
+    ]
+   },
+   "SELECT LOAD_FILE('/etc/passwd')": {
+    "column_types": [
+     251
+    ],
+    "columns": [
+     "LOAD_FILE('/etc/passwd')"
+    ],
+    "rows": [
+     [
+      null
+     ]
+    ]
+   },
+   "SELECT NOW()": {
+    "column_types": [
+     12
+    ],
+    "columns": [
+     "NOW()"
+    ],
+    "rows": [
+     [
+      "2026-11-12 07:49:51"
+     ]
+    ]
+   },
+   "SELECT USER()": {
+    "column_types": [
+     253
+    ],
+    "columns": [
+     "USER()"
+    ],
+    "rows": [
+     [
+      "probe@172.17.0.1"
+     ]
+    ]
+   },
+   "SELECT VERSION()": {
+    "column_types": [
+     253
+    ],
+    "columns": [
+     "VERSION()"
+    ],
+    "rows": [
+     [
+      "10.11.19-MariaDB-0+deb12u1"
+     ]
+    ]
+   },
+   "SELECT nocol FROM probe.t": {
+    "error": {
+     "code": 1054,
+     "message": "Unknown column 'nocol' in 'SELECT'"
+    }
+   },
+   "SHOW CREATE TABLE probe.t": {
+    "column_types": [
+     253,
+     253
+    ],
+    "columns": [
+     "Table",
+     "Create Table"
+    ],
+    "rows": [
+     [
+      "t",
+      "CREATE TABLE `t` (\n  `id` int(11) NOT NULL,\n  `name` varchar(32) DEFAULT NULL,\n  PRIMARY KEY (`id`)\n) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci"
+     ]
+    ]
+   },
+   "SHOW DATABASES": {
+    "column_types": [
+     253
+    ],
+    "columns": [
+     "Database"
+    ],
+    "rows": [
+     [
+      "information_schema"
+     ],
+     [
+      "mysql"
+     ],
+     [
+      "performance_schema"
+     ],
+     [
+      "probe"
+     ],
+     [
+      "sys"
+     ]
+    ]
+   },
+   "SHOW GRANTS": {
+    "column_types": [
+     253
+    ],
+    "columns": [
+     "Grants for probe@%"
+    ],
+    "rows": [
+     [
+      "GRANT SELECT, INSERT, CREATE, DROP ON *.* TO `probe`@`%` IDENTIFIED BY PASSWORD '*61CAB5BD10C9AE60B985E8821DCBCBA0125FE290'"
+     ]
+    ]
+   },
+   "SHOW TABLES": {
+    "error": {
+     "code": 1046,
+     "message": "No database selected"
+    }
+   },
+   "SHOW TABLES FROM probe": {
+    "column_types": [
+     253
+    ],
+    "columns": [
+     "Tables_in_probe"
+    ],
+    "rows": [
+     [
+      "t"
+     ]
+    ]
+   },
+   "SHOW VARIABLES": {
+    "column_types": [
+     253,
+     253
+    ],
+    "columns": [
+     "Variable_name",
+     "Value"
+    ],
+    "rows": [
+     [
+      "allow_suspicious_udfs",
+      "OFF"
+     ],
+     [
+      "alter_algorithm",
+      "DEFAULT"
+     ],
+     [
+      "analyze_max_length",
+      "4294967295"
+     ],
+     [
+      "analyze_sample_percentage",
+      "100.000000"
+     ],
+     [
+      "aria_block_size",
+      "8192"
+     ],
+     [
+      "aria_checkpoint_interval",
+      "30"
+     ],
+     [
+      "aria_checkpoint_log_activity",
+      "1048576"
+     ],
+     [
+      "aria_encrypt_tables",
+      "OFF"
+     ],
+     [
+      "aria_force_start_after_recovery_failures",
+      "0"
+     ],
+     [
+      "aria_group_commit",
+      "none"
+     ],
+     [
+      "aria_group_commit_interval",
+      "0"
+     ],
+     [
+      "aria_log_dir_path",
+      "/var/lib/mysql/"
+     ],
+     [
+      "aria_log_file_size",
+      "1073741824"
+     ],
+     [
+      "aria_log_purge_type",
+      "immediate"
+     ],
+     [
+      "aria_max_sort_file_size",
+      "9223372036853727232"
+     ],
+     [
+      "aria_page_checksum",
+      "ON"
+     ],
+     [
+      "aria_pagecache_age_threshold",
+      "300"
+     ],
+     [
+      "aria_pagecache_buffer_size",
+      "134217728"
+     ],
+     [
+      "aria_pagecache_division_limit",
+      "100"
+     ],
+     [
+      "aria_pagecache_file_hash_size",
+      "512"
+     ],
+     [
+      "aria_recover_options",
+      "BACKUP,QUICK"
+     ],
+     [
+      "aria_repair_threads",
+      "1"
+     ],
+     [
+      "aria_sort_buffer_size",
+      "268434432"
+     ],
+     [
+      "aria_stats_method",
+      "nulls_unequal"
+     ],
+     [
+      "aria_sync_log_dir",
+      "NEWFILE"
+     ],
+     [
+      "aria_used_for_temp_tables",
+      "ON"
+     ],
+     [
+      "auto_increment_increment",
+      "1"
+     ],
+     [
+      "auto_increment_offset",
+      "1"
+     ],
+     [
+      "autocommit",
+      "ON"
+     ],
+     [
+      "automatic_sp_privileges",
+      "ON"
+     ],
+     [
+      "back_log",
+      "80"
+     ],
+     [
+      "basedir",
+      "/usr"
+     ],
+     [
+      "big_tables",
+      "OFF"
+     ],
+     [
+      "bind_address",
+      "0.0.0.0"
+     ],
+     [
+      "binlog_alter_two_phase",
+      "OFF"
+     ],
+     [
+      "binlog_annotate_row_events",
+      "ON"
+     ],
+     [
+      "binlog_cache_size",
+      "32768"
+     ],
+     [
+      "binlog_checksum",
+      "CRC32"
+     ],
+     [
+      "binlog_commit_wait_count",
+      "0"
+     ],
+     [
+      "binlog_commit_wait_usec",
+      "100000"
+     ],
+     [
+      "binlog_direct_non_transactional_updates",
+      "OFF"
+     ],
+     [
+      "binlog_expire_logs_seconds",
+      "864000"
+     ],
+     [
+      "binlog_file_cache_size",
+      "16384"
+     ],
+     [
+      "binlog_format",
+      "MIXED"
+     ],
+     [
+      "binlog_optimize_thread_scheduling",
+      "ON"
+     ],
+     [
+      "binlog_row_image",
+      "FULL"
+     ],
+     [
+      "binlog_row_metadata",
+      "NO_LOG"
+     ],
+     [
+      "binlog_stmt_cache_size",
+      "32768"
+     ],
+     [
+      "bulk_insert_buffer_size",
+      "8388608"
+     ],
+     [
+      "character_set_client",
+      "utf8mb4"
+     ],
+     [
+      "character_set_connection",
+      "utf8mb4"
+     ],
+     [
+      "character_set_database",
+      "utf8mb4"
+     ],
+     [
+      "character_set_filesystem",
+      "binary"
+     ],
+     [
+      "character_set_results",
+      "utf8mb4"
+     ],
+     [
+      "character_set_server",
+      "utf8mb4"
+     ],
+     [
+      "character_set_system",
+      "utf8mb3"
+     ],
+     [
+      "character_sets_dir",
+      "/usr/share/mysql/charsets/"
+     ],
+     [
+      "check_constraint_checks",
+      "ON"
+     ],
+     [
+      "collation_connection",
+      "utf8mb4_general_ci"
+     ],
+     [
+      "collation_database",
+      "utf8mb4_general_ci"
+     ],
+     [
+      "collation_server",
+      "utf8mb4_general_ci"
+     ],
+     [
+      "column_compression_threshold",
+      "100"
+     ],
+     [
+      "column_compression_zlib_level",
+      "6"
+     ],
+     [
+      "column_compression_zlib_strategy",
+      "DEFAULT_STRATEGY"
+     ],
+     [
+      "column_compression_zlib_wrap",
+      "OFF"
+     ],
+     [
+      "completion_type",
+      "NO_CHAIN"
+     ],
+     [
+      "concurrent_insert",
+      "AUTO"
+     ],
+     [
+      "connect_timeout",
+      "10"
+     ],
+     [
+      "core_file",
+      "OFF"
+     ],
+     [
+      "datadir",
+      "/var/lib/mysql/"
+     ],
+     [
+      "date_format",
+      "%Y-%m-%d"
+     ],
+     [
+      "datetime_format",
+      "%Y-%m-%d %H:%i:%s"
+     ],
+     [
+      "deadlock_search_depth_long",
+      "15"
+     ],
+     [
+      "deadlock_search_depth_short",
+      "4"
+     ],
+     [
+      "deadlock_timeout_long",
+      "50000000"
+     ],
+     [
+      "deadlock_timeout_short",
+      "10000"
+     ],
+     [
+      "debug_no_thread_alarm",
+      "OFF"
+     ],
+     [
+      "default_master_connection",
+      ""
+     ],
+     [
+      "default_password_lifetime",
+      "0"
+     ],
+     [
+      "default_regex_flags",
+      ""
+     ],
+     [
+      "default_storage_engine",
+      "InnoDB"
+     ],
+     [
+      "default_tmp_storage_engine",
+      ""
+     ],
+     [
+      "default_week_format",
+      "0"
+     ],
+     [
+      "delay_key_write",
+      "ON"
+     ],
+     [
+      "delayed_insert_limit",
+      "100"
+     ],
+     [
+      "delayed_insert_timeout",
+      "300"
+     ],
+     [
+      "delayed_queue_size",
+      "1000"
+     ],
+     [
+      "disconnect_on_expired_password",
+      "OFF"
+     ],
+     [
+      "div_precision_increment",
+      "4"
+     ],
+     [
+      "encrypt_binlog",
+      "OFF"
+     ],
+     [
+      "encrypt_tmp_disk_tables",
+      "OFF"
+     ],
+     [
+      "encrypt_tmp_files",
+      "OFF"
+     ],
+     [
+      "enforce_storage_engine",
+      ""
+     ],
+     [
+      "eq_range_index_dive_limit",
+      "200"
+     ],
+     [
+      "error_count",
+      "0"
+     ],
+     [
+      "event_scheduler",
+      "OFF"
+     ],
+     [
+      "expensive_subquery_limit",
+      "100"
+     ],
+     [
+      "expire_logs_days",
+      "10.000000"
+     ],
+     [
+      "explicit_defaults_for_timestamp",
+      "ON"
+     ],
+     [
+      "external_user",
+      ""
+     ],
+     [
+      "extra_max_connections",
+      "1"
+     ],
+     [
+      "extra_port",
+      "0"
+     ],
+     [
+      "flush",
+      "OFF"
+     ],
+     [
+      "flush_time",
+      "0"
+     ],
+     [
+      "foreign_key_checks",
+      "ON"
+     ],
+     [
+      "ft_boolean_syntax",
+      "+ -><()~*:\"\"&|"
+     ],
+     [
+      "ft_max_word_len",
+      "84"
+     ],
+     [
+      "ft_min_word_len",
+      "4"
+     ],
+     [
+      "ft_query_expansion_limit",
+      "20"
+     ],
+     [
+      "ft_stopword_file",
+      "(built-in)"
+     ],
+     [
+      "general_log",
+      "OFF"
+     ],
+     [
+      "general_log_file",
+      "3d7b9d6e04f7.log"
+     ],
+     [
+      "group_concat_max_len",
+      "1048576"
+     ],
+     [
+      "gtid_binlog_pos",
+      ""
+     ],
+     [
+      "gtid_binlog_state",
+      ""
+     ],
+     [
+      "gtid_cleanup_batch_size",
+      "64"
+     ],
+     [
+      "gtid_current_pos",
+      ""
+     ],
+     [
+      "gtid_domain_id",
+      "0"
+     ],
+     [
+      "gtid_ignore_duplicates",
+      "OFF"
+     ],
+     [
+      "gtid_pos_auto_engines",
+      ""
+     ],
+     [
+      "gtid_seq_no",
+      "0"
+     ],
+     [
+      "gtid_slave_pos",
+      ""
+     ],
+     [
+      "gtid_strict_mode",
+      "OFF"
+     ],
+     [
+      "have_compress",
+      "YES"
+     ],
+     [
+      "have_crypt",
+      "YES"
+     ],
+     [
+      "have_dynamic_loading",
+      "YES"
+     ],
+     [
+      "have_geometry",
+      "YES"
+     ],
+     [
+      "have_openssl",
+      "YES"
+     ],
+     [
+      "have_profiling",
+      "YES"
+     ],
+     [
+      "have_query_cache",
+      "YES"
+     ],
+     [
+      "have_rtree_keys",
+      "YES"
+     ],
+     [
+      "have_ssl",
+      "DISABLED"
+     ],
+     [
+      "have_symlink",
+      "YES"
+     ],
+     [
+      "histogram_size",
+      "254"
+     ],
+     [
+      "histogram_type",
+      "DOUBLE_PREC_HB"
+     ],
+     [
+      "host_cache_size",
+      "279"
+     ],
+     [
+      "hostname",
+      "3d7b9d6e04f7"
+     ],
+     [
+      "identity",
+      "0"
+     ],
+     [
+      "idle_readonly_transaction_timeout",
+      "0"
+     ],
+     [
+      "idle_transaction_timeout",
+      "0"
+     ],
+     [
+      "idle_write_transaction_timeout",
+      "0"
+     ],
+     [
+      "ignore_builtin_innodb",
+      "OFF"
+     ],
+     [
+      "ignore_db_dirs",
+      ""
+     ],
+     [
+      "in_predicate_conversion_threshold",
+      "1000"
+     ],
+     [
+      "in_transaction",
+      "0"
+     ],
+     [
+      "init_connect",
+      ""
+     ],
+     [
+      "init_file",
+      ""
+     ],
+     [
+      "init_slave",
+      ""
+     ],
+     [
+      "innodb_adaptive_flushing",
+      "ON"
+     ],
+     [
+      "innodb_adaptive_flushing_lwm",
+      "10.000000"
+     ],
+     [
+      "innodb_adaptive_hash_index",
+      "OFF"
+     ],
+     [
+      "innodb_adaptive_hash_index_parts",
+      "8"
+     ],
+     [
+      "innodb_alter_copy_bulk",
+      "ON"
+     ],
+     [
+      "innodb_autoextend_increment",
+      "64"
+     ],
+     [
+      "innodb_autoinc_lock_mode",
+      "1"
+     ],
+     [
+      "innodb_buf_dump_status_frequency",
+      "0"
+     ],
+     [
+      "innodb_buffer_pool_chunk_size",
+      "0"
+     ],
+     [
+      "innodb_buffer_pool_dump_at_shutdown",
+      "ON"
+     ],
+     [
+      "innodb_buffer_pool_dump_now",
+      "OFF"
+     ],
+     [
+      "innodb_buffer_pool_dump_pct",
+      "25"
+     ],
+     [
+      "innodb_buffer_pool_filename",
+      "ib_buffer_pool"
+     ],
+     [
+      "innodb_buffer_pool_in_core_dump",
+      "OFF"
+     ],
+     [
+      "innodb_buffer_pool_load_abort",
+      "OFF"
+     ],
+     [
+      "innodb_buffer_pool_load_at_startup",
+      "ON"
+     ],
+     [
+      "innodb_buffer_pool_load_now",
+      "OFF"
+     ],
+     [
+      "innodb_buffer_pool_size",
+      "134217728"
+     ],
+     [
+      "innodb_buffer_pool_size_auto_min",
+      "8796093022208"
+     ],
+     [
+      "innodb_buffer_pool_size_max",
+      "8796093022208"
+     ],
+     [
+      "innodb_change_buffer_max_size",
+      "25"
+     ],
+     [
+      "innodb_change_buffering",
+      "none"
+     ],
+     [
+      "innodb_checksum_algorithm",
+      "full_crc32"
+     ],
+     [
+      "innodb_cmp_per_index_enabled",
+      "OFF"
+     ],
+     [
+      "innodb_compression_algorithm",
+      "zlib"
+     ],
+     [
+      "innodb_compression_default",
+      "OFF"
+     ],
+     [
+      "innodb_compression_failure_threshold_pct",
+      "5"
+     ],
+     [
+      "innodb_compression_level",
+      "6"
+     ],
+     [
+      "innodb_compression_pad_pct_max",
+      "50"
+     ],
+     [
+      "innodb_data_file_path",
+      "ibdata1:12M:autoextend"
+     ],
+     [
+      "innodb_data_home_dir",
+      ""
+     ],
+     [
+      "innodb_deadlock_detect",
+      "ON"
+     ],
+     [
+      "innodb_deadlock_report",
+      "full"
+     ],
+     [
+      "innodb_default_encryption_key_id",
+      "1"
+     ],
+     [
+      "innodb_default_row_format",
+      "dynamic"
+     ],
+     [
+      "innodb_defragment",
+      "OFF"
+     ],
+     [
+      "innodb_defragment_fill_factor",
+      "0.900000"
+     ],
+     [
+      "innodb_defragment_fill_factor_n_recs",
+      "20"
+     ],
+     [
+      "innodb_defragment_frequency",
+      "40"
+     ],
+     [
+      "innodb_defragment_n_pages",
+      "7"
+     ],
+     [
+      "innodb_defragment_stats_accuracy",
+      "0"
+     ],
+     [
+      "innodb_disable_sort_file_cache",
+      "OFF"
+     ],
+     [
+      "innodb_doublewrite",
+      "ON"
+     ],
+     [
+      "innodb_encrypt_log",
+      "OFF"
+     ],
+     [
+      "innodb_encrypt_tables",
+      "OFF"
+     ],
+     [
+      "innodb_encrypt_temporary_tables",
+      "OFF"
+     ],
+     [
+      "innodb_encryption_rotate_key_age",
+      "1"
+     ],
+     [
+      "innodb_encryption_rotation_iops",
+      "100"
+     ],
+     [
+      "innodb_encryption_threads",
+      "0"
+     ],
+     [
+      "innodb_fast_shutdown",
+      "1"
+     ],
+     [
+      "innodb_fatal_semaphore_wait_threshold",
+      "600"
+     ],
+     [
+      "innodb_file_per_table",
+      "ON"
+     ],
+     [
+      "innodb_fill_factor",
+      "100"
+     ],
+     [
+      "innodb_flush_log_at_timeout",
+      "1"
+     ],
+     [
+      "innodb_flush_log_at_trx_commit",
+      "1"
+     ],
+     [
+      "innodb_flush_method",
+      "O_DIRECT"
+     ],
+     [
+      "innodb_flush_neighbors",
+      "1"
+     ],
+     [
+      "innodb_flush_sync",
+      "ON"
+     ],
+     [
+      "innodb_flushing_avg_loops",
+      "30"
+     ],
+     [
+      "innodb_force_primary_key",
+      "OFF"
+     ],
+     [
+      "innodb_force_recovery",
+      "0"
+     ],
+     [
+      "innodb_ft_aux_table",
+      ""
+     ],
+     [
+      "innodb_ft_cache_size",
+      "8000000"
+     ],
+     [
+      "innodb_ft_enable_diag_print",
+      "OFF"
+     ],
+     [
+      "innodb_ft_enable_stopword",
+      "ON"
+     ],
+     [
+      "innodb_ft_max_token_size",
+      "84"
+     ],
+     [
+      "innodb_ft_min_token_size",
+      "3"
+     ],
+     [
+      "innodb_ft_num_word_optimize",
+      "2000"
+     ],
+     [
+      "innodb_ft_result_cache_limit",
+      "2000000000"
+     ],
+     [
+      "innodb_ft_server_stopword_table",
+      ""
+     ],
+     [
+      "innodb_ft_sort_pll_degree",
+      "2"
+     ],
+     [
+      "innodb_ft_total_cache_size",
+      "640000000"
+     ],
+     [
+      "innodb_ft_user_stopword_table",
+      ""
+     ],
+     [
+      "innodb_immediate_scrub_data_uncompressed",
+      "OFF"
+     ],
+     [
+      "innodb_instant_alter_column_allowed",
+      "add_drop_reorder"
+     ],
+     [
+      "innodb_io_capacity",
+      "200"
+     ],
+     [
+      "innodb_io_capacity_max",
+      "2000"
+     ],
+     [
+      "innodb_linux_aio",
+      "auto"
+     ],
+     [
+      "innodb_lock_wait_timeout",
+      "50"
+     ],
+     [
+      "innodb_log_buffer_size",
+      "16777216"
+     ],
+     [
+      "innodb_log_checkpoint_now",
+      "OFF"
+     ],
+     [
+      "innodb_log_file_buffering",
+      "ON"
+     ],
+     [
+      "innodb_log_file_mmap",
+      "OFF"
+     ],
+     [
+      "innodb_log_file_size",
+      "100663296"
+     ],
+     [
+      "innodb_log_group_home_dir",
+      "./"
+     ],
+     [
+      "innodb_log_spin_wait_delay",
+      "0"
+     ],
+     [
+      "innodb_log_write_ahead_size",
+      "512"
+     ],
+     [
+      "innodb_lru_flush_size",
+      "0"
+     ],
+     [
+      "innodb_lru_scan_depth",
+      "1536"
+     ],
+     [
+      "innodb_max_dirty_pages_pct",
+      "90.000000"
+     ],
+     [
+      "innodb_max_dirty_pages_pct_lwm",
+      "0.000000"
+     ],
+     [
+      "innodb_max_purge_lag",
+      "0"
+     ],
+     [
+      "innodb_max_purge_lag_delay",
+      "0"
+     ],
+     [
+      "innodb_max_purge_lag_wait",
+      "4294967295"
+     ],
+     [
+      "innodb_max_undo_log_size",
+      "10485760"
+     ],
+     [
+      "innodb_monitor_disable",
+      ""
+     ],
+     [
+      "innodb_monitor_enable",
+      ""
+     ],
+     [
+      "innodb_monitor_reset",
+      ""
+     ],
+     [
+      "innodb_monitor_reset_all",
+      ""
+     ],
+     [
+      "innodb_numa_interleave",
+      "OFF"
+     ],
+     [
+      "innodb_old_blocks_pct",
+      "37"
+     ],
+     [
+      "innodb_old_blocks_time",
+      "1000"
+     ],
+     [
+      "innodb_online_alter_log_max_size",
+      "134217728"
+     ],
+     [
+      "innodb_open_files",
+      "2000"
+     ],
+     [
+      "innodb_optimize_fulltext_only",
+      "OFF"
+     ],
+     [
+      "innodb_page_size",
+      "16384"
+     ],
+     [
+      "innodb_prefix_index_cluster_optimization",
+      "ON"
+     ],
+     [
+      "innodb_print_all_deadlocks",
+      "OFF"
+     ],
+     [
+      "innodb_purge_batch_size",
+      "127"
+     ],
+     [
+      "innodb_purge_rseg_truncate_frequency",
+      "128"
+     ],
+     [
+      "innodb_purge_threads",
+      "4"
+     ],
+     [
+      "innodb_random_read_ahead",
+      "OFF"
+     ],
+     [
+      "innodb_read_ahead_threshold",
+      "56"
+     ],
+     [
+      "innodb_read_io_threads",
+      "4"
+     ],
+     [
+      "innodb_read_only",
+      "OFF"
+     ],
+     [
+      "innodb_read_only_compressed",
+      "OFF"
+     ],
+     [
+      "innodb_rollback_on_timeout",
+      "OFF"
+     ],
+     [
+      "innodb_snapshot_isolation",
+      "OFF"
+     ],
+     [
+      "innodb_sort_buffer_size",
+      "1048576"
+     ],
+     [
+      "innodb_spin_wait_delay",
+      "4"
+     ],
+     [
+      "innodb_stats_auto_recalc",
+      "ON"
+     ],
+     [
+      "innodb_stats_include_delete_marked",
+      "OFF"
+     ],
+     [
+      "innodb_stats_method",
+      "nulls_equal"
+     ],
+     [
+      "innodb_stats_modified_counter",
+      "0"
+     ],
+     [
+      "innodb_stats_on_metadata",
+      "OFF"
+     ],
+     [
+      "innodb_stats_persistent",
+      "ON"
+     ],
+     [
+      "innodb_stats_persistent_sample_pages",
+      "20"
+     ],
+     [
+      "innodb_stats_traditional",
+      "ON"
+     ],
+     [
+      "innodb_stats_transient_sample_pages",
+      "8"
+     ],
+     [
+      "innodb_status_output",
+      "OFF"
+     ],
+     [
+      "innodb_status_output_locks",
+      "OFF"
+     ],
+     [
+      "innodb_strict_mode",
+      "ON"
+     ],
+     [
+      "innodb_sync_spin_loops",
+      "30"
+     ],
+     [
+      "innodb_table_locks",
+      "ON"
+     ],
+     [
+      "innodb_temp_data_file_path",
+      "ibtmp1:12M:autoextend"
+     ],
+     [
+      "innodb_tmpdir",
+      ""
+     ],
+     [
+      "innodb_undo_directory",
+      "./"
+     ],
+     [
+      "innodb_undo_log_truncate",
+      "OFF"
+     ],
+     [
+      "innodb_undo_tablespaces",
+      "0"
+     ],
+     [
+      "innodb_use_atomic_writes",
+      "ON"
+     ],
+     [
+      "innodb_use_native_aio",
+      "ON"
+     ],
+     [
+      "innodb_write_io_threads",
+      "4"
+     ],
+     [
+      "insert_id",
+      "0"
+     ],
+     [
+      "interactive_timeout",
+      "28800"
+     ],
+     [
+      "join_buffer_size",
+      "262144"
+     ],
+     [
+      "join_buffer_space_limit",
+      "2097152"
+     ],
+     [
+      "join_cache_level",
+      "2"
+     ],
+     [
+      "keep_files_on_create",
+      "OFF"
+     ],
+     [
+      "key_buffer_size",
+      "134217728"
+     ],
+     [
+      "key_cache_age_threshold",
+      "300"
+     ],
+     [
+      "key_cache_block_size",
+      "1024"
+     ],
+     [
+      "key_cache_division_limit",
+      "100"
+     ],
+     [
+      "key_cache_file_hash_size",
+      "512"
+     ],
+     [
+      "key_cache_segments",
+      "0"
+     ],
+     [
+      "large_files_support",
+      "ON"
+     ],
+     [
+      "large_page_size",
+      "0"
+     ],
+     [
+      "large_pages",
+      "OFF"
+     ],
+     [
+      "last_gtid",
+      ""
+     ],
+     [
+      "last_insert_id",
+      "0"
+     ],
+     [
+      "lc_messages",
+      "en_US"
+     ],
+     [
+      "lc_messages_dir",
+      ""
+     ],
+     [
+      "lc_time_names",
+      "en_US"
+     ],
+     [
+      "license",
+      "GPL"
+     ],
+     [
+      "local_infile",
+      "ON"
+     ],
+     [
+      "lock_wait_timeout",
+      "86400"
+     ],
+     [
+      "locked_in_memory",
+      "OFF"
+     ],
+     [
+      "log_bin",
+      "OFF"
+     ],
+     [
+      "log_bin_basename",
+      ""
+     ],
+     [
+      "log_bin_compress",
+      "OFF"
+     ],
+     [
+      "log_bin_compress_min_len",
+      "256"
+     ],
+     [
+      "log_bin_index",
+      ""
+     ],
+     [
+      "log_bin_trust_function_creators",
+      "OFF"
+     ],
+     [
+      "log_disabled_statements",
+      "sp"
+     ],
+     [
+      "log_error",
+      ""
+     ],
+     [
+      "log_output",
+      "FILE"
+     ],
+     [
+      "log_queries_not_using_indexes",
+      "OFF"
+     ],
+     [
+      "log_slave_updates",
+      "OFF"
+     ],
+     [
+      "log_slow_admin_statements",
+      "ON"
+     ],
+     [
+      "log_slow_disabled_statements",
+      "sp"
+     ],
+     [
+      "log_slow_filter",
+      "admin,filesort,filesort_on_disk,filesort_priority_queue,full_join,full_scan,query_cache,query_cache_miss,tmp_table,tmp_table_on_disk"
+     ],
+     [
+      "log_slow_max_warnings",
+      "10"
+     ],
+     [
+      "log_slow_min_examined_row_limit",
+      "0"
+     ],
+     [
+      "log_slow_query",
+      "OFF"
+     ],
+     [
+      "log_slow_query_file",
+      "3d7b9d6e04f7-slow.log"
+     ],
+     [
+      "log_slow_query_time",
+      "10.000000"
+     ],
+     [
+      "log_slow_rate_limit",
+      "1"
+     ],
+     [
+      "log_slow_slave_statements",
+      "ON"
+     ],
+     [
+      "log_slow_verbosity",
+      ""
+     ],
+     [
+      "log_tc_size",
+      "24576"
+     ],
+     [
+      "log_warnings",
+      "2"
+     ],
+     [
+      "long_query_time",
+      "10.000000"
+     ],
+     [
+      "low_priority_updates",
+      "OFF"
+     ],
+     [
+      "lower_case_file_system",
+      "OFF"
+     ],
+     [
+      "lower_case_table_names",
+      "0"
+     ],
+     [
+      "master_verify_checksum",
+      "OFF"
+     ],
+     [
+      "max_allowed_packet",
+      "16777216"
+     ],
+     [
+      "max_binlog_cache_size",
+      "18446744073709547520"
+     ],
+     [
+      "max_binlog_size",
+      "1073741824"
+     ],
+     [
+      "max_binlog_stmt_cache_size",
+      "18446744073709547520"
+     ],
+     [
+      "max_connect_errors",
+      "100"
+     ],
+     [
+      "max_connections",
+      "151"
+     ],
+     [
+      "max_delayed_threads",
+      "20"
+     ],
+     [
+      "max_digest_length",
+      "1024"
+     ],
+     [
+      "max_error_count",
+      "64"
+     ],
+     [
+      "max_heap_table_size",
+      "16777216"
+     ],
+     [
+      "max_insert_delayed_threads",
+      "20"
+     ],
+     [
+      "max_join_size",
+      "18446744073709551615"
+     ],
+     [
+      "max_length_for_sort_data",
+      "1024"
+     ],
+     [
+      "max_password_errors",
+      "4294967295"
+     ],
+     [
+      "max_prepared_stmt_count",
+      "16382"
+     ],
+     [
+      "max_recursive_iterations",
+      "1000"
+     ],
+     [
+      "max_relay_log_size",
+      "1073741824"
+     ],
+     [
+      "max_rowid_filter_size",
+      "131072"
+     ],
+     [
+      "max_seeks_for_key",
+      "4294967295"
+     ],
+     [
+      "max_session_mem_used",
+      "9223372036854775807"
+     ],
+     [
+      "max_sort_length",
+      "1024"
+     ],
+     [
+      "max_sp_recursion_depth",
+      "0"
+     ],
+     [
+      "max_statement_time",
+      "0.000000"
+     ],
+     [
+      "max_tmp_tables",
+      "32"
+     ],
+     [
+      "max_user_connections",
+      "0"
+     ],
+     [
+      "max_write_lock_count",
+      "4294967295"
+     ],
+     [
+      "metadata_locks_cache_size",
+      "1024"
+     ],
+     [
+      "metadata_locks_hash_instances",
+      "8"
+     ],
+     [
+      "min_examined_row_limit",
+      "0"
+     ],
+     [
+      "mrr_buffer_size",
+      "262144"
+     ],
+     [
+      "myisam_block_size",
+      "1024"
+     ],
+     [
+      "myisam_data_pointer_size",
+      "6"
+     ],
+     [
+      "myisam_max_sort_file_size",
+      "9223372036853727232"
+     ],
+     [
+      "myisam_mmap_size",
+      "18446744073709551615"
+     ],
+     [
+      "myisam_recover_options",
+      "BACKUP,QUICK"
+     ],
+     [
+      "myisam_repair_threads",
+      "1"
+     ],
+     [
+      "myisam_sort_buffer_size",
+      "134216704"
+     ],
+     [
+      "myisam_stats_method",
+      "NULLS_UNEQUAL"
+     ],
+     [
+      "myisam_use_mmap",
+      "OFF"
+     ],
+     [
+      "mysql56_temporal_format",
+      "ON"
+     ],
+     [
+      "net_buffer_length",
+      "16384"
+     ],
+     [
+      "net_read_timeout",
+      "30"
+     ],
+     [
+      "net_retry_count",
+      "10"
+     ],
+     [
+      "net_write_timeout",
+      "60"
+     ],
+     [
+      "note_verbosity",
+      "basic,explain"
+     ],
+     [
+      "old",
+      "OFF"
+     ],
+     [
+      "old_alter_table",
+      "DEFAULT"
+     ],
+     [
+      "old_mode",
+      "UTF8_IS_UTF8MB3"
+     ],
+     [
+      "old_passwords",
+      "OFF"
+     ],
+     [
+      "open_files_limit",
+      "32192"
+     ],
+     [
+      "optimizer_adjust_secondary_key_costs",
+      "fix_reuse_range_for_ref,fix_card_multiplier"
+     ],
+     [
+      "optimizer_extra_pruning_depth",
+      "8"
+     ],
+     [
+      "optimizer_join_limit_pref_ratio",
+      "0"
+     ],
+     [
+      "optimizer_max_sel_arg_weight",
+      "32000"
+     ],
+     [
+      "optimizer_max_sel_args",
+      "16000"
+     ],
+     [
+      "optimizer_prune_level",
+      "2"
+     ],
+     [
+      "optimizer_search_depth",
+      "62"
+     ],
+     [
+      "optimizer_selectivity_sampling_limit",
+      "100"
+     ],
+     [
+      "optimizer_switch",
+      "index_merge=on,index_merge_union=on,index_merge_sort_union=on,index_merge_intersection=on,index_merge_sort_intersection=off,engine_condition_pushdown=off,index_condition_pushdown=on,derived_merge=on,derived_with_keys=on,firstmatch=on,loosescan=on,materialization=on,in_to_exists=on,semijoin=on,partial_match_rowid_merge=on,partial_match_table_scan=on,subquery_cache=on,mrr=off,mrr_cost_based=off,mrr_sort_keys=off,outer_join_with_cache=on,semijoin_with_cache=on,join_cache_incremental=on,join_cache_hashed=on,join_cache_bka=on,optimize_join_buffer_size=on,table_elimination=on,extended_keys=on,exists_to_in=on,orderby_uses_equalities=on,condition_pushdown_for_derived=on,split_materialized=on,condition_pushdown_for_subquery=on,rowid_filter=on,condition_pushdown_from_having=on,not_null_range_scan=off,hash_join_cardinality=off,cset_narrowing=off"
+     ],
+     [
+      "optimizer_trace",
+      "enabled=off"
+     ],
+     [
+      "optimizer_trace_max_mem_size",
+      "1048576"
+     ],
+     [
+      "optimizer_use_condition_selectivity",
+      "4"
+     ],
+     [
+      "performance_schema",
+      "OFF"
+     ],
+     [
+      "performance_schema_accounts_size",
+      "-1"
+     ],
+     [
+      "performance_schema_digests_size",
+      "-1"
+     ],
+     [
+      "performance_schema_events_stages_history_long_size",
+      "-1"
+     ],
+     [
+      "performance_schema_events_stages_history_size",
+      "-1"
+     ],
+     [
+      "performance_schema_events_statements_history_long_size",
+      "-1"
+     ],
+     [
+      "performance_schema_events_statements_history_size",
+      "-1"
+     ],
+     [
+      "performance_schema_events_transactions_history_long_size",
+      "-1"
+     ],
+     [
+      "performance_schema_events_transactions_history_size",
+      "-1"
+     ],
+     [
+      "performance_schema_events_waits_history_long_size",
+      "-1"
+     ],
+     [
+      "performance_schema_events_waits_history_size",
+      "-1"
+     ],
+     [
+      "performance_schema_hosts_size",
+      "-1"
+     ],
+     [
+      "performance_schema_max_cond_classes",
+      "90"
+     ],
+     [
+      "performance_schema_max_cond_instances",
+      "-1"
+     ],
+     [
+      "performance_schema_max_digest_length",
+      "1024"
+     ],
+     [
+      "performance_schema_max_file_classes",
+      "80"
+     ],
+     [
+      "performance_schema_max_file_handles",
+      "32768"
+     ],
+     [
+      "performance_schema_max_file_instances",
+      "-1"
+     ],
+     [
+      "performance_schema_max_index_stat",
+      "-1"
+     ],
+     [
+      "performance_schema_max_memory_classes",
+      "320"
+     ],
+     [
+      "performance_schema_max_metadata_locks",
+      "-1"
+     ],
+     [
+      "performance_schema_max_mutex_classes",
+      "210"
+     ],
+     [
+      "performance_schema_max_mutex_instances",
+      "-1"
+     ],
+     [
+      "performance_schema_max_prepared_statements_instances",
+      "-1"
+     ],
+     [
+      "performance_schema_max_program_instances",
+      "-1"
+     ],
+     [
+      "performance_schema_max_rwlock_classes",
+      "50"
+     ],
+     [
+      "performance_schema_max_rwlock_instances",
+      "-1"
+     ],
+     [
+      "performance_schema_max_socket_classes",
+      "10"
+     ],
+     [
+      "performance_schema_max_socket_instances",
+      "-1"
+     ],
+     [
+      "performance_schema_max_sql_text_length",
+      "1024"
+     ],
+     [
+      "performance_schema_max_stage_classes",
+      "160"
+     ],
+     [
+      "performance_schema_max_statement_classes",
+      "222"
+     ],
+     [
+      "performance_schema_max_statement_stack",
+      "10"
+     ],
+     [
+      "performance_schema_max_table_handles",
+      "-1"
+     ],
+     [
+      "performance_schema_max_table_instances",
+      "-1"
+     ],
+     [
+      "performance_schema_max_table_lock_stat",
+      "-1"
+     ],
+     [
+      "performance_schema_max_thread_classes",
+      "50"
+     ],
+     [
+      "performance_schema_max_thread_instances",
+      "-1"
+     ],
+     [
+      "performance_schema_session_connect_attrs_size",
+      "-1"
+     ],
+     [
+      "performance_schema_setup_actors_size",
+      "-1"
+     ],
+     [
+      "performance_schema_setup_objects_size",
+      "-1"
+     ],
+     [
+      "performance_schema_users_size",
+      "-1"
+     ],
+     [
+      "pid_file",
+      "/run/mysqld/mysqld.pid"
+     ],
+     [
+      "plugin_dir",
+      "/usr/lib/mysql/plugin/"
+     ],
+     [
+      "plugin_maturity",
+      "gamma"
+     ],
+     [
+      "port",
+      "3306"
+     ],
+     [
+      "preload_buffer_size",
+      "32768"
+     ],
+     [
+      "profiling",
+      "OFF"
+     ],
+     [
+      "profiling_history_size",
+      "15"
+     ],
+     [
+      "progress_report_time",
+      "5"
+     ],
+     [
+      "protocol_version",
+      "10"
+     ],
+     [
+      "proxy_protocol_networks",
+      ""
+     ],
+     [
+      "proxy_user",
+      ""
+     ],
+     [
+      "pseudo_slave_mode",
+      "OFF"
+     ],
+     [
+      "pseudo_thread_id",
+      "11"
+     ],
+     [
+      "query_alloc_block_size",
+      "32768"
+     ],
+     [
+      "query_cache_limit",
+      "1048576"
+     ],
+     [
+      "query_cache_min_res_unit",
+      "4096"
+     ],
+     [
+      "query_cache_size",
+      "1048576"
+     ],
+     [
+      "query_cache_strip_comments",
+      "OFF"
+     ],
+     [
+      "query_cache_type",
+      "OFF"
+     ],
+     [
+      "query_cache_wlock_invalidate",
+      "OFF"
+     ],
+     [
+      "query_prealloc_size",
+      "32768"
+     ],
+     [
+      "rand_seed1",
+      "305970393"
+     ],
+     [
+      "rand_seed2",
+      "654586770"
+     ],
+     [
+      "range_alloc_block_size",
+      "4096"
+     ],
+     [
+      "read_binlog_speed_limit",
+      "0"
+     ],
+     [
+      "read_buffer_size",
+      "131072"
+     ],
+     [
+      "read_only",
+      "OFF"
+     ],
+     [
+      "read_rnd_buffer_size",
+      "262144"
+     ],
+     [
+      "relay_log",
+      ""
+     ],
+     [
+      "relay_log_basename",
+      ""
+     ],
+     [
+      "relay_log_index",
+      ""
+     ],
+     [
+      "relay_log_info_file",
+      "relay-log.info"
+     ],
+     [
+      "relay_log_purge",
+      "ON"
+     ],
+     [
+      "relay_log_recovery",
+      "OFF"
+     ],
+     [
+      "relay_log_space_limit",
+      "0"
+     ],
+     [
+      "replicate_annotate_row_events",
+      "ON"
+     ],
+     [
+      "replicate_do_db",
+      ""
+     ],
+     [
+      "replicate_do_table",
+      ""
+     ],
+     [
+      "replicate_events_marked_for_skip",
+      "REPLICATE"
+     ],
+     [
+      "replicate_ignore_db",
+      ""
+     ],
+     [
+      "replicate_ignore_table",
+      ""
+     ],
+     [
+      "replicate_rewrite_db",
+      ""
+     ],
+     [
+      "replicate_wild_do_table",
+      ""
+     ],
+     [
+      "replicate_wild_ignore_table",
+      ""
+     ],
+     [
+      "report_host",
+      ""
+     ],
+     [
+      "report_password",
+      ""
+     ],
+     [
+      "report_port",
+      "3306"
+     ],
+     [
+      "report_user",
+      ""
+     ],
+     [
+      "require_secure_transport",
+      "OFF"
+     ],
+     [
+      "rowid_merge_buff_size",
+      "8388608"
+     ],
+     [
+      "rpl_semi_sync_master_enabled",
+      "OFF"
+     ],
+     [
+      "rpl_semi_sync_master_timeout",
+      "10000"
+     ],
+     [
+      "rpl_semi_sync_master_trace_level",
+      "32"
+     ],
+     [
+      "rpl_semi_sync_master_wait_no_slave",
+      "ON"
+     ],
+     [
+      "rpl_semi_sync_master_wait_point",
+      "AFTER_COMMIT"
+     ],
+     [
+      "rpl_semi_sync_slave_delay_master",
+      "OFF"
+     ],
+     [
+      "rpl_semi_sync_slave_enabled",
+      "OFF"
+     ],
+     [
+      "rpl_semi_sync_slave_kill_conn_timeout",
+      "5"
+     ],
+     [
+      "rpl_semi_sync_slave_trace_level",
+      "32"
+     ],
+     [
+      "secure_auth",
+      "ON"
+     ],
+     [
+      "secure_file_priv",
+      ""
+     ],
+     [
+      "secure_timestamp",
+      "NO"
+     ],
+     [
+      "server_id",
+      "1"
+     ],
+     [
+      "server_uid",
+      "F1kNA80FyrBt3Yb9a34JQRppk8U="
+     ],
+     [
+      "session_track_schema",
+      "ON"
+     ],
+     [
+      "session_track_state_change",
+      "OFF"
+     ],
+     [
+      "session_track_system_variables",
+      "autocommit,character_set_client,character_set_connection,character_set_results,time_zone"
+     ],
+     [
+      "session_track_transaction_info",
+      "OFF"
+     ],
+     [
+      "skip_external_locking",
+      "ON"
+     ],
+     [
+      "skip_grant_tables",
+      "OFF"
+     ],
+     [
+      "skip_name_resolve",
+      "OFF"
+     ],
+     [
+      "skip_networking",
+      "OFF"
+     ],
+     [
+      "skip_parallel_replication",
+      "OFF"
+     ],
+     [
+      "skip_replication",
+      "OFF"
+     ],
+     [
+      "skip_show_database",
+      "OFF"
+     ],
+     [
+      "slave_compressed_protocol",
+      "OFF"
+     ],
+     [
+      "slave_ddl_exec_mode",
+      "IDEMPOTENT"
+     ],
+     [
+      "slave_domain_parallel_threads",
+      "0"
+     ],
+     [
+      "slave_exec_mode",
+      "STRICT"
+     ],
+     [
+      "slave_load_tmpdir",
+      "/tmp"
+     ],
+     [
+      "slave_max_allowed_packet",
+      "1073741824"
+     ],
+     [
+      "slave_max_statement_time",
+      "0.000000"
+     ],
+     [
+      "slave_net_timeout",
+      "60"
+     ],
+     [
+      "slave_parallel_max_queued",
+      "131072"
+     ],
+     [
+      "slave_parallel_mode",
+      "optimistic"
+     ],
+     [
+      "slave_parallel_threads",
+      "0"
+     ],
+     [
+      "slave_parallel_workers",
+      "0"
+     ],
+     [
+      "slave_run_triggers_for_rbr",
+      "NO"
+     ],
+     [
+      "slave_skip_errors",
+      "OFF"
+     ],
+     [
+      "slave_sql_verify_checksum",
+      "ON"
+     ],
+     [
+      "slave_transaction_retries",
+      "10"
+     ],
+     [
+      "slave_transaction_retry_errors",
+      "1158,1159,1160,1161,1205,1213,1020,1429,2013,12701"
+     ],
+     [
+      "slave_transaction_retry_interval",
+      "0"
+     ],
+     [
+      "slave_type_conversions",
+      ""
+     ],
+     [
+      "slow_launch_time",
+      "2"
+     ],
+     [
+      "slow_query_log",
+      "OFF"
+     ],
+     [
+      "slow_query_log_file",
+      "3d7b9d6e04f7-slow.log"
+     ],
+     [
+      "socket",
+      "/run/mysqld/mysqld.sock"
+     ],
+     [
+      "sort_buffer_size",
+      "2097152"
+     ],
+     [
+      "sql_auto_is_null",
+      "OFF"
+     ],
+     [
+      "sql_big_selects",
+      "ON"
+     ],
+     [
+      "sql_buffer_result",
+      "OFF"
+     ],
+     [
+      "sql_if_exists",
+      "OFF"
+     ],
+     [
+      "sql_log_bin",
+      "ON"
+     ],
+     [
+      "sql_log_off",
+      "OFF"
+     ],
+     [
+      "sql_mode",
+      "STRICT_TRANS_TABLES,ERROR_FOR_DIVISION_BY_ZERO,NO_AUTO_CREATE_USER,NO_ENGINE_SUBSTITUTION"
+     ],
+     [
+      "sql_notes",
+      "ON"
+     ],
+     [
+      "sql_quote_show_create",
+      "ON"
+     ],
+     [
+      "sql_safe_updates",
+      "OFF"
+     ],
+     [
+      "sql_select_limit",
+      "18446744073709551615"
+     ],
+     [
+      "sql_slave_skip_counter",
+      "0"
+     ],
+     [
+      "sql_warnings",
+      "OFF"
+     ],
+     [
+      "ssl_ca",
+      ""
+     ],
+     [
+      "ssl_capath",
+      ""
+     ],
+     [
+      "ssl_cert",
+      ""
+     ],
+     [
+      "ssl_cipher",
+      ""
+     ],
+     [
+      "ssl_crl",
+      ""
+     ],
+     [
+      "ssl_crlpath",
+      ""
+     ],
+     [
+      "ssl_key",
+      ""
+     ],
+     [
+      "standard_compliant_cte",
+      "ON"
+     ],
+     [
+      "storage_engine",
+      "InnoDB"
+     ],
+     [
+      "stored_program_cache",
+      "256"
+     ],
+     [
+      "strict_password_validation",
+      "ON"
+     ],
+     [
+      "sync_binlog",
+      "0"
+     ],
+     [
+      "sync_frm",
+      "ON"
+     ],
+     [
+      "sync_master_info",
+      "10000"
+     ],
+     [
+      "sync_relay_log",
+      "10000"
+     ],
+     [
+      "sync_relay_log_info",
+      "10000"
+     ],
+     [
+      "system_time_zone",
+      "UTC"
+     ],
+     [
+      "system_versioning_alter_history",
+      "ERROR"
+     ],
+     [
+      "system_versioning_asof",
+      "DEFAULT"
+     ],
+     [
+      "system_versioning_insert_history",
+      "OFF"
+     ],
+     [
+      "table_definition_cache",
+      "400"
+     ],
+     [
+      "table_open_cache",
+      "2000"
+     ],
+     [
+      "table_open_cache_instances",
+      "8"
+     ],
+     [
+      "tcp_keepalive_interval",
+      "0"
+     ],
+     [
+      "tcp_keepalive_probes",
+      "0"
+     ],
+     [
+      "tcp_keepalive_time",
+      "0"
+     ],
+     [
+      "tcp_nodelay",
+      "ON"
+     ],
+     [
+      "thread_cache_size",
+      "151"
+     ],
+     [
+      "thread_handling",
+      "one-thread-per-connection"
+     ],
+     [
+      "thread_pool_dedicated_listener",
+      "OFF"
+     ],
+     [
+      "thread_pool_exact_stats",
+      "OFF"
+     ],
+     [
+      "thread_pool_idle_timeout",
+      "60"
+     ],
+     [
+      "thread_pool_max_threads",
+      "65536"
+     ],
+     [
+      "thread_pool_oversubscribe",
+      "3"
+     ],
+     [
+      "thread_pool_prio_kickup_timer",
+      "1000"
+     ],
+     [
+      "thread_pool_priority",
+      "auto"
+     ],
+     [
+      "thread_pool_size",
+      "10"
+     ],
+     [
+      "thread_pool_stall_limit",
+      "500"
+     ],
+     [
+      "thread_stack",
+      "299008"
+     ],
+     [
+      "time_format",
+      "%H:%i:%s"
+     ],
+     [
+      "time_zone",
+      "SYSTEM"
+     ],
+     [
+      "timestamp",
+      "1794469791.215719"
+     ],
+     [
+      "tls_version",
+      "TLSv1.2,TLSv1.3"
+     ],
+     [
+      "tmp_disk_table_size",
+      "18446744073709551615"
+     ],
+     [
+      "tmp_memory_table_size",
+      "16777216"
+     ],
+     [
+      "tmp_table_size",
+      "16777216"
+     ],
+     [
+      "tmpdir",
+      "/tmp"
+     ],
+     [
+      "transaction_alloc_block_size",
+      "8192"
+     ],
+     [
+      "transaction_prealloc_size",
+      "4096"
+     ],
+     [
+      "tx_isolation",
+      "REPEATABLE-READ"
+     ],
+     [
+      "tx_read_only",
+      "OFF"
+     ],
+     [
+      "unique_checks",
+      "ON"
+     ],
+     [
+      "updatable_views_with_limit",
+      "YES"
+     ],
+     [
+      "use_stat_tables",
+      "PREFERABLY_FOR_QUERIES"
+     ],
+     [
+      "userstat",
+      "OFF"
+     ],
+     [
+      "version",
+      "10.11.19-MariaDB-0+deb12u1"
+     ],
+     [
+      "version_comment",
+      "Debian 12"
+     ],
+     [
+      "version_compile_machine",
+      "aarch64"
+     ],
+     [
+      "version_compile_os",
+      "debian-linux-gnu"
+     ],
+     [
+      "version_malloc_library",
+      "system"
+     ],
+     [
+      "version_source_revision",
+      "93e051860a9c7e87ee8cee6ed38b640d491f7170"
+     ],
+     [
+      "version_ssl_library",
+      "OpenSSL 3.0.22 25 Aug 2026"
+     ],
+     [
+      "wait_timeout",
+      "28800"
+     ],
+     [
+      "warning_count",
+      "0"
+     ],
+     [
+      "wsrep_osu_method",
+      "TOI"
+     ],
+     [
+      "wsrep_sr_store",
+      "table"
+     ],
+     [
+      "wsrep_allowlist",
+      ""
+     ],
+     [
+      "wsrep_auto_increment_control",
+      "ON"
+     ],
+     [
+      "wsrep_causal_reads",
+      "OFF"
+     ],
+     [
+      "wsrep_certification_rules",
+      "strict"
+     ],
+     [
+      "wsrep_certify_nonpk",
+      "ON"
+     ],
+     [
+      "wsrep_cluster_address",
+      ""
+     ],
+     [
+      "wsrep_cluster_name",
+      "my_wsrep_cluster"
+     ],
+     [
+      "wsrep_convert_lock_to_trx",
+      "OFF"
+     ],
+     [
+      "wsrep_data_home_dir",
+      "/var/lib/mysql/"
+     ],
+     [
+      "wsrep_dbug_option",
+      ""
+     ],
+     [
+      "wsrep_debug",
+      "NONE"
+     ],
+     [
+      "wsrep_desync",
+      "OFF"
+     ],
+     [
+      "wsrep_dirty_reads",
+      "OFF"
+     ],
+     [
+      "wsrep_drupal_282555_workaround",
+      "OFF"
+     ],
+     [
+      "wsrep_forced_binlog_format",
+      "NONE"
+     ],
+     [
+      "wsrep_gtid_domain_id",
+      "0"
+     ],
+     [
+      "wsrep_gtid_mode",
+      "OFF"
+     ],
+     [
+      "wsrep_gtid_seq_no",
+      "0"
+     ],
+     [
+      "wsrep_ignore_apply_errors",
+      "7"
+     ],
+     [
+      "wsrep_load_data_splitting",
+      "OFF"
+     ],
+     [
+      "wsrep_log_conflicts",
+      "OFF"
+     ],
+     [
+      "wsrep_max_ws_rows",
+      "0"
+     ],
+     [
+      "wsrep_max_ws_size",
+      "2147483647"
+     ],
+     [
+      "wsrep_mode",
+      ""
+     ],
+     [
+      "wsrep_mysql_replication_bundle",
+      "0"
+     ],
+     [
+      "wsrep_node_address",
+      ""
+     ],
+     [
+      "wsrep_node_incoming_address",
+      "AUTO"
+     ],
+     [
+      "wsrep_node_name",
+      "3d7b9d6e04f7"
+     ],
+     [
+      "wsrep_notify_cmd",
+      ""
+     ],
+     [
+      "wsrep_on",
+      "OFF"
+     ],
+     [
+      "wsrep_patch_version",
+      "wsrep_26.22"
+     ],
+     [
+      "wsrep_provider",
+      "none"
+     ],
+     [
+      "wsrep_provider_options",
+      ""
+     ],
+     [
+      "wsrep_recover",
+      "OFF"
+     ],
+     [
+      "wsrep_reject_queries",
+      "NONE"
+     ],
+     [
+      "wsrep_restart_slave",
+      "OFF"
+     ],
+     [
+      "wsrep_retry_autocommit",
+      "1"
+     ],
+     [
+      "wsrep_slave_fk_checks",
+      "ON"
+     ],
+     [
+      "wsrep_slave_uk_checks",
+      "OFF"
+     ],
+     [
+      "wsrep_slave_threads",
+      "1"
+     ],
+     [
+      "wsrep_sst_auth",
+      ""
+     ],
+     [
+      "wsrep_sst_donor",
+      ""
+     ],
+     [
+      "wsrep_sst_donor_rejects_queries",
+      "OFF"
+     ],
+     [
+      "wsrep_sst_method",
+      "rsync"
+     ],
+     [
+      "wsrep_sst_receive_address",
+      "AUTO"
+     ],
+     [
+      "wsrep_start_position",
+      "00000000-0000-0000-0000-000000000000:-1"
+     ],
+     [
+      "wsrep_status_file",
+      ""
+     ],
+     [
+      "wsrep_sync_wait",
+      "0"
+     ],
+     [
+      "wsrep_trx_fragment_size",
+      "0"
+     ],
+     [
+      "wsrep_trx_fragment_unit",
+      "bytes"
+     ]
+    ]
+   },
+   "USE nosuchdb": {
+    "error": {
+     "code": 1049,
+     "message": "Unknown database 'nosuchdb'"
+    }
+   }
+  }
+ },
+ "nginx": {
+  "301_dir": {
+   "body": "<html>\r\n<head><title>301 Moved Permanently</title></head>\r\n<body>\r\n<center><h1>301 Moved Permanently</h1></center>\r\n<hr><center>nginx/1.22.1</center>\r\n</body>\r\n</html>\r\n",
+   "header_order": [
+    "Server",
+    "Date",
+    "Content-Type",
+    "Content-Length",
+    "Location",
+    "Connection"
+   ],
+   "headers": {
+    "Connection": "close",
+    "Content-Length": "169",
+    "Content-Type": "text/html",
+    "Location": "http://localhost/private/",
+    "Server": "nginx/1.22.1"
+   },
+   "status_line": "HTTP/1.1 301 Moved Permanently"
+  },
+  "400_garbage": {
+   "body": "<html>\r\n<head><title>400 Bad Request</title></head>\r\n<body>\r\n<center><h1>400 Bad Request</h1></center>\r\n<hr><center>nginx/1.22.1</center>\r\n</body>\r\n</html>\r\n",
+   "header_order": [
+    "Server",
+    "Date",
+    "Content-Type",
+    "Content-Length",
+    "Connection"
+   ],
+   "headers": {
+    "Connection": "close",
+    "Content-Length": "157",
+    "Content-Type": "text/html",
+    "Server": "nginx/1.22.1"
+   },
+   "status_line": "HTTP/1.1 400 Bad Request"
+  },
+  "400_no_host": {
+   "body": "<html>\r\n<head><title>400 Bad Request</title></head>\r\n<body>\r\n<center><h1>400 Bad Request</h1></center>\r\n<hr><center>nginx/1.22.1</center>\r\n</body>\r\n</html>\r\n",
+   "header_order": [
+    "Server",
+    "Date",
+    "Content-Type",
+    "Content-Length",
+    "Connection"
+   ],
+   "headers": {
+    "Connection": "close",
+    "Content-Length": "157",
+    "Content-Type": "text/html",
+    "Server": "nginx/1.22.1"
+   },
+   "status_line": "HTTP/1.1 400 Bad Request"
+  },
+  "403": {
+   "body": "<html>\r\n<head><title>403 Forbidden</title></head>\r\n<body>\r\n<center><h1>403 Forbidden</h1></center>\r\n<hr><center>nginx/1.22.1</center>\r\n</body>\r\n</html>\r\n",
+   "header_order": [
+    "Server",
+    "Date",
+    "Content-Type",
+    "Content-Length",
+    "Connection"
+   ],
+   "headers": {
+    "Connection": "close",
+    "Content-Length": "153",
+    "Content-Type": "text/html",
+    "Server": "nginx/1.22.1"
+   },
+   "status_line": "HTTP/1.1 403 Forbidden"
+  },
+  "404": {
+   "body": "<html>\r\n<head><title>404 Not Found</title></head>\r\n<body>\r\n<center><h1>404 Not Found</h1></center>\r\n<hr><center>nginx/1.22.1</center>\r\n</body>\r\n</html>\r\n",
+   "header_order": [
+    "Server",
+    "Date",
+    "Content-Type",
+    "Content-Length",
+    "Connection"
+   ],
+   "headers": {
+    "Connection": "close",
+    "Content-Length": "153",
+    "Content-Type": "text/html",
+    "Server": "nginx/1.22.1"
+   },
+   "status_line": "HTTP/1.1 404 Not Found"
+  },
+  "404_http10": {
+   "body": "<html>\r\n<head><title>404 Not Found</title></head>\r\n<body>\r\n<center><h1>404 Not Found</h1></center>\r\n<hr><center>nginx/1.22.1</center>\r\n</body>\r\n</html>\r\n",
+   "header_order": [
+    "Server",
+    "Date",
+    "Content-Type",
+    "Content-Length",
+    "Connection"
+   ],
+   "headers": {
+    "Connection": "close",
+    "Content-Length": "153",
+    "Content-Type": "text/html",
+    "Server": "nginx/1.22.1"
+   },
+   "status_line": "HTTP/1.1 404 Not Found"
+  },
+  "405": {
+   "body": "<html>\r\n<head><title>405 Not Allowed</title></head>\r\n<body>\r\n<center><h1>405 Not Allowed</h1></center>\r\n<hr><center>nginx/1.22.1</center>\r\n</body>\r\n</html>\r\n",
+   "header_order": [
+    "Server",
+    "Date",
+    "Content-Type",
+    "Content-Length",
+    "Connection"
+   ],
+   "headers": {
+    "Connection": "close",
+    "Content-Length": "157",
+    "Content-Type": "text/html",
+    "Server": "nginx/1.22.1"
+   },
+   "status_line": "HTTP/1.1 405 Not Allowed"
+  },
+  "413": {
+   "body": "<html>\r\n<head><title>413 Request Entity Too Large</title></head>\r\n<body>\r\n<center><h1>413 Request Entity Too Large</h1></center>\r\n<hr><center>nginx/1.22.1</center>\r\n</body>\r\n</html>\r\n",
+   "header_order": [
+    "Server",
+    "Date",
+    "Content-Type",
+    "Content-Length",
+    "Connection"
+   ],
+   "headers": {
+    "Connection": "close",
+    "Content-Length": "183",
+    "Content-Type": "text/html",
+    "Server": "nginx/1.22.1"
+   },
+   "status_line": "HTTP/1.1 413 Request Entity Too Large"
+  },
+  "head": {
+   "body": "",
+   "header_order": [
+    "Server",
+    "Date",
+    "Content-Type",
+    "Content-Length",
+    "Last-Modified",
+    "Connection",
+    "ETag",
+    "Accept-Ranges"
+   ],
+   "headers": {
+    "Accept-Ranges": "bytes",
+    "Connection": "close",
+    "Content-Length": "615",
+    "Content-Type": "text/html",
+    "ETag": "\"6af557b6-267\"",
+    "Last-Modified": "Thu, 12 Nov 2026 06:07:50 GMT",
+    "Server": "nginx/1.22.1"
+   },
+   "status_line": "HTTP/1.1 200 OK"
+  },
+  "index": {
+   "body": "<!DOCTYPE html>\n<html>\n<head>\n<title>Welcome to nginx!</title>\n<style>\nhtml { color-scheme: light dark; }\nbody { width: 35em; margin: 0 auto;\nfont-family: Tahoma, Verdana, Arial, sans-serif; }\n</style>\n</head>\n<body>\n<h1>Welcome to nginx!</h1>\n<p>If you see this page, the nginx web server is successfully installed and\nworking. Further configuration is required.</p>\n\n<p>For online documentation and support please refer to\n<a href=\"http://nginx.org/\">nginx.org</a>.<br/>\nCommercial support is available at\n<a href=\"http://nginx.com/\">nginx.com</a>.</p>\n\n<p><em>Thank you for using nginx.</em></p>\n</body>\n</html>\n",
+   "header_order": [
+    "Server",
+    "Date",
+    "Content-Type",
+    "Content-Length",
+    "Last-Modified",
+    "Connection",
+    "ETag",
+    "Accept-Ranges"
+   ],
+   "headers": {
+    "Accept-Ranges": "bytes",
+    "Connection": "close",
+    "Content-Length": "615",
+    "Content-Type": "text/html",
+    "ETag": "\"6af557b6-267\"",
+    "Last-Modified": "Thu, 12 Nov 2026 06:07:50 GMT",
+    "Server": "nginx/1.22.1"
+   },
+   "status_line": "HTTP/1.1 200 OK"
+  },
+  "version": "nginx version: nginx/1.22.1"
+ },
+ "os": {
+  "files": {
+   "/etc/debian_version": "12.15\n",
+   "/etc/issue": "Debian GNU/Linux 12 \\n \\l\n\n",
+   "/etc/issue.net": "Debian GNU/Linux 12\n",
+   "/etc/os-release": "PRETTY_NAME=\"Debian GNU/Linux 12 (bookworm)\"\nNAME=\"Debian GNU/Linux\"\nVERSION_ID=\"12\"\nVERSION=\"12 (bookworm)\"\nVERSION_CODENAME=bookworm\nID=debian\nHOME_URL=\"https://www.debian.org/\"\nSUPPORT_URL=\"https://www.debian.org/support\"\nBUG_REPORT_URL=\"https://bugs.debian.org/\"\n"
+  },
+  "group": "root:x:0:\ndaemon:x:1:\nbin:x:2:\nsys:x:3:\nadm:x:4:\ntty:x:5:\ndisk:x:6:\nlp:x:7:\nmail:x:8:\nnews:x:9:\nuucp:x:10:\nman:x:12:\nproxy:x:13:\nkmem:x:15:\ndialout:x:20:\nfax:x:21:\nvoice:x:22:\ncdrom:x:24:\nfloppy:x:25:\ntape:x:26:\nsudo:x:27:\naudio:x:29:\ndip:x:30:\nwww-data:x:33:\nbackup:x:34:\noperator:x:37:\nlist:x:38:\nirc:x:39:\nsrc:x:40:\nshadow:x:42:\nutmp:x:43:\nvideo:x:44:\nsasl:x:45:\nplugdev:x:46:\nstaff:x:50:\ngames:x:60:\nusers:x:100:\nnogroup:x:65534:\nmysql:x:101:\nredis:x:102:\n_ssh:x:103:\n",
+  "kernel": {
+   "abi": "6.1.0-54",
+   "build_date": "2026-10-16",
+   "package_version": "6.1.190-1"
+  },
+  "passwd": "root:x:0:0:root:/root:/bin/bash\ndaemon:x:1:1:daemon:/usr/sbin:/usr/sbin/nologin\nbin:x:2:2:bin:/bin:/usr/sbin/nologin\nsys:x:3:3:sys:/dev:/usr/sbin/nologin\nsync:x:4:65534:sync:/bin:/bin/sync\ngames:x:5:60:games:/usr/games:/usr/sbin/nologin\nman:x:6:12:man:/var/cache/man:/usr/sbin/nologin\nlp:x:7:7:lp:/var/spool/lpd:/usr/sbin/nologin\nmail:x:8:8:mail:/var/mail:/usr/sbin/nologin\nnews:x:9:9:news:/var/spool/news:/usr/sbin/nologin\nuucp:x:10:10:uucp:/var/spool/uucp:/usr/sbin/nologin\nproxy:x:13:13:proxy:/bin:/usr/sbin/nologin\nwww-data:x:33:33:www-data:/var/www:/usr/sbin/nologin\nbackup:x:34:34:backup:/var/backups:/usr/sbin/nologin\nlist:x:38:38:Mailing List Manager:/var/list:/usr/sbin/nologin\nirc:x:39:39:ircd:/run/ircd:/usr/sbin/nologin\n_apt:x:42:65534::/nonexistent:/usr/sbin/nologin\nnobody:x:65534:65534:nobody:/nonexistent:/usr/sbin/nologin\nmysql:x:100:101:MySQL Server,,,:/nonexistent:/bin/false\nredis:x:101:102::/var/lib/redis:/usr/sbin/nologin\nsshd:x:102:65534::/run/sshd:/usr/sbin/nologin\n"
+ },
+ "redis": {
+  "replies": {
+   "auth_no_password": "-ERR AUTH <password> called without any password configured for the default user. Are you sure your configuration is correct?\r\n",
+   "bgsave": "+Background saving started\r\n",
+   "bulk_too_big": "-ERR Protocol error: invalid bulk length\r\n",
+   "client_getname": "$-1\r\n",
+   "client_list": "$271\r\nid=28 addr=172.17.0.1:57820 laddr=172.17.0.3:6379 fd=7 name= age=0 idle=0 flags=N db=0 sub=0 psub=0 ssub=0 multi=-1 qbuf=26 qbuf-free=20448 argv-mem=10 multi-mem=0 rbs=16384 rbp=16384 obl=0 oll=0 omem=0 tot-mem=37658 events=r cmd=client|list user=default redir=-1 resp=2\n\r\n",
+   "client_setname": "+OK\r\n",
+   "command_count": ":240\r\n",
+   "config_bad_subcommand": "-ERR unknown subcommand 'FOO'. Try CONFIG HELP.\r\n",
+   "config_get_all": "*384\r\n$24\r\ntls-client-key-file-pass\r\n$0\r\n\r\n$23\r\nactive-defrag-cycle-min\r\n$1\r\n1\r\n$19\r\nmin-slaves-to-write\r\n$1\r\n0\r\n$29\r\naof-rewrite-incremental-fsync\r\n$3\r\nyes\r\n$22\r\nslave-ignore-maxmemory\r\n$3\r\nyes\r\n$25\r\ncluster-announce-tls-port\r\n$1\r\n0\r\n$13\r\ntls-cert-file\r\n$0\r\n\r\n$29\r\ncluster-allow-reads-when-down\r\n$2\r\nno\r\n$19\r\nproc-title-template\r\n$35\r\n{title} {listen-addr} {server-mode}\r\n$12\r\nrepl-timeout\r\n$2\r\n60\r\n$22\r\nlazyfree-lazy-eviction\r\n$2\r\nno\r\n$14\r\nsyslog-enabled\r\n$2\r\nno\r\n$23\r\nactive-defrag-cycle-max\r\n$2\r\n25\r\n$24\r\nlazyfree-lazy-user-flush\r\n$2\r\nno\r\n$17\r\nslave-announce-ip\r\n$0\r\n\r\n$23\r\ntracking-table-max-keys\r\n$7\r\n1000000\r\n$14\r\nlua-time-limit\r\n$4\r\n5000\r\n$13\r\ntls-protocols\r\n$0\r\n\r\n$14\r\nlfu-log-factor\r\n$2\r\n10\r\n$10\r\nappendonly\r\n$2\r\nno\r\n$29\r\nactive-defrag-threshold-upper\r\n$3\r\n100\r\n$35\r\ncluster-allow-pubsubshard-when-down\r\n$3\r\nyes\r\n$20\r\noom-score-adj-values\r\n$9\r\n0 200 800\r\n$20\r\nlazyfree-lazy-expire\r\n$2\r\nno\r\n$10\r\ndynamic-hz\r\n$3\r\nyes\r\n$19\r\naof-disable-auto-gc\r\n$2\r\nno\r\n$22\r\nzset-max-ziplist-value\r\n$2\r\n64\r\n$10\r\nio-threads\r\n$1\r\n1\r\n$18\r\nrepl-diskless-load\r\n$8\r\ndisabled\r\n$18\r\njemalloc-bg-thread\r\n$3\r\nyes\r\n$24\r\nlazyfree-lazy-server-del\r\n$2\r\nno\r\n$25\r\nlatency-monitor-threshold\r\n$1\r\n0\r\n$15\r\nactiverehashing\r\n$3\r\nyes\r\n$32\r\nreplica-ignore-disk-write-errors\r\n$2\r\nno\r\n$27\r\nstop-writes-on-bgsave-error\r\n$3\r\nyes\r\n$16\r\nbind-source-addr\r\n$0\r\n\r\n$19\r\nshutdown-on-sigterm\r\n$7\r\ndefault\r\n$4\r\nsave\r\n$23\r\n3600 1 300 100 60 10000\r\n$26\r\nactive-defrag-ignore-bytes\r\n$9\r\n104857600\r\n$31\r\ncluster-preferred-endpoint-type\r\n$2\r\nip\r\n$22\r\nset-max-intset-entries\r\n$3\r\n512\r\n$31\r\ncluster-allow-replica-migration\r\n$3\r\nyes\r\n$25\r\ncluster-announce-hostname\r\n$0\r\n\r\n$21\r\nenable-module-command\r\n$2\r\nno\r\n$2\r\nhz\r\n$2\r\n10\r\n$7\r\nslaveof\r\n$0\r\n\r\n$21\r\naof-timestamp-enabled\r\n$2\r\nno\r\n$11\r\nappendfsync\r\n$8\r\neverysec\r\n$19\r\ncluster-announce-ip\r\n$0\r\n\r\n$29\r\nactive-defrag-max-scan-fields\r\n$4\r\n1000\r\n$15\r\nslave-read-only\r\n$3\r\nyes\r\n$29\r\ncluster-slave-validity-factor\r\n$2\r\n10\r\n$24\r\nrepl-ping-replica-period\r\n$2\r\n10\r\n$18\r\nproto-max-bulk-len\r\n$9\r\n536870912\r\n$7\r\naclfile\r\n$0\r\n\r\n$22\r\nhash-max-ziplist-value\r\n$2\r\n64\r\n$19\r\naof_rewrite_cpulist\r\n$0\r\n\r\n$21\r\nmin-replicas-to-write\r\n$1\r\n0\r\n$15\r\nslowlog-max-len\r\n$3\r\n128\r\n$33\r\nlatency-tracking-info-percentiles\r\n$10\r\n50 99 99.9\r\n$22\r\ntls-session-cache-size\r\n$5\r\n20480\r\n$31\r\ncluster-replica-validity-factor\r\n$2\r\n10\r\n$15\r\nignore-warnings\r\n$0\r\n\r\n$23\r\nzset-max-listpack-value\r\n$2\r\n64\r\n$31\r\nrepl-diskless-sync-max-replicas\r\n$1\r\n0\r\n$12\r\ncluster-port\r\n$1\r\n0\r\n$14\r\nslave-priority\r\n$3\r\n100\r\n$13\r\noom-score-adj\r\n$2\r\nno\r\n$26\r\nclient-output-buffer-limit\r\n$67\r\nnormal 0 0 0 slave 268435456 67108864 60 pubsub 33554432 8388608 60\r\n$19\r\ntls-session-caching\r\n$3\r\nyes\r\n$15\r\ntls-replication\r\n$2\r\nno\r\n$16\r\nslave-lazy-flush\r\n$2\r\nno\r\n$4\r\nport\r\n$4\r\n6379\r\n$24\r\nreplica-ignore-maxmemory\r\n$3\r\nyes\r\n$24\r\nrepl-diskless-sync-delay\r\n$1\r\n5\r\n$22\r\nlist-max-listpack-size\r\n$2\r\n-2\r\n$14\r\nbgsave_cpulist\r\n$0\r\n\r\n$14\r\nsocket-mark-id\r\n$1\r\n0\r\n$17\r\ntls-key-file-pass\r\n$0\r\n\r\n$23\r\nstream-node-max-entries\r\n$3\r\n100\r\n$20\r\naof-use-rdb-preamble\r\n$3\r\nyes\r\n$18\r\nshutdown-on-sigint\r\n$7\r\ndefault\r\n$10\r\nmasterauth\r\n$0\r\n\r\n$15\r\ntls-ca-cert-dir\r\n$0\r\n\r\n$26\r\npropagation-error-behavior\r\n$6\r\nignore\r\n$21\r\nsanitize-dump-payload\r\n$2\r\nno\r\n$11\r\ntls-ciphers\r\n$0\r\n\r\n$19\r\ntls-client-key-file\r\n$0\r\n\r\n$11\r\nrequirepass\r\n$0\r\n\r\n$27\r\ncluster-replica-no-failover\r\n$2\r\nno\r\n$29\r\ncluster-require-full-coverage\r\n$3\r\nyes\r\n$14\r\nrdbcompression\r\n$3\r\nyes\r\n$19\r\nslave-announce-port\r\n$1\r\n0\r\n$7\r\ntimeout\r\n$1\r\n0\r\n$11\r\nrdbchecksum\r\n$3\r\nyes\r\n$22\r\ncrash-memcheck-enabled\r\n$3\r\nyes\r\n$18\r\nreplica-lazy-flush\r\n$2\r\nno\r\n$22\r\nnotify-keyspace-events\r\n$0\r\n\r\n$24\r\nhash-max-ziplist-entries\r\n$3\r\n512\r\n$21\r\ncluster-announce-port\r\n$1\r\n0\r\n$21\r\nlist-max-ziplist-size\r\n$2\r\n-2\r\n$10\r\nmasteruser\r\n$0\r\n\r\n$17\r\nreplica-announced\r\n$3\r\nyes\r\n$11\r\ntls-cluster\r\n$2\r\nno\r\n$19\r\nlist-compress-depth\r\n$1\r\n0\r\n$10\r\ndbfilename\r\n$8\r\ndump.rdb\r\n$14\r\nset-proc-title\r\n$3\r\nyes\r\n$16\r\nshutdown-timeout\r\n$2\r\n10\r\n$26\r\nrdb-save-incremental-fsync\r\n$3\r\nyes\r\n$11\r\ndisable-thp\r\n$3\r\nyes\r\n$20\r\ntls-client-cert-file\r\n$0\r\n\r\n$14\r\nappendfilename\r\n$14\r\nappendonly.aof\r\n$25\r\nauto-aof-rewrite-min-size\r\n$8\r\n67108864\r\n$10\r\nunixsocket\r\n$0\r\n\r\n$25\r\nno-appendfsync-on-rewrite\r\n$2\r\nno\r\n$18\r\nacl-pubsub-default\r\n$13\r\nresetchannels\r\n$25\r\nzset-max-listpack-entries\r\n$3\r\n128\r\n$10\r\nsupervised\r\n$2\r\nno\r\n$13\r\nappenddirname\r\n$13\r\nappendonlydir\r\n$29\r\nactive-defrag-threshold-lower\r\n$2\r\n10\r\n$17\r\nreplica-read-only\r\n$3\r\nyes\r\n$25\r\nclient-query-buffer-limit\r\n$10\r\n1073741824\r\n$21\r\nstream-node-max-bytes\r\n$4\r\n4096\r\n$15\r\ncluster-enabled\r\n$2\r\nno\r\n$16\r\nalways-show-logo\r\n$2\r\nno\r\n$16\r\ntls-ciphersuites\r\n$0\r\n\r\n$25\r\nhash-max-listpack-entries\r\n$3\r\n512\r\n$18\r\ntls-dh-params-file\r\n$0\r\n\r\n$25\r\ncluster-announce-bus-port\r\n$1\r\n0\r\n$10\r\nmaxclients\r\n$5\r\n10000\r\n$14\r\nacllog-max-len\r\n$3\r\n128\r\n$27\r\nauto-aof-rewrite-percentage\r\n$3\r\n100\r\n$12\r\nsyslog-ident\r\n$5\r\nredis\r\n$24\r\nrepl-disable-tcp-nodelay\r\n$2\r\nno\r\n$19\r\ncluster-config-file\r\n$10\r\nnodes.conf\r\n$25\r\ncluster-slave-no-failover\r\n$2\r\nno\r\n$9\r\nmaxmemory\r\n$1\r\n0\r\n$25\r\ntls-prefer-server-ciphers\r\n$2\r\nno\r\n$24\r\nzset-max-ziplist-entries\r\n$3\r\n128\r\n$11\r\ntcp-backlog\r\n$3\r\n511\r\n$25\r\ntls-session-cache-timeout\r\n$3\r\n300\r\n$24\r\nreplica-serve-stale-data\r\n$3\r\nyes\r\n$26\r\ncluster-link-sendbuf-limit\r\n$1\r\n0\r\n$14\r\nlfu-decay-time\r\n$1\r\n1\r\n$4\r\nbind\r\n$7\r\n0.0.0.0\r\n$18\r\naof-load-truncated\r\n$3\r\nyes\r\n$16\r\ntls-ca-cert-file\r\n$0\r\n\r\n$14\r\nserver_cpulist\r\n$0\r\n\r\n$16\r\nrepl-backlog-ttl\r\n$4\r\n3600\r\n$22\r\nslave-serve-stale-data\r\n$3\r\nyes\r\n$22\r\nlazyfree-lazy-user-del\r\n$2\r\nno\r\n$9\r\ndatabases\r\n$2\r\n16\r\n$19\r\nio-threads-do-reads\r\n$2\r\nno\r\n$17\r\ncrash-log-enabled\r\n$3\r\nyes\r\n$9\r\ndaemonize\r\n$2\r\nno\r\n$18\r\nmin-slaves-max-lag\r\n$2\r\n10\r\n$17\r\nmaxmemory-clients\r\n$1\r\n0\r\n$3\r\ndir\r\n$14\r\n/var/lib/redis\r\n$16\r\ntls-auth-clients\r\n$3\r\nyes\r\n$7\r\npidfile\r\n$27\r\n/run/redis/redis-server.pid\r\n$20\r\nmin-replicas-max-lag\r\n$2\r\n10\r\n$11\r\nbio_cpulist\r\n$0\r\n\r\n$25\r\ncluster-migration-barrier\r\n$1\r\n1\r\n$20\r\nhll-sparse-max-bytes\r\n$4\r\n3000\r\n$7\r\nlogfile\r\n$31\r\n/var/log/redis/redis-server.log\r\n$18\r\nrepl-diskless-sync\r\n$3\r\nyes\r\n$8\r\ntls-port\r\n$1\r\n0\r\n$8\r\nloglevel\r\n$6\r\nnotice\r\n$12\r\ntls-key-file\r\n$0\r\n\r\n$15\r\nsyslog-facility\r\n$6\r\nlocal0\r\n$16\r\nlatency-tracking\r\n$3\r\nyes\r\n$19\r\nreplica-announce-ip\r\n$0\r\n\r\n$16\r\nmaxmemory-policy\r\n$10\r\nnoeviction\r\n$16\r\nreplica-priority\r\n$3\r\n100\r\n$17\r\nrepl-backlog-size\r\n$7\r\n1048576\r\n$24\r\nenable-protected-configs\r\n$2\r\nno\r\n$20\r\nbusy-reply-threshold\r\n$4\r\n5000\r\n$12\r\nactivedefrag\r\n$2\r\nno\r\n$18\r\nrdb-del-sync-files\r\n$2\r\nno\r\n$20\r\nenable-debug-command\r\n$2\r\nno\r\n$9\r\nreplicaof\r\n$0\r\n\r\n$13\r\ntcp-keepalive\r\n$3\r\n300\r\n$14\r\nprotected-mode\r\n$2\r\nno\r\n$23\r\nslowlog-log-slower-than\r\n$5\r\n10000\r\n$21\r\nreplica-announce-port\r\n$1\r\n0\r\n$20\r\nactive-expire-effort\r\n$1\r\n1\r\n$20\r\ncluster-node-timeout\r\n$5\r\n15000\r\n$27\r\nmaxmemory-eviction-tenacity\r\n$2\r\n10\r\n$23\r\nhash-max-listpack-value\r\n$2\r\n64\r\n$17\r\nmaxmemory-samples\r\n$1\r\n5\r\n$14\r\nunixsocketperm\r\n$1\r\n0\r\n$22\r\nrepl-ping-slave-period\r\n$2\r\n10\r\n",
+   "config_get_dbfilename": "*2\r\n$10\r\ndbfilename\r\n$8\r\ndump.rdb\r\n",
+   "config_get_dir": "*2\r\n$3\r\ndir\r\n$14\r\n/var/lib/redis\r\n",
+   "config_set_bad": "-ERR Unknown option or number of arguments for CONFIG SET - 'nosuch'\r\n",
+   "config_set_dbfilename": "-ERR CONFIG SET failed (possibly related to argument 'dbfilename') - can't set protected config\r\n",
+   "config_set_dir": "-ERR CONFIG SET failed (possibly related to argument 'dir') - can't set protected config\r\n",
+   "config_set_maxclients": "+OK\r\n",
+   "dbsize": ":0\r\n",
+   "del": ":1\r\n",
+   "echo": "$5\r\nhello\r\n",
+   "eval_cve_2022_0543": "-ERR user_script:1: Script attempted to access nonexistent global variable 'package' script: 59383731574f8ef9c055b3f4cf9cca078446f86d, on @user_script:1.\r\n",
+   "eval_os": "-ERR user_script:1: Script attempted to access nonexistent global variable 'os' script: d943855a2b4c759b5d209cc99c41fb3fdba79649, on @user_script:1.\r\n",
+   "eval_return_string": "$1\r\nx\r\n",
+   "eval_simple": ":1\r\n",
+   "exists": ":0\r\n",
+   "flushall": "+OK\r\n",
+   "flushdb": "+OK\r\n",
+   "get": "$1\r\nv\r\n",
+   "get_missing": "$-1\r\n",
+   "hello_2": "*14\r\n$6\r\nserver\r\n$5\r\nredis\r\n$7\r\nversion\r\n$6\r\n7.0.15\r\n$5\r\nproto\r\n:2\r\n$2\r\nid\r\n:39\r\n$4\r\nmode\r\n$10\r\nstandalone\r\n$4\r\nrole\r\n$6\r\nmaster\r\n$7\r\nmodules\r\n*0\r\n",
+   "hello_3": "%7\r\n$6\r\nserver\r\n$5\r\nredis\r\n$7\r\nversion\r\n$6\r\n7.0.15\r\n$5\r\nproto\r\n:3\r\n$2\r\nid\r\n:40\r\n$4\r\nmode\r\n$10\r\nstandalone\r\n$4\r\nrole\r\n$6\r\nmaster\r\n$7\r\nmodules\r\n*0\r\n",
+   "http_on_redis": "",
+   "info": "$4938\r\n# Server\r\nredis_version:7.0.15\r\nredis_git_sha1:00000000\r\nredis_git_dirty:0\r\nredis_build_id:ae4d7c971a948f0\r\nredis_mode:standalone\r\nos:Linux 6.12.76-linuxkit aarch64\r\narch_bits:64\r\nmonotonic_clock:POSIX clock_gettime\r\nmultiplexing_api:epoll\r\natomicvar_api:c11-builtin\r\ngcc_version:12.2.0\r\nprocess_id:26\r\nprocess_supervised:no\r\nrun_id:5c99c753b8b26cbe6bdf4bfbc689d3ab186f50bc\r\ntcp_port:6379\r\nserver_time_usec:1794469788395175\r\nuptime_in_seconds:30\r\nuptime_in_days:0\r\nhz:10\r\nconfigured_hz:10\r\nlru_clock:16084892\r\nexecutable:/redis-server\r\nconfig_file:/etc/redis/redis.conf\r\nio_threads_active:0\r\n\r\n# Clients\r\nconnected_clients:1\r\ncluster_connections:0\r\nmaxclients:10000\r\nclient_recent_max_input_buffer:20480\r\nclient_recent_max_output_buffer:0\r\nblocked_clients:0\r\ntracking_clients:0\r\nclients_in_timeout_table:0\r\n\r\n# Memory\r\nused_memory:1592336\r\nused_memory_human:1.52M\r\nused_memory_rss:13438976\r\nused_memory_rss_human:12.82M\r\nused_memory_peak:1592336\r\nused_memory_peak_human:1.52M\r\nused_memory_peak_perc:100.15%\r\nused_memory_overhead:909784\r\nused_memory_startup:908944\r\nused_memory_dataset:682552\r\nused_memory_dataset_perc:99.88%\r\nallocator_allocated:3035952\r\nallocator_active:9175040\r\nallocator_resident:11599872\r\ntotal_system_memory:12528578560\r\ntotal_system_memory_human:11.67G\r\nused_memory_lua:43008\r\nused_memory_vm_eval:43008\r\nused_memory_lua_human:42.00K\r\nused_memory_scripts_eval:640\r\nnumber_of_cached_scripts:4\r\nnumber_of_functions:0\r\nnumber_of_libraries:0\r\nused_memory_vm_functions:33792\r\nused_memory_vm_total:76800\r\nused_memory_vm_total_human:75.00K\r\nused_memory_functions:200\r\nused_memory_scripts:840\r\nused_memory_scripts_human:840B\r\nmaxmemory:0\r\nmaxmemory_human:0B\r\nmaxmemory_policy:noeviction\r\nallocator_frag_ratio:3.02\r\nallocator_frag_bytes:6139088\r\nallocator_rss_ratio:1.26\r\nallocator_rss_bytes:2424832\r\nrss_overhead_ratio:1.16\r\nrss_overhead_bytes:1839104\r\nmem_fragmentation_ratio:8.54\r\nmem_fragmentation_bytes:11864520\r\nmem_not_counted_for_evict:0\r\nmem_replication_backlog:0\r\nmem_total_replication_buffers:0\r\nmem_clients_slaves:0\r\nmem_clients_normal:0\r\nmem_cluster_links:0\r\nmem_aof_buffer:0\r\nmem_allocator:jemalloc-5.3.0\r\nactive_defrag_running:0\r\nlazyfree_pending_objects:0\r\nlazyfreed_objects:0\r\n\r\n# Persistence\r\nloading:0\r\nasync_loading:0\r\ncurrent_cow_peak:0\r\ncurrent_cow_size:0\r\ncurrent_cow_size_age:0\r\ncurrent_fork_perc:0.00\r\ncurrent_save_keys_processed:0\r\ncurrent_save_keys_total:0\r\nrdb_changes_since_last_save:0\r\nrdb_bgsave_in_progress:0\r\nrdb_last_save_time:1794469787\r\nrdb_last_bgsave_status:ok\r\nrdb_last_bgsave_time_sec:0\r\nrdb_current_bgsave_time_sec:-1\r\nrdb_saves:2\r\nrdb_last_cow_size:479232\r\nrdb_last_load_keys_expired:0\r\nrdb_last_load_keys_loaded:0\r\naof_enabled:0\r\naof_rewrite_in_progress:0\r\naof_rewrite_scheduled:0\r\naof_last_rewrite_time_sec:-1\r\naof_current_rewrite_time_sec:-1\r\naof_last_bgrewrite_status:ok\r\naof_rewrites:0\r\naof_rewrites_consecutive_failures:0\r\naof_last_write_status:ok\r\naof_last_cow_size:0\r\nmodule_fork_in_progress:0\r\nmodule_fork_last_cow_size:0\r\n\r\n# Stats\r\ntotal_connections_received:44\r\ntotal_commands_processed:38\r\ninstantaneous_ops_per_sec:1\r\ntotal_net_input_bytes:1359\r\ntotal_net_output_bytes:8707\r\ntotal_net_repl_input_bytes:0\r\ntotal_net_repl_output_bytes:0\r\ninstantaneous_input_kbps:0.02\r\ninstantaneous_output_kbps:0.01\r\ninstantaneous_input_repl_kbps:0.00\r\ninstantaneous_output_repl_kbps:0.00\r\nrejected_connections:0\r\nsync_full:0\r\nsync_partial_ok:0\r\nsync_partial_err:0\r\nexpired_keys:0\r\nexpired_stale_perc:0.00\r\nexpired_time_cap_reached_count:0\r\nexpire_cycle_cpu_milliseconds:0\r\nevicted_keys:0\r\nevicted_clients:0\r\ntotal_eviction_exceeded_time:0\r\ncurrent_eviction_exceeded_time:0\r\nkeyspace_hits:1\r\nkeyspace_misses:4\r\npubsub_channels:0\r\npubsub_patterns:0\r\npubsubshard_channels:0\r\nlatest_fork_usec:946\r\ntotal_forks:1\r\nmigrate_cached_sockets:0\r\nslave_expires_tracked_keys:0\r\nactive_defrag_hits:0\r\nactive_defrag_misses:0\r\nactive_defrag_key_hits:0\r\nactive_defrag_key_misses:0\r\ntotal_active_defrag_time:0\r\ncurrent_active_defrag_time:0\r\ntracking_total_keys:0\r\ntracking_total_items:0\r\ntracking_total_prefixes:0\r\nunexpected_error_replies:0\r\ntotal_error_replies:12\r\ndump_payload_sanitizations:0\r\ntotal_reads_processed:86\r\ntotal_writes_processed:43\r\nio_threaded_reads_processed:0\r\nio_threaded_writes_processed:0\r\nreply_buffer_shrinks:42\r\nreply_buffer_expands:0\r\n\r\n# Replication\r\nrole:master\r\nconnected_slaves:0\r\nmaster_failover_state:no-failover\r\nmaster_replid:161eea5b22275776320079295476a48f12a1f9da\r\nmaster_replid2:0000000000000000000000000000000000000000\r\nmaster_repl_offset:0\r\nsecond_repl_offset:-1\r\nrepl_backlog_active:0\r\nrepl_backlog_size:1048576\r\nrepl_backlog_first_byte_offset:0\r\nrepl_backlog_histlen:0\r\n\r\n# CPU\r\nused_cpu_sys:0.050859\r\nused_cpu_user:0.041866\r\nused_cpu_sys_children:0.004724\r\nused_cpu_user_children:0.000000\r\nused_cpu_sys_main_thread:0.050346\r\nused_cpu_user_main_thread:0.042226\r\n\r\n# Modules\r\n\r\n# Errorstats\r\nerrorstat_ERR:count=12\r\n\r\n# Cluster\r\ncluster_enabled:0\r\n\r\n# Keyspace\r\n\r\n",
+   "info_replication_after_slaveof": "$615\r\n# Replication\r\nrole:slave\r\nmaster_host:192.0.2.10\r\nmaster_port:6379\r\nmaster_link_status:down\r\nmaster_last_io_seconds_ago:-1\r\nmaster_sync_in_progress:0\r\nslave_read_repl_offset:0\r\nslave_repl_offset:0\r\nmaster_link_down_since_seconds:-1\r\nslave_priority:100\r\nslave_read_only:1\r\nreplica_announced:1\r\nconnected_slaves:0\r\nmaster_failover_state:no-failover\r\nmaster_replid:161eea5b22275776320079295476a48f12a1f9da\r\nmaster_replid2:0000000000000000000000000000000000000000\r\nmaster_repl_offset:0\r\nsecond_repl_offset:-1\r\nrepl_backlog_active:0\r\nrepl_backlog_size:1048576\r\nrepl_backlog_first_byte_offset:0\r\nrepl_backlog_histlen:0\r\n\r\n",
+   "info_server": "$592\r\n# Server\r\nredis_version:7.0.15\r\nredis_git_sha1:00000000\r\nredis_git_dirty:0\r\nredis_build_id:ae4d7c971a948f0\r\nredis_mode:standalone\r\nos:Linux 6.12.76-linuxkit aarch64\r\narch_bits:64\r\nmonotonic_clock:POSIX clock_gettime\r\nmultiplexing_api:epoll\r\natomicvar_api:c11-builtin\r\ngcc_version:12.2.0\r\nprocess_id:26\r\nprocess_supervised:no\r\nrun_id:5c99c753b8b26cbe6bdf4bfbc689d3ab186f50bc\r\ntcp_port:6379\r\nserver_time_usec:1794469789000135\r\nuptime_in_seconds:31\r\nuptime_in_days:0\r\nhz:10\r\nconfigured_hz:10\r\nlru_clock:16084892\r\nexecutable:/redis-server\r\nconfig_file:/etc/redis/redis.conf\r\nio_threads_active:0\r\n\r\n",
+   "inline_unknown": "-ERR Protocol version is not an integer or out of range\r\n",
+   "keys_empty": "*0\r\n",
+   "module_load": "-ERR MODULE command not allowed. If the enable-module-command option is set to \"local\", you can run it from a local connection, otherwise you need to set this option in the configuration file, and then restart the server.\r\n",
+   "ping": "+PONG\r\n",
+   "ping_inline": "+PONG\r\n",
+   "quit": "+OK\r\n",
+   "save": "+OK\r\n",
+   "scan_empty": "*2\r\n$1\r\n0\r\n*0\r\n",
+   "select_1": "+OK\r\n",
+   "select_out_of_range": "-ERR DB index is out of range\r\n",
+   "set": "+OK\r\n",
+   "slaveof": "+OK\r\n",
+   "slaveof_no_one": "+OK\r\n",
+   "ttl_missing": ":-2\r\n",
+   "type_missing": "+none\r\n",
+   "unknown": "-ERR unknown command 'FOO', with args beginning with: 'bar' 'baz' \r\n",
+   "unknown_noargs": "-ERR unknown command 'FOO', with args beginning with: \r\n",
+   "wrong_arity": "-ERR wrong number of arguments for 'get' command\r\n"
+  },
+  "version": "Redis server v=7.0.15 sha=00000000:0 malloc=jemalloc-5.3.0 bits=64 build=ae4d7c971a948f0"
+ },
+ "ssh": {
+  "algorithms": {
+   "compression_c2s": [
+    "none",
+    "zlib@openssh.com"
+   ],
+   "compression_s2c": [
+    "none",
+    "zlib@openssh.com"
+   ],
+   "encryption_c2s": [
+    "chacha20-poly1305@openssh.com",
+    "aes128-ctr",
+    "aes192-ctr",
+    "aes256-ctr",
+    "aes128-gcm@openssh.com",
+    "aes256-gcm@openssh.com"
+   ],
+   "encryption_s2c": [
+    "chacha20-poly1305@openssh.com",
+    "aes128-ctr",
+    "aes192-ctr",
+    "aes256-ctr",
+    "aes128-gcm@openssh.com",
+    "aes256-gcm@openssh.com"
+   ],
+   "kex_algorithms": [
+    "sntrup761x25519-sha512",
+    "sntrup761x25519-sha512@openssh.com",
+    "curve25519-sha256",
+    "curve25519-sha256@libssh.org",
+    "ecdh-sha2-nistp256",
+    "ecdh-sha2-nistp384",
+    "ecdh-sha2-nistp521",
+    "diffie-hellman-group-exchange-sha256",
+    "diffie-hellman-group16-sha512",
+    "diffie-hellman-group18-sha512",
+    "diffie-hellman-group14-sha256",
+    "kex-strict-s-v00@openssh.com"
+   ],
+   "languages_c2s": [],
+   "languages_s2c": [],
+   "mac_c2s": [
+    "umac-64-etm@openssh.com",
+    "umac-128-etm@openssh.com",
+    "hmac-sha2-256-etm@openssh.com",
+    "hmac-sha2-512-etm@openssh.com",
+    "hmac-sha1-etm@openssh.com",
+    "umac-64@openssh.com",
+    "umac-128@openssh.com",
+    "hmac-sha2-256",
+    "hmac-sha2-512",
+    "hmac-sha1"
+   ],
+   "mac_s2c": [
+    "umac-64-etm@openssh.com",
+    "umac-128-etm@openssh.com",
+    "hmac-sha2-256-etm@openssh.com",
+    "hmac-sha2-512-etm@openssh.com",
+    "hmac-sha1-etm@openssh.com",
+    "umac-64@openssh.com",
+    "umac-128@openssh.com",
+    "hmac-sha2-256",
+    "hmac-sha2-512",
+    "hmac-sha1"
+   ],
+   "server_host_key_algorithms": [
+    "rsa-sha2-512",
+    "rsa-sha2-256",
+    "ecdsa-sha2-nistp256",
+    "ssh-ed25519"
+   ]
+  },
+  "banner": "SSH-2.0-OpenSSH_9.2p1 Debian-2+deb12u10",
+  "hassh_server": "425d29fe50d8e4f5e37efb6e24bcf660",
+  "ssh_dash_v": "OpenSSH_9.2p1 Debian-2+deb12u10, OpenSSL 3.0.22 25 Aug 2026",
+  "sshd_effective": {
+   "ciphers": "chacha20-poly1305@openssh.com,aes128-ctr,aes192-ctr,aes256-ctr,aes128-gcm@openssh.com,aes256-gcm@openssh.com",
+   "compression": "yes",
+   "hostkeyalgorithms": "ssh-ed25519-cert-v01@openssh.com,ecdsa-sha2-nistp256-cert-v01@openssh.com,ecdsa-sha2-nistp384-cert-v01@openssh.com,ecdsa-sha2-nistp521-cert-v01@openssh.com,sk-ssh-ed25519-cert-v01@openssh.com,sk-ecdsa-sha2-nistp256-cert-v01@openssh.com,rsa-sha2-512-cert-v01@openssh.com,rsa-sha2-256-cert-v01@openssh.com,ssh-ed25519,ecdsa-sha2-nistp256,ecdsa-sha2-nistp384,ecdsa-sha2-nistp521,sk-ssh-ed25519@openssh.com,sk-ecdsa-sha2-nistp256@openssh.com,rsa-sha2-512,rsa-sha2-256",
+   "kexalgorithms": "sntrup761x25519-sha512,sntrup761x25519-sha512@openssh.com,curve25519-sha256,curve25519-sha256@libssh.org,ecdh-sha2-nistp256,ecdh-sha2-nistp384,ecdh-sha2-nistp521,diffie-hellman-group-exchange-sha256,diffie-hellman-group16-sha512,diffie-hellman-group18-sha512,diffie-hellman-group14-sha256",
+   "macs": "umac-64-etm@openssh.com,umac-128-etm@openssh.com,hmac-sha2-256-etm@openssh.com,hmac-sha2-512-etm@openssh.com,hmac-sha1-etm@openssh.com,umac-64@openssh.com,umac-128@openssh.com,hmac-sha2-256,hmac-sha2-512,hmac-sha1"
+  }
+ }
+}

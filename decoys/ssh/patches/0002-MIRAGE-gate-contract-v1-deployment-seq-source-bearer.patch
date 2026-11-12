@@ -1,0 +1,149 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: MIRAGE <noreply@anthropic.com>
+Date: Thu, 12 Nov 2026 11:47:59 +0530
+Subject: [PATCH 2/6] MIRAGE: gate contract v1 (deployment, seq, source, bearer
+ token, fallback reasons)
+
+---
+ docs/OUTPUT.rst           | 17 +++++++++++++++++
+ src/cowrie/mirage_gate.py | 37 ++++++++++++++++++++++++++++++-------
+ 2 files changed, 47 insertions(+), 7 deletions(-)
+
+diff --git a/docs/OUTPUT.rst b/docs/OUTPUT.rst
+index 8fde461..28bf796 100644
+--- a/docs/OUTPUT.rst
++++ b/docs/OUTPUT.rst
+@@ -358,6 +358,23 @@ Attributes:
+     * `propensity`: probability the policy gave the chosen action
+     * `latency_ms`: time spent waiting for the decision
+     * `request_id`: identifier of the request sent to the policy service
++    * `seq`: number of the command within the session, from 1
++    * `fallback_reason`: why ``allow`` was used without a decision (``timeout``, ``status:<code>``, ``error:<type>``, ``malformed``)
++    * `rule_id`, `rules_version`: the policy rule that decided, and the rule set's version
++
++cowrie.fs.change
++================
++
++MIRAGE: a change to the session's emulated filesystem (only the session's
++private copy changes; the shared tree never does).
++
++Attributes:
++
++    * `op`: ``create``, ``mkdir``, ``rmdir``, ``write``, ``chmod``, ``chown``, ``remove`` or ``rename``
++    * `path`: the path changed
++    * `new_path`: the destination of a rename
++    * `mode`, `uid`, `gid`, `size`: the new attributes, where they apply
++    * `sha256`: the content's hash, for a completed SFTP upload
+ 
+ cowrie.proxy.backend_connect_error
+ ==================================
+diff --git a/src/cowrie/mirage_gate.py b/src/cowrie/mirage_gate.py
+index 6d2053f..185d25d 100644
+--- a/src/cowrie/mirage_gate.py
++++ b/src/cowrie/mirage_gate.py
+@@ -65,7 +65,9 @@ class PolicyGate:
+       every new connection. The policy service must listen on both.
+     """
+ 
+-    def __init__(self, url: str, timeout_s: float, idle_s: float = 2.0) -> None:
++    def __init__(
++        self, url: str, timeout_s: float, idle_s: float = 2.0, token: str = ""
++    ) -> None:
+         from twisted.web.client import Agent, HTTPConnectionPool
+ 
+         self.url = url
+@@ -75,6 +77,7 @@ class PolicyGate:
+         pool.cachedConnectionTimeout = idle_s
+         pool.retryAutomatically = False
+         self._http = treq.client.HTTPClient(Agent(reactor, pool=pool))
++        self._headers = {"Authorization": f"Bearer {token}"} if token else {}
+ 
+     @classmethod
+     def from_config(cls) -> PolicyGate | None:
+@@ -83,13 +86,15 @@ class PolicyGate:
+         url = CowrieConfig.get("mirage", "policy_url", fallback="http://policy:8000/v1/decide")
+         timeout_ms = CowrieConfig.getint("mirage", "policy_timeout_ms", fallback=50)
+         idle_ms = CowrieConfig.getint("mirage", "policy_idle_ms", fallback=2000)
+-        return cls(url, timeout_ms / 1000.0, idle_ms / 1000.0)
++        # The token comes from the environment (COWRIE_MIRAGE_POLICY_TOKEN), not a file.
++        token = CowrieConfig.get("mirage", "policy_token", fallback="")
++        return cls(url, timeout_ms / 1000.0, idle_ms / 1000.0, token)
+ 
+     def decide(self, request: dict[str, Any]) -> defer.Deferred[dict[str, Any] | None]:
+         deadline = time.monotonic() + self.timeout_s
+ 
+         def attempt() -> defer.Deferred:
+-            d = self._http.post(self.url, json=request)
++            d = self._http.post(self.url, json=request, headers=self._headers)
+             d.addCallback(_json_or_none)
+             return d
+ 
+@@ -129,13 +134,16 @@ def set_tcp_nodelay(ssh_transport: Any) -> None:
+ 
+ def _json_or_none(response: Any) -> Any:
+     if response.code != 200:
+-        return None
++        return {"_fallback": f"status:{response.code}"}
+     return treq.json_content(response)
+ 
+ 
+-def _none(failure: Any, url: str) -> None:
++def _none(failure: Any, url: str) -> dict[str, str]:
++    from twisted.internet.defer import TimeoutError as DeferTimeout
++
++    reason = "timeout" if failure.check(DeferTimeout) else f"error:{failure.type.__name__}"
+     log.info("policy gate fell back to allow ({err})", err=failure.getErrorMessage())
+-    return None
++    return {"_fallback": reason}
+ 
+ 
+ _UNSET = object()
+@@ -182,9 +190,17 @@ def gate_then_run(shell: HoneyPotShell, cmdAndArgs: list[str]) -> Any:
+         return shell._run_expanded(cmdAndArgs)
+ 
+     argv = list(cmdAndArgs)
++    proto = shell.protocol
++    proto.mirage_seq = getattr(proto, "mirage_seq", 0) + 1
+     request = {
+         "request_id": str(uuid.uuid4()),
+         "session_id": _session_id(shell),
++        "deployment_id": CowrieConfig.get("honeypot", "sensor_name", fallback=None),
++        "seq": proto.mirage_seq,
++        "src": {
++            "ip": getattr(proto, "realClientIP", None),
++            "port": getattr(proto, "realClientPort", None),
++        },
+         "protocol": "ssh",
+         "argv": argv,
+         "cwd": shell.cwd,
+@@ -226,6 +242,9 @@ def _apply(
+ ) -> Any:
+     latency_ms = round((time.monotonic() - started) * 1000, 1)
+     fallback = not isinstance(decision, dict) or decision.get("action") not in ACTIONS
++    reason = None
++    if fallback:
++        reason = decision.get("_fallback", "malformed") if isinstance(decision, dict) else "malformed"
+     action = "allow" if fallback else decision["action"]
+     shell.protocol.events.dispatch(
+         "cowrie.policy.decision",
+@@ -233,7 +252,11 @@ def _apply(
+         input=" ".join(request["argv"]),
+         action=action,
+         fallback=fallback,
++        fallback_reason=reason,
+         known=request["known"],
++        seq=request["seq"],
++        rule_id=None if fallback else decision.get("rule_id"),
++        rules_version=None if fallback else decision.get("rules_version"),
+         decision_id=None if fallback else decision.get("decision_id"),
+         propensity=None if fallback else decision.get("propensity"),
+         latency_ms=latency_ms,
+@@ -257,7 +280,7 @@ def _apply(
+         shell.protocol.end_process(0)
+         return None
+ 
+-    output = str(decision.get("output", "")).encode("utf8")[:MAX_OUTPUT_BYTES]
++    output = str(decision.get("output") or "").encode("utf8")[:MAX_OUTPUT_BYTES]
+     _, ops = shell.parser.parse_redirections(list(cmdAndArgs))
+     pp = shell._make_pipe(None, [], None, ops)
+     for real_path, virtual_path in pp.redirect_real_files:

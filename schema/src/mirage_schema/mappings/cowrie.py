@@ -86,6 +86,8 @@ TABLE: dict[str, tuple[EventClass, str, Outcome]] = {
     "cowrie.log.closed": (C.FILE_ACTIVITY, "ttylog_closed", U),
     # Emitted by the MIRAGE policy gate in our Cowrie fork (spike S1).
     "cowrie.policy.decision": (C.POLICY_DECISION, "decide", U),
+    # Changes to the session's emulated filesystem (MIRAGE fork, patch 0003); op in payload.
+    "cowrie.fs.change": (C.FILE_ACTIVITY, "fs_change", S),
     "cowrie.direct-tcpip.request": (C.NETWORK_ACTIVITY, "tunnel_request", U),
     "cowrie.direct-tcpip.data": (C.NETWORK_ACTIVITY, "tunnel_data", U),
     "cowrie.direct-tcpip.redirect": (C.NETWORK_ACTIVITY, "tunnel_redirect", U),

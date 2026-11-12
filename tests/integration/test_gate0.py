@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import secrets
 import time
 import uuid
 from datetime import UTC, datetime
@@ -16,15 +15,22 @@ pytestmark = pytest.mark.integration
 COMMANDS = ["uname -a", "whoami", "cat /etc/passwd", "cd /tmp", "mirage-not-a-command-{tag}"]
 
 
+def root_password() -> str:
+    from .conftest import ROOT
+
+    userdb = (ROOT / "build/profile/cowrie/userdb.txt").read_text().splitlines()
+    return next(line.split(":", 2)[2] for line in userdb if line.startswith("root:"))
+
+
 def _ssh_session(tag: str, port: int) -> str:
     client = paramiko.SSHClient()
     client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-    # Stock Cowrie accepts root with any password except "root" and "123456".
+    # The rendered profile accepts only its own root passwords (phase 1, spec 1.3).
     client.connect(
         "127.0.0.1",
         port,
         username="root",
-        password=secrets.token_hex(6),
+        password=root_password(),
         look_for_keys=False,
         allow_agent=False,
         timeout=15,
@@ -54,7 +60,8 @@ def session(clickhouse, env):
     while time.time() < deadline:
         rows = clickhouse(
             "SELECT session_id FROM mirage.events FINAL "
-            f"WHERE ts >= '{t0}' AND JSONExtractString(payload, 'command') = '{marker}'"
+            f"WHERE ts >= '{t0}' AND source = 'cowrie' "
+            f"AND JSONExtractString(payload, 'command') = '{marker}'"
         )
         if rows:
             return {"id": rows[0]["session_id"], "transcript": transcript, "marker": marker}
@@ -79,12 +86,12 @@ def test_session_row(session, clickhouse):
 
 
 def test_src_ip_is_client_not_edge(session, clickhouse):
-    """The PROXY v2 header from ssh-edge must reach Cowrie."""
+    """The PROXY v2 header from the edge must reach Cowrie."""
     from .conftest import container_ip
 
     (row,) = clickhouse(f"SELECT src_ip FROM mirage.sessions WHERE session_id = '{session['id']}'")
     assert row["src_ip"]
-    assert row["src_ip"] != container_ip("ssh-edge", "mirage_decoy")
+    assert row["src_ip"] != container_ip("edge", "mirage_decoy")
 
 
 def test_event_classes_present(session, clickhouse):

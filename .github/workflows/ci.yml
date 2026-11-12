@@ -22,7 +22,7 @@ jobs:
       - run: uv run pytest
 
   integration:
-    # Gate 0 and the containment baseline, against the real compose stack.
+    # Gates 0 and 1, containment and the default-tell checks, against the real compose stack.
     runs-on: ubuntu-24.04
     needs: lint-unit
     steps:
@@ -31,6 +31,9 @@ jobs:
         with:
           python-version: "3.12"
       - run: uv sync --frozen || uv sync
+      # The SSH decoy's image build copies the reference root; the extracted facts it would
+      # produce are committed (decoys/profiles/reference/debian-12.json), so CI only builds it.
+      - run: make env && make reference-image
       - run: make up
       - run: make itest
       - if: failure()
@@ -39,18 +42,24 @@ jobs:
         run: make nuke
 
   cowrie-fork:
-    # The policy-gate patch must apply to the pinned Cowrie release and keep its whole
-    # test suite green. Catches upstream drift before the fork is rebased.
+    # The patch series (decoys/ssh/patches) must apply to the pinned Cowrie release, docs
+    # included, and keep its whole test suite green with the FoxIO-licensed files deleted.
+    # Catches upstream drift before the series is rebased.
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v5
         with:
           python-version: "3.13"
-      - run: git clone --depth 1 --branch v3.1.6 https://github.com/cowrie/cowrie.git spikes/s1-cowrie-gate/upstream
-      - working-directory: spikes/s1-cowrie-gate/upstream
+      - run: git clone --depth 1 --branch v3.1.6 https://github.com/cowrie/cowrie.git /tmp/cowrie
+      - working-directory: /tmp/cowrie
         run: |
-          git apply ../mirage-gate.patch
+          git rev-parse HEAD | grep -q '^ea9513e'  # the tag still points at the pinned commit
+          for p in "$GITHUB_WORKSPACE"/decoys/ssh/patches/*.patch; do git apply --whitespace=nowarn "$p"; done
+          grep -v '^#' "$GITHUB_WORKSPACE/decoys/ssh/remove.txt" | grep . | xargs rm -rf
+          # The FoxIO-licensed files are gone and nothing imports them.
+          test ! -e src/cowrie/vendor/ja4 && test ! -e LICENSES/LicenseRef-FoxIO-1.1.txt
+          ! grep -rnE "vendor[./]ja4|core[./]fingerprint|from cowrie\.core import fingerprint" src
           uv venv -p 3.13 .venv
           uv pip install -p .venv -r requirements.txt -r requirements-output.txt
           uv pip install -p .venv -e .

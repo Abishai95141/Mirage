@@ -1,0 +1,26 @@
+# Rules used only by the integration tests, one per action. Loaded ahead of the default rules
+# only when POLICY_SELFTEST=1 (the development .env). Never enable on an exposed sensor: the
+# trigger strings are public in this repository, so they would be a tell.
+version: 1
+rules:
+  - id: selftest-fake-success
+    when: {input_regex: "mirage-selftest-fake-success"}
+    action: fake_success
+    output: "selftest ok\n"
+  - id: selftest-fake-error
+    when: {input_regex: "mirage-selftest-fake-error"}
+    action: fake_error
+    output: "selftest failed\n"
+    exit_code: 2
+  - id: selftest-delay
+    when: {input_regex: "mirage-selftest-delay"}
+    action: delay
+    delay_ms: 300
+  - id: selftest-terminate
+    when: {input_regex: "mirage-selftest-terminate"}
+    action: terminate
+  - id: selftest-http-error
+    when: {protocol: http, path_regex: "^/mirage-selftest-http-error$"}
+    action: fake_error
+    output: "selftest\n"
+    exit_code: 418

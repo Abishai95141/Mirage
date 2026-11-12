@@ -74,7 +74,7 @@
       "type": "object"
     }
   },
-  "$id": "https://mirage.invalid/schema/0.1.0/ground-truth.schema.json",
+  "$id": "https://mirage.invalid/schema/0.2.0/ground-truth.schema.json",
   "additionalProperties": false,
   "properties": {
     "attack_version": {

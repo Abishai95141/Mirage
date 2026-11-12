@@ -1,0 +1,79 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: MIRAGE <noreply@anthropic.com>
+Date: Thu, 12 Nov 2026 11:49:47 +0530
+Subject: [PATCH 4/6] MIRAGE: stop using the vendored JA4+ code (FoxIO License
+ 1.1); the build deletes it
+
+---
+ src/cowrie/ssh/forwarding.py                  | 23 ++++++++++++++-----
+ .../ssh_proxy/protocols/port_forward.py       | 23 ++++++++++++++-----
+ 2 files changed, 34 insertions(+), 12 deletions(-)
+
+diff --git a/src/cowrie/ssh/forwarding.py b/src/cowrie/ssh/forwarding.py
+index 673ff87..fa44289 100644
+--- a/src/cowrie/ssh/forwarding.py
++++ b/src/cowrie/ssh/forwarding.py
+@@ -12,12 +12,23 @@ from twisted.conch.ssh import forwarding
+ from twisted.logger import Logger
+ 
+ from cowrie.core.config import CowrieConfig
+-from cowrie.core.fingerprint import (
+-    generate_ja4,
+-    generate_ja4h,
+-    parse_http_request,
+-    parse_tls_client_hello,
+-)
++# MIRAGE: the vendored JA4+ code (FoxIO License 1.1, which bars commercial use) is
++# removed. These stubs keep the forwarding call sites inert: nothing is parsed, so no
++# JA4/JA4H event is ever emitted. Forwarding is disabled in MIRAGE's configuration anyway.
++def parse_tls_client_hello(data: bytes) -> None:
++    return None
++
++
++def parse_http_request(data: bytes) -> None:
++    return None
++
++
++def generate_ja4(**kwargs: object) -> str:
++    raise NotImplementedError("JA4 removed")
++
++
++def generate_ja4h(**kwargs: object) -> str:
++    raise NotImplementedError("JA4H removed")
+ 
+ 
+ def cowrieOpenConnectForwardingClient(remoteWindow, remoteMaxPacket, data, avatar):
+diff --git a/src/cowrie/ssh_proxy/protocols/port_forward.py b/src/cowrie/ssh_proxy/protocols/port_forward.py
+index cc7fd61..0162aab 100644
+--- a/src/cowrie/ssh_proxy/protocols/port_forward.py
++++ b/src/cowrie/ssh_proxy/protocols/port_forward.py
+@@ -10,12 +10,23 @@ from __future__ import annotations
+ 
+ from twisted.logger import Logger
+ 
+-from cowrie.core.fingerprint import (
+-    generate_ja4,
+-    generate_ja4h,
+-    parse_http_request,
+-    parse_tls_client_hello,
+-)
++# MIRAGE: the vendored JA4+ code (FoxIO License 1.1, which bars commercial use) is
++# removed. These stubs keep the forwarding call sites inert: nothing is parsed, so no
++# JA4/JA4H event is ever emitted. Forwarding is disabled in MIRAGE's configuration anyway.
++def parse_tls_client_hello(data: bytes) -> None:
++    return None
++
++
++def parse_http_request(data: bytes) -> None:
++    return None
++
++
++def generate_ja4(**kwargs: object) -> str:
++    raise NotImplementedError("JA4 removed")
++
++
++def generate_ja4h(**kwargs: object) -> str:
++    raise NotImplementedError("JA4H removed")
+ from cowrie.ssh_proxy.protocols import base_protocol
+ 
+ 

@@ -1,0 +1,5 @@
+# Deleted from Cowrie v3.1.6 by the image build (decoys/ssh/Dockerfile). The FoxIO License 1.1
+# bars commercial use; patch 0004 stubs the only call sites, so nothing imports these.
+src/cowrie/vendor/ja4
+src/cowrie/core/fingerprint.py
+LICENSES/LicenseRef-FoxIO-1.1.txt

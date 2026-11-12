@@ -1,6 +1,6 @@
 # Phase 1 specification · Decoys and capture
 
-Status: draft for review · 12 November 2026
+Status: implemented except the database decoys (1.5) · 12 November 2026. Section 10 records what was built, what was measured and what is open.
 Parent: [build plan, phase 1](01-build-plan.md#phase-1--decoys-and-capture-weeks-35) · Companion docs: [architecture](02-architecture.md) · [spike results](../spikes/README.md)
 
 Phase 1 puts three protocols (SSH, HTTP and a database pair, Redis and MySQL) behind the policy gate and captures every session in full. This document defines each work package exactly enough to test: what it must do, what it must not do, and the test that proves it. Gate 1 (section 6) is the only exit criterion.
@@ -163,7 +163,7 @@ Both decoys are asyncio servers we write, with deterministic framing and content
 | --- | --- |
 | Framing | RESP2, plus inline commands (`PING\r\n` typed over telnet) |
 | Commands | `PING`, `ECHO`, `AUTH`, `HELLO 2`, `SELECT`, `QUIT`, `INFO [section]`, `CONFIG GET/SET`, `DBSIZE`, `KEYS`, `SCAN`, `TYPE`, `TTL`, `EXISTS`, `GET`, `SET`, `DEL`, `FLUSHDB`, `FLUSHALL`, `SAVE`, `BGSAVE`, `COMMAND COUNT`, `CLIENT SETNAME/GETNAME/LIST` |
-| The classic attacks, recorded with their arguments | `CONFIG SET dir` and `dbfilename` followed by `SAVE` (writing cron jobs or SSH keys) returns OK. `SLAVEOF` and `REPLICAOF` return OK, record the target and never connect; `INFO replication` then shows the link down. `MODULE LOAD` returns the error a missing file gives. `EVAL` returns the error a patched Debian Redis gives (CVE-2022-0543 probes use `package.loadlib`). |
+| The classic attacks, recorded with their arguments | `CONFIG SET dir` and `dbfilename` return the reference's protected-config error (`ERR CONFIG SET failed (possibly related to argument 'dir') - can't set protected config`): Redis 7.0 protects both, and Debian leaves `enable-protected-configs` off. Other `CONFIG SET` parameters return OK and change the source's own state. `SLAVEOF` and `REPLICAOF` return OK, record the target and never connect; `INFO replication` then shows the link down. `MODULE LOAD` returns the reference's `MODULE command not allowed` error (`enable-module-command no`). `EVAL` returns the error the reference gives for a script that reads a missing global (`package`, `os`), with the script's SHA-1. Every reply here is measured from the reference image (`redis.replies` in the reference file). |
 | Everything else | Redis 7.0's exact `-ERR unknown command` text |
 | State | Keyspace seeded from the profile, kept per source address, reset after 24 hours (P10) |
 | Limits | Bulk strings over 1 MiB close the connection with Redis's protocol error. Values over 4 KiB go to the artifact store. |
@@ -173,11 +173,11 @@ Both decoys are asyncio servers we write, with deterministic framing and content
 | Scope | Behaviour |
 | --- | --- |
 | Handshake | Protocol v10. The version string uses MariaDB's `5.5.5-` prefix. Capability flags come from the reference; TLS is not offered, matching the default Debian install. |
-| Auth | `mysql_native_password`. Only the profile's credentials, including the planted honeytokens, succeed. Others get error 1045 in MariaDB's exact format, quoting the user and the client address. |
+| Auth | `mysql_native_password`. Only the profile's credentials, including the planted honeytokens, succeed. Others get error 1045 in MariaDB's exact format, quoting the user and the client address. The reference gives 1698 instead (no `(using password: ...)` suffix) for an account that authenticates by `unix_socket`, and 1049 when the password is right but the requested database does not exist. Error 1044 (database not granted) could not be measured with the reference's probe account, which has global grants; its text is MariaDB's documented format until measured. |
 | Commands | `COM_QUIT`, `COM_PING`, `COM_INIT_DB`, `COM_QUERY`. `COM_FIELD_LIST` (the `mysql` client's tab completion) is answered from the schema. Prepared statements get a MariaDB error: a known gap. |
 | Query subset | Session and metadata: `SELECT` of `@@` variables, `VERSION()`, `DATABASE()`, `USER()`, `CURRENT_USER()`, `NOW()`; `SET`; `SHOW DATABASES`, `TABLES`, `VARIABLES [LIKE]`, `GRANTS`, `CREATE TABLE`; `DESCRIBE`; `USE`. Data: single-table `SELECT` with `WHERE` comparisons, `ORDER BY`, `LIMIT` and `COUNT(*)`, plus `INSERT`, `UPDATE`, `DELETE`, `CREATE TABLE` and `DROP TABLE`. The client's connect-time queries (`SELECT @@version_comment LIMIT 1` and others) always work. |
 | How | Statements are parsed with `sqlglot` (MIT) and run against an in-memory SQLite copy of the profile's tables, one copy per source address (P10). SQLite errors are mapped to MariaDB codes: 1064 for syntax, 1146 for a missing table, 1054 for an unknown column. Anything outside the subset gets 1064 in MariaDB's message format. |
-| The classic attacks, recorded | `INTO OUTFILE` and `INTO DUMPFILE` give the error the reference gives under its `secure_file_priv`. `LOAD_FILE()` returns NULL. `CREATE FUNCTION ... SONAME` (UDF loading) gives error 1126. |
+| The classic attacks, recorded | `INTO OUTFILE` and `INTO DUMPFILE` give error 1227 (no FILE privilege), which is what the reference gives a user without FILE. `LOAD_FILE()` returns NULL. `CREATE FUNCTION ... SONAME` (UDF loading) gives error 1126. |
 | Must not | Never send a `LOCAL INFILE` request to the client. A rogue MySQL server can read files from the connecting client, and the decoy never attacks its visitor. |
 | Limits | Packets over the profile's `max_allowed_packet` (1 MiB, and reported as such) get MariaDB's error 1153. Statements over 4 KiB go to the artifact store. |
 
@@ -243,9 +243,9 @@ All of these run in CI (`tests/integration/test_gate1.py`, plus the updated cont
 | --- | --- | --- |
 | 1 | Scripted SSH session (paramiko): log in with a profile password, run known and unknown commands, write a file, attempt a download, upload over SFTP | Every item in section 5. Inputs equal decisions with no fallbacks. `cowrie.fs.change` events. An artifact row for the upload. The TTY log replays. |
 | 2 | Scripted HTTP session (httpx): `/`, `/.env`, a POST to `/wp-login.php`, a 404, a body over the 1 MiB cap | One decision per request; credentials captured; nginx-identical 404 and 413 |
-| 3 | Scripted Redis session (raw socket, inline and RESP): `PING`, `INFO`, `CONFIG SET dir` and `dbfilename`, `SET`, `SAVE`, `SLAVEOF` | One decision per command. The replication target is recorded. The state is visible to the same source and invisible to another. |
+| 3 | Scripted Redis session (raw socket, inline and RESP): `PING`, `INFO`, `CONFIG SET dir` and `dbfilename`, `SET`, `SAVE`, `SLAVEOF` | One decision per command. The protected-config errors match the reference. The replication target is recorded. The state is visible to the same source and invisible to another. |
 | 4 | Scripted MySQL session (PyMySQL): log in, `SHOW DATABASES`, a `SELECT`, an `INSERT` then a `SELECT` that sees it, an `INTO OUTFILE` attempt | One decision per packet. Reference-identical errors. |
-| 5 | Token chain: the SSH session reads `/var/www/html/.env`, then a MySQL session logs in with those credentials | A `token.triggered` event, and both sessions share an `actor_id` linked by honeytoken use |
+| 5 | Token chain: the SSH session reads `/var/www/html/.env`, then a MySQL session logs in with those credentials. Until the MySQL decoy exists, the second session is HTTP: a POST of the same credentials to `/phpmyadmin/` | A `token.triggered` event, and both sessions share an `actor_id` linked by honeytoken use |
 | 6 | Policy service stopped | All four decoys still answer as their unmodified emulation would, and record fallbacks with reasons |
 | 7 | Containment, extended | The phase 0 tests, on every decoy. From each decoy, only the policy port is reachable on `mirage_gate`. The policy service has no egress. The edge cannot reach the policy service. Cowrie's emulated `wget` and `curl` cannot reach the policy service's address. A wrong bearer token is refused. |
 | 8 | Default-tell checks | All pass except the known gaps, and the SSH checks fail against stock Cowrie |
@@ -274,10 +274,32 @@ All of these run in CI (`tests/integration/test_gate1.py`, plus the updated cont
 | HASSH-server differs from every real OpenSSH | Twisted implements none of chacha20-poly1305, AES-GCM, ETM MACs, sntrup761 or strict KEX (S3). Decision D12 settles this in phase 3: either a real OpenSSH front end, or accepting the limit. |
 | Cowrie rejects an `SSH-2.2` client; its error lines end in LF | Transport code; same decision |
 | Redis `HELLO 3` (RESP3) | Rare in attack traffic; answered with an error, a tell that is listed |
-| MySQL prepared statements | Rare in attack traffic; answered with a MariaDB error |
+| MySQL prepared statements | Rare in attack traffic; answered with a MariaDB error. (SQL-level `PREPARE` works on the reference; the gap is the binary `COM_STMT_PREPARE` protocol.) |
 | Malformed HTTP request lines | h11 rejects them differently from nginx; measured in the tell checks and listed |
 | Profile-dependent commands Cowrie lacks (`lscpu`, `ss`, `free`) | Pre-rendered per profile in phase 3 (S2). Until then they get "command not found". |
+
+| Artifact eviction | The 50 MiB per-file cap is enforced (Cowrie's `download_limit_size`, the decoys' `ArtifactStore`). The 5 GiB per-deployment cap is not: only the writing decoy may delete, and no decoy evicts yet. |
+| Cowrie behaviours found while testing | An exec channel's close ends the whole connection, so paramiko's `exec_command` fails. `ls` with several directories prints no headers. Globs such as `/home/*` are not expanded. All upstream; candidates for the fork in phase 3. |
 
 ## 9. Out of scope
 
 The LLM responder, the bandit and any learned policy, PostgreSQL, `plant_token` and `escalate`, pre-rendered commands, the high-interaction sandbox, and any internet exposure.
+
+## 10. Implementation status (12 November 2026)
+
+| WP | State | Where |
+| --- | --- | --- |
+| 1.1 Cowrie fork | Done. Six patches on v3.1.6; Cowrie's own suite passes (1,669 tests; one TFTP test fails without a network, as on the unpatched baseline). | `decoys/ssh/` |
+| 1.2 Policy service | Done | `policy/` |
+| 1.3 Profiles and tell checks | Done. 26 checks pass on the stack, one known gap (HASSH-server); the SSH checks fail on stock Cowrie. | `decoys/profiles/`, `eval/probes/default_tells.py` |
+| 1.4 HTTP decoy | Done | `decoys/http/` |
+| 1.5 Database decoys | **Not built.** The reference answers they must reproduce are extracted (`redis` and `mysql` in `decoys/profiles/reference/debian-12.json`) and the generator renders their profiles (`redis.json`, `mysql.json`). `decoys/db/` holds an incomplete Redis framing layer only. | |
+| 1.6 Honeytokens | Done: minted at render time; detected by the sessioniser, which records exposures (a session reaching a planted location) and uses (the value in any input) and emits `token.triggered` as a `detection_finding` from source `pipeline`. | `decoys/tokens/`, `pipeline/src/mirage_pipeline/analyst.py` |
+| 1.7 Sessioniser | Done. Summaries are recomputed from `mirage.events` for every touched session, so redelivery cannot double-count; state is rebuilt from ClickHouse on restart. | `pipeline/src/mirage_pipeline/sessioniser.py` |
+| 1.8 Artifact store | Done except eviction (section 8). The indexer runs as root with only `CAP_DAC_READ_SEARCH`, because the decoys write owner-only files as different users; every artifact mount is read-only. | `pipeline/src/mirage_pipeline/artifacts.py` |
+
+**Gate 1 on the laptop:** tests 1, 2, 5 (SSH to HTTP), 6, 7, 8, 9 and 10 pass (`tests/integration/test_gate1.py`, `test_containment.py`, `test_default_tells.py`); tests 3 and 4 are skipped until 1.5 lands. Gate 1 is therefore not yet passed.
+
+**Measured while testing**
+- The policy service answered every reused keep-alive connection about 40 ms late: its dual-stack socket was created with protocol 0, so asyncio never set `TCP_NODELAY` on it, and replies waited for the client's delayed ACK. Fixed in `policy/src/mirage_policy/main.py`; gating now adds about 0.5 ms per input (p95 under 1 ms from the HTTP decoy; the server's own p95 is under 0.5 ms).
+- Cowrie stores what a shell redirection writes, and logs it as `cowrie.session.file_download`, so redirections appear in the artifact index too.

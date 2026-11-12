@@ -1,0 +1,643 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: MIRAGE <noreply@anthropic.com>
+Date: Thu, 12 Nov 2026 11:44:16 +0530
+Subject: [PATCH 1/6] MIRAGE: policy gate (spike S1)
+
+---
+ docs/OUTPUT.rst                     |  17 ++
+ src/cowrie/core/eventids.py         |   2 +
+ src/cowrie/mirage_gate.py           | 279 ++++++++++++++++++++++++++++
+ src/cowrie/shell/honeypot.py        |   9 +-
+ src/cowrie/shell/session.py         |   4 +
+ src/cowrie/test/test_mirage_gate.py | 258 +++++++++++++++++++++++++
+ 6 files changed, 568 insertions(+), 1 deletion(-)
+ create mode 100644 src/cowrie/mirage_gate.py
+ create mode 100644 src/cowrie/test/test_mirage_gate.py
+
+diff --git a/docs/OUTPUT.rst b/docs/OUTPUT.rst
+index 98775b7..8fde461 100644
+--- a/docs/OUTPUT.rst
++++ b/docs/OUTPUT.rst
+@@ -342,6 +342,23 @@ Attributes:
+     * `password`: password (password and keyboard-interactive attempts)
+     * `fingerprint`, `key`, `type`: the offered key (public-key attempts)
+ 
++cowrie.policy.decision
++======================
++
++MIRAGE: the policy gate decided how to answer a simple command (only emitted
++when ``[mirage] policy_enabled`` is true).
++
++Attributes:
++
++    * `input`: the expanded command line
++    * `action`: ``allow``, ``delay``, ``fake_success``, ``fake_error`` or ``terminate``
++    * `fallback`: true when no valid decision arrived in time and ``allow`` was used
++    * `known`: whether the emulated shell implements the command
++    * `decision_id`: the policy service's identifier for the decision
++    * `propensity`: probability the policy gave the chosen action
++    * `latency_ms`: time spent waiting for the decision
++    * `request_id`: identifier of the request sent to the policy service
++
+ cowrie.proxy.backend_connect_error
+ ==================================
+ 
+diff --git a/src/cowrie/core/eventids.py b/src/cowrie/core/eventids.py
+index 4a5f221..a46f1f4 100644
+--- a/src/cowrie/core/eventids.py
++++ b/src/cowrie/core/eventids.py
+@@ -63,6 +63,8 @@ ALL: frozenset[str] = frozenset(
+         # Authentication
+         "cowrie.login.failed",
+         "cowrie.login.success",
++        # MIRAGE policy gate
++        "cowrie.policy.decision",
+         # Proxy backend plumbing
+         "cowrie.proxy.backend_connect_error",
+         "cowrie.proxy.backend_connected",
+diff --git a/src/cowrie/mirage_gate.py b/src/cowrie/mirage_gate.py
+new file mode 100644
+index 0000000..6d2053f
+--- /dev/null
++++ b/src/cowrie/mirage_gate.py
+@@ -0,0 +1,279 @@
++# SPDX-License-Identifier: BSD-3-Clause
++# ABOUTME: MIRAGE policy gate. Before the shell runs a simple command, ask an
++# ABOUTME: external policy service how to answer it; fail open to stock behaviour.
++
++"""MIRAGE policy gate for the Cowrie shell.
++
++``HoneyPotShell.runCommand`` expands a simple command and hands its argv to
++:func:`gate_then_run` instead of ``_run_expanded``. With the gate disabled
++(the default) that is a direct call to ``_run_expanded``: stock behaviour.
++
++With it enabled, the argv goes to the policy service, and the reply decides:
++
++``allow``         run the command as Cowrie would.
++``delay``         wait ``delay_ms`` (capped), then run it.
++``fake_success``  print ``output`` on stdout, exit 0, do not run the command.
++``fake_error``    print ``output`` on stderr, exit ``exit_code`` (default 1).
++``terminate``     end the session.
++
++Any failure to get a decision in time (service down, slow, malformed reply)
++means ``allow``: the decoy must never hang on, or reveal, the policy service.
++
++While the decision is pending a placeholder command sits on the cmdstack, so
++lines typed meanwhile are queued for after the command (as they are while any
++command runs) and Ctrl-C cancels the pending command as it would a process.
++"""
++
++from __future__ import annotations
++
++import re
++import time
++import uuid
++from typing import TYPE_CHECKING, Any
++
++import treq
++from twisted.internet import defer, reactor
++from twisted.logger import Logger
++
++from cowrie.core.config import CowrieConfig
++from cowrie.shell.command import HoneyPotCommand
++
++if TYPE_CHECKING:
++    from cowrie.shell.honeypot import HoneyPotShell
++
++log = Logger()
++
++ASSIGNMENT_WORD = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*=")
++MAX_DELAY_MS = 10_000
++MAX_OUTPUT_BYTES = 64 * 1024
++ACTIONS = {"allow", "delay", "fake_success", "fake_error", "terminate"}
++
++
++class PolicyGate:
++    """HTTP client for the policy service.
++
++    Connections are kept alive (a TCP handshake per command would dominate the
++    latency budget). Two measured pitfalls shape this (spike S1):
++
++    * A server closing an idle keep-alive connection races the next request,
++      which then fails with ResponseNeverReceived; Twisted does not retry a
++      POST. So idle connections are dropped client-side *before* the server's
++      keep-alive timeout (``idle_s``), and a request that fails on a reused
++      connection is retried once while the deadline allows.
++    * On dual-stack Docker networks the name resolves to IPv6 first; a service
++      listening on IPv4 only costs Twisted's 300 ms happy-eyeballs delay on
++      every new connection. The policy service must listen on both.
++    """
++
++    def __init__(self, url: str, timeout_s: float, idle_s: float = 2.0) -> None:
++        from twisted.web.client import Agent, HTTPConnectionPool
++
++        self.url = url
++        self.timeout_s = timeout_s
++        pool = HTTPConnectionPool(reactor, persistent=True)
++        pool.maxPersistentPerHost = 8
++        pool.cachedConnectionTimeout = idle_s
++        pool.retryAutomatically = False
++        self._http = treq.client.HTTPClient(Agent(reactor, pool=pool))
++
++    @classmethod
++    def from_config(cls) -> PolicyGate | None:
++        if not CowrieConfig.getboolean("mirage", "policy_enabled", fallback=False):
++            return None
++        url = CowrieConfig.get("mirage", "policy_url", fallback="http://policy:8000/v1/decide")
++        timeout_ms = CowrieConfig.getint("mirage", "policy_timeout_ms", fallback=50)
++        idle_ms = CowrieConfig.getint("mirage", "policy_idle_ms", fallback=2000)
++        return cls(url, timeout_ms / 1000.0, idle_ms / 1000.0)
++
++    def decide(self, request: dict[str, Any]) -> defer.Deferred[dict[str, Any] | None]:
++        deadline = time.monotonic() + self.timeout_s
++
++        def attempt() -> defer.Deferred:
++            d = self._http.post(self.url, json=request)
++            d.addCallback(_json_or_none)
++            return d
++
++        def retry_stale(failure: Any) -> Any:
++            from twisted.web._newclient import ResponseNeverReceived
++
++            if failure.check(ResponseNeverReceived) and time.monotonic() < deadline:
++                return attempt()
++            return failure
++
++        d = attempt()
++        d.addErrback(retry_stale)
++        d.addTimeout(self.timeout_s, reactor)
++        d.addErrback(_none, self.url)
++        return d
++
++
++def set_tcp_nodelay(ssh_transport: Any) -> None:
++    """Disable Nagle on the attacker's TCP connection, as OpenSSH does for an
++    interactive (pty) session.
++
++    Without it, output written in a later reactor turn than the echoed input
++    (anything answered asynchronously, such as a gated command) waits for the
++    client's delayed ACK: about 40 ms per command, measured in spike S1. The
++    connection may sit behind a PROXY-protocol wrapper, so walk down to the
++    real TCP transport.
++    """
++    t = getattr(ssh_transport, "transport", None)
++    while t is not None and not hasattr(t, "setTcpNoDelay"):
++        t = getattr(t, "transport", None)
++    if t is not None:
++        try:
++            t.setTcpNoDelay(True)
++        except OSError:
++            pass
++
++
++def _json_or_none(response: Any) -> Any:
++    if response.code != 200:
++        return None
++    return treq.json_content(response)
++
++
++def _none(failure: Any, url: str) -> None:
++    log.info("policy gate fell back to allow ({err})", err=failure.getErrorMessage())
++    return None
++
++
++_UNSET = object()
++_gate: Any = _UNSET
++
++
++def _get_gate() -> PolicyGate | None:
++    global _gate
++    if _gate is _UNSET:
++        _gate = PolicyGate.from_config()
++    return _gate
++
++
++def reset_for_tests(gate: PolicyGate | None | object = _UNSET) -> None:
++    global _gate
++    _gate = gate
++
++
++class _AwaitingDecision(HoneyPotCommand):
++    """Stands in for the command while its decision is pending."""
++
++    def start(self) -> None:  # never started; it only occupies the cmdstack
++        pass
++
++
++def _session_id(shell: HoneyPotShell) -> str | None:
++    events = getattr(shell.protocol, "events", None)
++    return getattr(events, "identity", {}).get("session")
++
++
++def _is_known(shell: HoneyPotShell, argv: list[str]) -> bool:
++    words = [w for w in argv if not ASSIGNMENT_WORD.match(w)]
++    if not words:
++        return True
++    if words[0] in shell.functions:
++        return True
++    paths = shell.environ.get("PATH", "").split(":")
++    return shell.protocol.getCommand(words[0], paths, shell.cwd) is not None
++
++
++def gate_then_run(shell: HoneyPotShell, cmdAndArgs: list[str]) -> Any:
++    gate = _get_gate()
++    if gate is None:
++        return shell._run_expanded(cmdAndArgs)
++
++    argv = list(cmdAndArgs)
++    request = {
++        "request_id": str(uuid.uuid4()),
++        "session_id": _session_id(shell),
++        "protocol": "ssh",
++        "argv": argv,
++        "cwd": shell.cwd,
++        "known": _is_known(shell, argv),
++        "interactive": bool(shell.interactive),
++        "user": shell.user.get("username") if isinstance(shell.user, dict) else None,
++    }
++
++    # The placeholder needs a pipe to construct; it never writes to it.
++    shell.protocol.pp = shell._make_pipe(None, [], None, None)
++    waiting = _AwaitingDecision(shell.protocol)
++    shell.protocol.cmdstack.append(waiting)
++    started = time.monotonic()
++
++    d = gate.decide(request)
++    d.addCallback(_apply, shell, waiting, cmdAndArgs, request, started)
++    return d
++
++
++def _release(shell: HoneyPotShell, waiting: _AwaitingDecision) -> bool:
++    """Take the placeholder off the cmdstack. False if the command no longer
++    should run: Ctrl-C cancelled it, or the session went away meanwhile."""
++    if waiting.exited:
++        return False
++    stack = shell.protocol.cmdstack
++    if waiting not in stack:
++        return False
++    stack.remove(waiting)
++    return True
++
++
++def _apply(
++    decision: dict[str, Any] | None,
++    shell: HoneyPotShell,
++    waiting: _AwaitingDecision,
++    cmdAndArgs: list[str],
++    request: dict[str, Any],
++    started: float,
++) -> Any:
++    latency_ms = round((time.monotonic() - started) * 1000, 1)
++    fallback = not isinstance(decision, dict) or decision.get("action") not in ACTIONS
++    action = "allow" if fallback else decision["action"]
++    shell.protocol.events.dispatch(
++        "cowrie.policy.decision",
++        "Policy %(action)s for %(input)s",
++        input=" ".join(request["argv"]),
++        action=action,
++        fallback=fallback,
++        known=request["known"],
++        decision_id=None if fallback else decision.get("decision_id"),
++        propensity=None if fallback else decision.get("propensity"),
++        latency_ms=latency_ms,
++        request_id=request["request_id"],
++    )
++
++    if action == "delay":
++        delay_ms = min(max(int(decision.get("delay_ms", 0)), 0), MAX_DELAY_MS)
++        # The placeholder stays on the stack through the delay, so Ctrl-C and
++        # type-ahead behave as they would while a slow command runs.
++        waiting.callLater(delay_ms / 1000.0, _run_if_released, shell, waiting, cmdAndArgs)
++        return None
++
++    if not _release(shell, waiting):
++        return None
++
++    if action == "allow":
++        return shell._run_expanded(cmdAndArgs)
++
++    if action == "terminate":
++        shell.protocol.end_process(0)
++        return None
++
++    output = str(decision.get("output", "")).encode("utf8")[:MAX_OUTPUT_BYTES]
++    _, ops = shell.parser.parse_redirections(list(cmdAndArgs))
++    pp = shell._make_pipe(None, [], None, ops)
++    for real_path, virtual_path in pp.redirect_real_files:
++        shell.protocol.terminal.redirFiles.add((real_path, virtual_path))
++    if pp.has_redirection_error:
++        shell.last_exit_code = 1
++    elif action == "fake_success":
++        pp.outReceived(output)
++        shell.last_exit_code = 0
++    else:  # fake_error
++        pp.errReceived(output)
++        shell.last_exit_code = int(decision.get("exit_code", 1))
++    shell._advance()
++    return None
++
++
++def _run_if_released(shell: HoneyPotShell, waiting: _AwaitingDecision, cmdAndArgs: list[str]) -> None:
++    if _release(shell, waiting):
++        shell._run_expanded(cmdAndArgs)
+diff --git a/src/cowrie/shell/honeypot.py b/src/cowrie/shell/honeypot.py
+index f30a902..d9afb81 100644
+--- a/src/cowrie/shell/honeypot.py
++++ b/src/cowrie/shell/honeypot.py
+@@ -989,9 +989,16 @@ class HoneyPotShell:
+             self.current_line = self.line_base + command.lineno
+         self._subst_status = None
+         d = Deferred.fromCoroutine(self.bashparser.evaluate(command))
+-        d.addCallback(self._run_expanded)
++        d.addCallback(self._gate_then_run)
+         d.addErrback(self._statement_failed)
+ 
++    def _gate_then_run(self, cmdAndArgs: list[str]) -> Any:
++        """MIRAGE: ask the policy gate how to answer this simple command. With
++        the gate disabled this is exactly ``_run_expanded``."""
++        from cowrie import mirage_gate
++
++        return mirage_gate.gate_then_run(self, cmdAndArgs)
++
+     def _run_compound(self, command: Statement) -> None:
+         """Dispatch a compound command (or a function definition), past the
+         short-circuit and redirection checks in :meth:`runCommand`."""
+diff --git a/src/cowrie/shell/session.py b/src/cowrie/shell/session.py
+index ea7096e..3a81aea 100644
+--- a/src/cowrie/shell/session.py
++++ b/src/cowrie/shell/session.py
+@@ -103,6 +103,10 @@ class SSHSessionForCowrieUser:
+             height=windowSize[0],
+         )
+         self.windowSize = windowSize
++        # MIRAGE: OpenSSH turns on TCP_NODELAY when a pty is allocated.
++        from cowrie import mirage_gate
++
++        mirage_gate.set_tcp_nodelay(self.avatar.conn.transport)
+ 
+     def execCommand(self, processprotocol, cmd):
+         self.protocol = insults.LoggingServerProtocol(
+diff --git a/src/cowrie/test/test_mirage_gate.py b/src/cowrie/test/test_mirage_gate.py
+new file mode 100644
+index 0000000..72d4807
+--- /dev/null
++++ b/src/cowrie/test/test_mirage_gate.py
+@@ -0,0 +1,258 @@
++# SPDX-License-Identifier: BSD-3-Clause
++# ABOUTME: Tests the MIRAGE policy gate: every simple command is decided by an
++# ABOUTME: external policy before it runs, without changing shell semantics.
++
++from __future__ import annotations
++
++import os
++import tempfile
++import time
++import unittest
++from typing import Any
++from unittest import mock
++
++from twisted.internet import defer
++
++from cowrie import mirage_gate
++from cowrie.shell.protocol import HoneyPotInteractiveProtocol
++from cowrie.test.eventcapture import capture_eventlog
++from cowrie.test.fake_server import FakeAvatar, FakeServer
++from cowrie.test.fake_transport import FakeTransport
++from cowrie.test.reactorpump import pump
++
++os.environ["COWRIE_HONEYPOT_DATA_PATH"] = "data"
++os.environ["COWRIE_HONEYPOT_DOWNLOAD_PATH"] = tempfile.gettempdir()
++os.environ["COWRIE_SHELL_FILESYSTEM"] = "src/cowrie/data/fs.pickle"
++
++PROMPT = b"root@unitTest:~# "
++
++
++class FakeGate:
++    """In-process stand-in for the policy service.
++
++    ``rule(request)`` returns the decision. With ``manual`` the decision is
++    held until ``release()``, as a slow network reply would be.
++    """
++
++    def __init__(self, rule: Any, manual: bool = False) -> None:
++        self.rule = rule
++        self.manual = manual
++        self.requests: list[dict[str, Any]] = []
++        self.held: list[tuple[defer.Deferred, dict[str, Any]]] = []
++
++    def decide(self, request: dict[str, Any]) -> defer.Deferred:
++        self.requests.append(request)
++        if not self.manual:
++            return defer.succeed(self.rule(request))
++        d: defer.Deferred = defer.Deferred()
++        self.held.append((d, request))
++        return d
++
++    def release(self) -> None:
++        d, request = self.held.pop(0)
++        d.callback(self.rule(request))
++
++    def argvs(self) -> list[list[str]]:
++        return [r["argv"] for r in self.requests]
++
++
++def allow(_request: dict[str, Any]) -> dict[str, Any]:
++    return {"action": "allow", "decision_id": "d", "propensity": 1.0}
++
++
++def fake_unknown(request: dict[str, Any]) -> dict[str, Any]:
++    """Answer commands the emulator lacks; allow everything else."""
++    if not request["known"]:
++        return {"action": "fake_success", "output": "ok\n", "decision_id": "d"}
++    return allow(request)
++
++
++class GateTestBase(unittest.TestCase):
++    rule: Any = staticmethod(allow)
++    manual = False
++
++    def setUp(self) -> None:
++        self.gate = FakeGate(self.rule, self.manual)
++        mirage_gate.reset_for_tests(self.gate)
++        self.proto = HoneyPotInteractiveProtocol(FakeAvatar(FakeServer()))
++        self.tr = FakeTransport("", "31337")
++        self.proto.makeConnection(self.tr)
++        self.proto.events, self.events = capture_eventlog()
++        self.tr.clear()
++
++    def tearDown(self) -> None:
++        self.proto.connectionLost()
++        mirage_gate.reset_for_tests()
++
++    def run_line(self, line: str) -> bytes:
++        self.tr.clear()
++        self.proto.lineReceived(line.encode() + b"\n")
++        return self.tr.value()
++
++    def decisions(self) -> list[dict[str, Any]]:
++        return [e for e in self.events if e["eventid"] == "cowrie.policy.decision"]
++
++
++class AllowTests(GateTestBase):
++    def test_allowed_command_runs_unchanged(self) -> None:
++        self.assertEqual(self.run_line("echo hi"), b"hi\n" + PROMPT)
++        self.assertEqual(self.gate.argvs(), [["echo", "hi"]])
++        self.assertTrue(self.gate.requests[0]["known"])
++        self.assertEqual(self.gate.requests[0]["session_id"], "test0000")
++
++    def test_every_pipeline_stage_is_gated(self) -> None:
++        self.assertEqual(self.run_line("echo abc | grep b"), b"abc\n" + PROMPT)
++        self.assertEqual(self.gate.argvs(), [["echo", "abc"], ["grep", "b"]])
++
++    def test_list_and_loop_bodies_are_gated(self) -> None:
++        self.run_line("for i in 1 2; do echo $i; done; true")
++        self.assertEqual(self.gate.argvs(), [["echo", "1"], ["echo", "2"], ["true"]])
++
++    def test_expansion_happens_before_the_gate(self) -> None:
++        self.run_line("x=/etc; ls $x/passwd")
++        self.assertIn(["ls", "/etc/passwd"], self.gate.argvs())
++
++    def test_unknown_command_reports_known_false(self) -> None:
++        out = self.run_line("frobnicate --now")
++        self.assertIn(b"command not found", out)
++        self.assertFalse(self.gate.requests[0]["known"])
++
++    def test_decision_event_emitted(self) -> None:
++        self.run_line("echo hi")
++        (event,) = self.decisions()
++        self.assertEqual(event["action"], "allow")
++        self.assertFalse(event["fallback"])
++        self.assertEqual(event["input"], "echo hi")
++        self.assertIn("latency_ms", event)
++
++    def test_sudo_and_busybox_inner_commands_are_not_gated_separately(self) -> None:
++        # Known limit, documented in the spike result: wrapper commands resolve
++        # their inner command directly, so the gate sees the whole argv once.
++        self.run_line("sudo id")
++        self.run_line("busybox id")
++        self.assertEqual(self.gate.argvs(), [["sudo", "id"], ["busybox", "id"]])
++
++
++class FakeResponseTests(GateTestBase):
++    rule = staticmethod(fake_unknown)
++
++    def test_unknown_command_answered_instead_of_not_found(self) -> None:
++        self.assertEqual(self.run_line("frobnicate"), b"ok\n" + PROMPT)
++        self.assertEqual(self.run_line("echo $?"), b"0\n" + PROMPT)
++
++    def test_fake_output_inside_substitution(self) -> None:
++        self.assertEqual(self.run_line("x=$(frobnicate); echo [$x]"), b"[ok]\n" + PROMPT)
++
++    def test_fake_output_into_pipeline(self) -> None:
++        self.assertEqual(self.run_line("frobnicate | tr a-z A-Z"), b"OK\n" + PROMPT)
++
++    def test_fake_output_honours_redirection(self) -> None:
++        self.assertEqual(self.run_line("frobnicate > /tmp/f"), PROMPT)
++        self.assertEqual(self.run_line("cat /tmp/f"), b"ok\n" + PROMPT)
++
++    def test_real_commands_still_run(self) -> None:
++        self.assertEqual(self.run_line("echo real"), b"real\n" + PROMPT)
++
++
++def deny_shadow(request: dict[str, Any]) -> dict[str, Any]:
++    if "/etc/shadow" in request["argv"]:
++        return {"action": "fake_error", "output": "cat: /etc/shadow: Permission denied\n"}
++    return allow(request)
++
++
++class FakeErrorTests(GateTestBase):
++    rule = staticmethod(deny_shadow)
++
++    def test_fake_error_sets_status_and_short_circuits(self) -> None:
++        out = self.run_line("cat /etc/shadow && echo yes || echo no")
++        self.assertEqual(out, b"cat: /etc/shadow: Permission denied\nno\n" + PROMPT)
++        self.assertEqual(self.run_line("cat /etc/shadow; echo $?"), b"cat: /etc/shadow: Permission denied\n1\n" + PROMPT)
++
++    def test_fake_error_goes_to_stderr(self) -> None:
++        self.assertEqual(self.run_line("cat /etc/shadow 2>/dev/null"), PROMPT)
++
++
++class FallbackTests(GateTestBase):
++    rule = staticmethod(lambda _r: None)  # service unreachable or timed out
++
++    def test_no_decision_means_stock_behaviour(self) -> None:
++        self.assertIn(b"command not found", self.run_line("frobnicate"))
++        self.assertEqual(self.run_line("echo hi"), b"hi\n" + PROMPT)
++        self.assertTrue(all(e["fallback"] for e in self.decisions()))
++
++    def test_malformed_decision_means_allow(self) -> None:
++        self.gate.rule = lambda _r: {"action": "rm -rf"}
++        self.assertEqual(self.run_line("echo hi"), b"hi\n" + PROMPT)
++
++
++class AsyncDecisionTests(GateTestBase):
++    manual = True
++
++    def test_nothing_runs_until_the_decision(self) -> None:
++        self.assertEqual(self.run_line("echo first"), b"")
++        self.gate.release()
++        self.assertEqual(self.tr.value(), b"first\n" + PROMPT)
++
++    def test_typed_ahead_line_waits_its_turn(self) -> None:
++        self.proto.lineReceived(b"echo first\n")
++        self.proto.lineReceived(b"echo second\n")
++        self.assertEqual(self.tr.value(), b"")
++        self.assertEqual(len(self.gate.held), 1, "second line must not be gated yet")
++        self.gate.release()
++        self.gate.release()
++        self.assertEqual(self.tr.value(), b"first\nsecond\n" + PROMPT)
++
++    def test_ctrl_c_cancels_pending_command(self) -> None:
++        self.proto.lineReceived(b"echo never\n")
++        self.proto.cmdstack[-1].handle_CTRL_C()
++        self.gate.release()
++        self.assertNotIn(b"never", self.tr.value())
++        self.assertTrue(self.tr.value().endswith(PROMPT))
++        self.gate.manual = False  # answer the next command at once
++        self.assertEqual(self.run_line("echo $?"), b"130\n" + PROMPT)
++
++    def test_connection_lost_while_pending(self) -> None:
++        self.proto.lineReceived(b"echo late\n")
++        self.proto.connectionLost()
++        self.gate.release()  # must not raise
++        self.proto = HoneyPotInteractiveProtocol(FakeAvatar(FakeServer()))
++        self.proto.makeConnection(FakeTransport("", "31337"))
++
++    def test_async_decisions_in_a_pipeline(self) -> None:
++        self.proto.lineReceived(b"echo abc | grep b\n")
++        self.gate.release()
++        self.gate.release()
++        self.assertEqual(self.tr.value(), b"abc\n" + PROMPT)
++
++
++class DelayTests(GateTestBase):
++    rule = staticmethod(lambda r: {"action": "delay", "delay_ms": 200} if r["argv"][0] == "echo" else allow(r))
++
++    def test_delay_then_run(self) -> None:
++        start = time.monotonic()
++        self.assertEqual(self.run_line("echo slow"), b"")
++        self.assertTrue(pump(lambda: self.tr.value().endswith(PROMPT), timeout=3))
++        self.assertGreaterEqual(time.monotonic() - start, 0.19)
++        self.assertEqual(self.tr.value(), b"slow\n" + PROMPT)
++
++
++class TerminateTests(GateTestBase):
++    rule = staticmethod(lambda r: {"action": "terminate"} if r["argv"][0] == "rm" else allow(r))
++
++    def test_terminate_ends_session(self) -> None:
++        with mock.patch.object(self.proto, "end_process", wraps=self.proto.end_process) as end:
++            self.run_line("rm -rf /")
++            end.assert_called_once_with(0)
++
++
++class DisabledGateTests(unittest.TestCase):
++    def test_disabled_gate_is_stock(self) -> None:
++        mirage_gate.reset_for_tests(None)
++        proto = HoneyPotInteractiveProtocol(FakeAvatar(FakeServer()))
++        tr = FakeTransport("", "31337")
++        proto.makeConnection(tr)
++        tr.clear()
++        proto.lineReceived(b"frobnicate\n")
++        self.assertIn(b"command not found", tr.value())
++        proto.connectionLost()
++        mirage_gate.reset_for_tests()

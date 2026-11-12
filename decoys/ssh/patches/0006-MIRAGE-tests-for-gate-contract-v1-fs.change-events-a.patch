@@ -1,0 +1,114 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: MIRAGE <noreply@anthropic.com>
+Date: Thu, 12 Nov 2026 11:53:50 +0530
+Subject: [PATCH 6/6] MIRAGE: tests for gate contract v1, fs.change events and
+ KEXINIT trimming
+
+---
+ src/cowrie/test/test_mirage_phase1.py | 97 +++++++++++++++++++++++++++
+ 1 file changed, 97 insertions(+)
+ create mode 100644 src/cowrie/test/test_mirage_phase1.py
+
+diff --git a/src/cowrie/test/test_mirage_phase1.py b/src/cowrie/test/test_mirage_phase1.py
+new file mode 100644
+index 0000000..f1ce899
+--- /dev/null
++++ b/src/cowrie/test/test_mirage_phase1.py
+@@ -0,0 +1,97 @@
++# SPDX-License-Identifier: BSD-3-Clause
++# ABOUTME: Tests the MIRAGE phase 1 changes: gate contract v1 fields, filesystem
++# ABOUTME: change events, and the KEXINIT trimmed to OpenSSH 9.2p1's algorithms.
++
++from __future__ import annotations
++
++from typing import Any
++
++from twisted.conch.ssh.common import NS, getNS
++
++from cowrie.ssh.transport import HoneyPotSSHTransport
++from cowrie.test.test_mirage_gate import PROMPT, GateTestBase, allow
++
++
++class GateContractV1Tests(GateTestBase):
++    def test_requests_carry_seq_and_source(self) -> None:
++        self.run_line("echo a; echo b")
++        self.run_line("true")
++        self.assertEqual([r["seq"] for r in self.gate.requests], [1, 2, 3])
++        for r in self.gate.requests:
++            self.assertIn("deployment_id", r)
++            self.assertIn("ip", r["src"])
++
++    def test_decision_event_carries_seq_and_rule(self) -> None:
++        self.run_line("echo hi")
++        (event,) = self.decisions()
++        self.assertEqual(event["seq"], 1)
++        self.assertIsNone(event["fallback_reason"])
++        self.assertIn("rule_id", event)
++
++
++def fallback_timeout(_request: dict[str, Any]) -> dict[str, Any]:
++    return {"_fallback": "timeout"}
++
++
++class FallbackReasonTests(GateTestBase):
++    rule = staticmethod(fallback_timeout)
++
++    def test_fallback_reason_recorded_and_command_runs(self) -> None:
++        self.assertEqual(self.run_line("echo hi"), b"hi\n" + PROMPT)
++        (event,) = self.decisions()
++        self.assertTrue(event["fallback"])
++        self.assertEqual(event["fallback_reason"], "timeout")
++        self.assertEqual(event["action"], "allow")
++
++
++class FsChangeTests(GateTestBase):
++    rule = staticmethod(allow)
++
++    def setUp(self) -> None:
++        super().setUp()
++        # The test harness swaps the protocol's events after connect; rebind.
++        self.proto.fs.events = self.proto.events
++
++    def changes(self) -> list[tuple[str, str]]:
++        return [(e["op"], e["path"]) for e in self.events if e["eventid"] == "cowrie.fs.change"]
++
++    def test_shell_mutations_emit_changes(self) -> None:
++        self.run_line("mkdir /tmp/m")
++        self.run_line("touch /tmp/m/a")
++        self.run_line("mv /tmp/m/a /tmp/m/b")
++        self.run_line("chmod 600 /tmp/m/b")
++        self.run_line("rm /tmp/m/b")
++        ops = self.changes()
++        self.assertIn(("mkdir", "/tmp/m"), ops)
++        self.assertIn(("create", "/tmp/m/a"), ops)
++        self.assertIn(("rename", "/tmp/m/a"), ops)
++        self.assertIn(("chmod", "/tmp/m/b"), ops)
++        self.assertIn(("remove", "/tmp/m/b"), ops)
++        rename = next(e for e in self.events if e.get("op") == "rename")
++        self.assertEqual(rename["new_path"], "/tmp/m/b")
++
++    def test_redirection_creates_file(self) -> None:
++        self.run_line("echo hello > /tmp/r")
++        self.assertIn(("create", "/tmp/r"), self.changes())
++
++    def test_reads_emit_nothing(self) -> None:
++        self.run_line("ls /etc; cat /etc/passwd")
++        self.assertEqual(self.changes(), [])
++
++
++class KexInitTests(GateTestBase):
++    def test_ext_info_s_stripped_and_hash_input_rewritten(self) -> None:
++        t = HoneyPotSSHTransport()
++        cookie = b"\x01" * 16
++        rest = NS(b"ssh-ed25519") + NS(b"aes128-ctr") * 2
++        payload = cookie + NS(b"curve25519-sha256,ext-info-s") + rest
++        out = t._mirage_strip_ext_info_s(payload)
++        kex, tail = getNS(out[16:])
++        self.assertEqual(kex, b"curve25519-sha256")
++        self.assertEqual(tail, rest)
++        self.assertEqual(t.ourKexInitPayload, b"\x14" + out)
++
++    def test_payload_without_marker_unchanged(self) -> None:
++        t = HoneyPotSSHTransport()
++        payload = b"\x02" * 16 + NS(b"curve25519-sha256") + NS(b"ssh-ed25519")
++        self.assertEqual(t._mirage_strip_ext_info_s(payload), payload)

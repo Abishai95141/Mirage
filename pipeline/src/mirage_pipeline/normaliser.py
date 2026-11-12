@@ -26,7 +26,7 @@ from nats.js.errors import BadRequestError
 
 from mirage_pipeline.rows import to_row
 from mirage_schema import MirageEvent
-from mirage_schema.mappings import cowrie, cowrie_zenodo
+from mirage_schema.mappings import cowrie, cowrie_zenodo, decoy, policy
 
 log = logging.getLogger("mirage.normaliser")
 
@@ -35,6 +35,10 @@ MAPPERS: dict[str, Mapper] = {
     "raw.honeypot.cowrie": cowrie.map_record,
     # Replayed public corpus (tools/seed_sample.py); tagged with its dataset in the payload.
     "raw.honeypot.cowrie.zenodo21260400": cowrie_zenodo.map_record,
+    "raw.honeypot.http": decoy.map_record,
+    "raw.honeypot.redis": decoy.map_record,
+    "raw.honeypot.mysql": decoy.map_record,
+    "raw.policy.decision": policy.map_record,
 }
 
 STREAMS = [
@@ -116,20 +120,41 @@ class ClickHouse:
     async def ping(self) -> None:
         (await self._client.get("/ping")).raise_for_status()
 
-    async def insert(self, rows: list[dict[str, Any]]) -> None:
+    async def insert(self, rows: list[dict[str, Any]], table: str | None = None) -> None:
         if not rows:
             return
-        body = "\n".join(json.dumps(r, separators=(",", ":")) for r in rows)
+        body = "\n".join(json.dumps(r, separators=(",", ":"), default=str) for r in rows)
         resp = await self._client.post(
             "/",
-            params={"query": f"INSERT INTO {self._s.clickhouse_table} FORMAT JSONEachRow"},
+            params={"query": f"INSERT INTO {table or self._s.clickhouse_table} FORMAT JSONEachRow"},
             content=body.encode(),
         )
         if resp.status_code != 200:
             raise RuntimeError(f"ClickHouse insert failed {resp.status_code}: {resp.text[:300]}")
 
+    async def select(self, sql: str, **params: Any) -> list[dict[str, Any]]:
+        """Run a SELECT with ClickHouse query parameters ({name:Type} in the SQL)."""
+        qp = {f"param_{k}": _param(v) for k, v in params.items()}
+        resp = await self._client.post(
+            "/", params=qp, content=(sql + "\nFORMAT JSONEachRow").encode()
+        )
+        if resp.status_code != 200:
+            raise RuntimeError(f"ClickHouse query failed {resp.status_code}: {resp.text[:300]}")
+        return [json.loads(line) for line in resp.text.splitlines() if line]
+
     async def close(self) -> None:
         await self._client.aclose()
+
+
+def _param(v: Any) -> str:
+    """A query-parameter value in ClickHouse's text format (arrays of strings, scalars)."""
+    if isinstance(v, list | tuple | set):
+        return (
+            "["
+            + ",".join("'" + str(x).replace("\\", "\\\\").replace("'", "\\'") + "'" for x in v)
+            + "]"
+        )
+    return str(v)
 
 
 async def _retry(what: str, fn: Callable[[], Any], attempts: int = 60) -> Any:
@@ -158,9 +183,12 @@ async def run(s: Settings, stop: asyncio.Event) -> None:
     ch = ClickHouse(s)
     await _retry("ClickHouse", ch.ping)
 
+    # Phase 1 widened the filter from raw.honeypot.> to raw.> (policy decisions); a durable's
+    # filter cannot change, hence the new name. Redelivery of old records is harmless: event
+    # IDs are deterministic and the table deduplicates on them.
     sub = await js.pull_subscribe(
-        "raw.honeypot.>",
-        durable="normaliser",
+        "raw.>",
+        durable="normaliser-v1",
         stream="RAW",
         config=ConsumerConfig(ack_policy=AckPolicy.EXPLICIT, ack_wait=60, max_deliver=-1),
     )

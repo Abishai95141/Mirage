@@ -1,0 +1,76 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: MIRAGE <noreply@anthropic.com>
+Date: Thu, 12 Nov 2026 11:49:47 +0530
+Subject: [PATCH 5/6] MIRAGE: offer only OpenSSH 9.2p1's key exchanges and
+ host-key algorithms
+
+---
+ src/cowrie/ssh/factory.py   | 14 ++++++++++++++
+ src/cowrie/ssh/transport.py | 15 +++++++++++++++
+ 2 files changed, 29 insertions(+)
+
+diff --git a/src/cowrie/ssh/factory.py b/src/cowrie/ssh/factory.py
+index 24c41e3..5589d9d 100644
+--- a/src/cowrie/ssh/factory.py
++++ b/src/cowrie/ssh/factory.py
+@@ -122,6 +122,12 @@ class CowrieSSHFactory(factory.SSHFactory):
+ 
+         t.ourVersionString = self.ourVersionString
+         t.supportedPublicKeys = list(self.privateKeys.keys())
++        # MIRAGE: offer host-key algorithms in OpenSSH 9.2p1's order. Twisted maps
++        # rsa-sha2-256/512 onto the ssh-rsa key; plain ssh-rsa (SHA-1) is not offered
++        # by OpenSSH 9.2p1's server and was a passive tell (spike S3).
++        if b"ssh-rsa" in self.privateKeys:
++            order = [b"rsa-sha2-512", b"rsa-sha2-256", b"ecdsa-sha2-nistp256", b"ssh-ed25519"]
++            t.supportedPublicKeys = [k for k in order if k.startswith(b"rsa-sha2") or k in self.privateKeys]
+ 
+         if not self.primes:
+             ske = t.supportedKeyExchanges[:]
+@@ -133,6 +139,14 @@ class CowrieSSHFactory(factory.SSHFactory):
+                 self._log.info("No moduli, no diffie-hellman-group-exchange-sha256")
+             t.supportedKeyExchanges = ske
+ 
++        # MIRAGE: drop key exchanges OpenSSH 9.2p1 never offered (spike S3).
++        # mlkem768x25519-sha256 arrived in OpenSSH 9.9; group14-sha1 is off by default.
++        t.supportedKeyExchanges = [
++            k
++            for k in t.supportedKeyExchanges
++            if k not in (b"mlkem768x25519-sha256", b"diffie-hellman-group14-sha1")
++        ]
++
+         try:
+             t.supportedCiphers = [
+                 i.encode("utf-8") for i in CowrieConfig.get("ssh", "ciphers").split(",")
+diff --git a/src/cowrie/ssh/transport.py b/src/cowrie/ssh/transport.py
+index bf7cfa5..1ffbb40 100644
+--- a/src/cowrie/ssh/transport.py
++++ b/src/cowrie/ssh/transport.py
+@@ -231,6 +231,8 @@ class HoneyPotSSHTransport(KexMessageTransport, TimeoutMixin):
+                 self._blockedByKeyExchange.append((messageType, payload))
+                 return
+ 
++        if messageType == transport.MSG_KEXINIT:
++            payload = self._mirage_strip_ext_info_s(payload)
+         payload = bytes((messageType,)) + payload
+         if self.outgoingCompression:
+             payload = self.outgoingCompression.compress(
+@@ -255,6 +257,19 @@ class HoneyPotSSHTransport(KexMessageTransport, TimeoutMixin):
+         self.transport.write(encPacket)
+         self.outgoingPacketSequence += 1
+ 
++    def _mirage_strip_ext_info_s(self, payload: bytes) -> bytes:
++        """MIRAGE: remove the ext-info-s marker Twisted appends to every server
++        KEXINIT. OpenSSH 9.2p1 does not send it (spike S3). The exchange hash
++        covers our KEXINIT, so ourKexInitPayload is rewritten to match."""
++        cookie, rest = payload[:16], payload[16:]
++        kex, rest = getNS(rest)
++        names = [n for n in kex.split(b",") if n != b"ext-info-s"]
++        if len(names) == len(kex.split(b",")):
++            return payload
++        new = cookie + NS(b",".join(names)) + rest
++        self.ourKexInitPayload = bytes((transport.MSG_KEXINIT,)) + new
++        return new
++
+     def ssh_KEXINIT(self, packet: bytes) -> Any:
+         k = getNS(packet[16:], 10)
+         strings, _ = k[:-1], k[-1]

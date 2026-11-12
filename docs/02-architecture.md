@@ -120,7 +120,7 @@ One envelope for every source, aligned to OCSF 1.9 class names, with ECS field n
 | `event_id`, `ts`, `ingest_ts` | Identity and times (UTC) |
 | `schema_version` | Version of this schema |
 | `source` | `cowrie`, `http-decoy`, `db-decoy`, `zeek`, `suricata`, `policy`, `sim` |
-| `class` | OCSF-aligned class, e.g. `authentication`, `process_activity`, `network_activity`, `http_activity`, `file_activity` |
+| `class` | OCSF-aligned class, e.g. `authentication`, `process_activity`, `network_activity`, `http_activity`, `file_activity`; `detection_finding` for the pipeline's own `token.triggered` findings (source `pipeline`) |
 | `session_id`, `actor_id` | Grouping keys |
 | `src`, `dst` | IP, port, ASN, geo |
 | `protocol`, `action`, `outcome` | What was attempted and what the decoy returned |
@@ -209,7 +209,7 @@ Measured with `docker stats` on the running phase 0 stack (11 November 2026), id
 | Item | Memory limit | Measured |
 | --- | --- | --- |
 | Cowrie | 512 MB | 55 MB |
-| ssh-edge (HAProxy) | 128 MB | 13 MB |
+| edge (HAProxy) | 128 MB | 13 MB |
 | NATS JetStream | 256 MB | 12 MB |
 | Vector | 256 MB | 116 MB |
 | Normaliser | 256 MB | 48 MB |

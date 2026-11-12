@@ -1,5 +1,6 @@
-# Vector: tail decoy logs and publish each record, unchanged, to NATS JetStream.
+# Vector: tail decoy and policy logs and publish each record, unchanged, to NATS JetStream.
 # Normalisation happens in the Python normaliser, not here, so the raw stream stays raw.
+# One subject per source; the normaliser picks its mapper by subject.
 
 data_dir: /var/lib/vector
 
@@ -12,12 +13,21 @@ sources:
     type: file
     include: ["/cowrie-var/log/cowrie/cowrie.json*"]
     read_from: beginning
+  http_log:
+    type: file
+    include: ["/http-log/http.json*"]
+    read_from: beginning
+  policy_log:
+    type: file
+    include: ["/policy-log/decisions.json*"]
+    read_from: beginning
 
 transforms:
-  cowrie_record:
+  parsed:
     type: remap
-    inputs: [cowrie_log]
+    inputs: [cowrie_log, http_log, policy_log]
     source: |
+      src = string!(.file)
       parsed, err = parse_json(.message)
       if err == null && is_object(parsed) {
         . = parsed
@@ -25,16 +35,49 @@ transforms:
         # Unparseable lines still travel; the normaliser dead-letters them with the reason.
         . = {"_unparsed": .message}
       }
+      .__mirage_src = src
+  route:
+    type: route
+    inputs: [parsed]
+    route:
+      cowrie: 'starts_with(string!(.__mirage_src), "/cowrie-var/")'
+      http: 'starts_with(string!(.__mirage_src), "/http-log/")'
+      policy: 'starts_with(string!(.__mirage_src), "/policy-log/")'
+  cowrie_out:
+    type: remap
+    inputs: [route.cowrie]
+    source: del(.__mirage_src)
+  http_out:
+    type: remap
+    inputs: [route.http]
+    source: del(.__mirage_src)
+  policy_out:
+    type: remap
+    inputs: [route.policy]
+    source: del(.__mirage_src)
 
 sinks:
-  nats_raw:
+  nats_cowrie:
     type: nats
-    inputs: [cowrie_record]
+    inputs: [cowrie_out]
     url: nats://nats:4222
     subject: raw.honeypot.cowrie
-    jetstream:
-      enabled: true
-    encoding:
-      codec: json
-    acknowledgements:
-      enabled: true
+    jetstream: {enabled: true}
+    encoding: {codec: json}
+    acknowledgements: {enabled: true}
+  nats_http:
+    type: nats
+    inputs: [http_out]
+    url: nats://nats:4222
+    subject: raw.honeypot.http
+    jetstream: {enabled: true}
+    encoding: {codec: json}
+    acknowledgements: {enabled: true}
+  nats_policy:
+    type: nats
+    inputs: [policy_out]
+    url: nats://nats:4222
+    subject: raw.policy.decision
+    jetstream: {enabled: true}
+    encoding: {codec: json}
+    acknowledgements: {enabled: true}
