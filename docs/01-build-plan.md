@@ -1,8 +1,8 @@
 # MIRAGE build plan
 
-Status: draft for review · 11 November 2026
+Status: draft for review · 11 November 2026, phase 1 tightened 12 November
 Inputs: the technical report (11 Nov 2026) and the research in [`reports/MIRAGE honeypot build research.md`](../reports/MIRAGE%20honeypot%20build%20research.md)
-Companion docs: [architecture](02-architecture.md) · [AI/ML design](03-ai-ml-design.md)
+Companion docs: [architecture](02-architecture.md) · [AI/ML design](03-ai-ml-design.md) · [phase 1 spec](04-phase-1-spec.md)
 
 ## 1. What we are building first
 
@@ -106,18 +106,34 @@ Goal: one honeypot's events flow end to end, inside a network that cannot reach 
 
 Goal: three protocols, each behind the policy gate, with full session capture.
 
+The full specification, with acceptance criteria for every package, is in [04-phase-1-spec.md](04-phase-1-spec.md). It settles ten gaps in the earlier draft (its section 1). The ones that change this plan:
+
+- Decoys reach the policy service over a separate internal gate network.
+- Honeytokens are planted when the profile is generated, and detected in the pipeline.
+- The HTTP cache moves to phase 3.
+- The default-tell checks are written now, not in phase 3.
+- All distribution facts come from a pinned Debian 12 reference image.
+
 | Work package | Deliverable |
 | --- | --- |
-| 1.1 Cowrie fork | Policy gate from S1; unknown commands routed to the gate, not straight to "command not found"; filesystem mutators wrapped so state changes are emitted |
-| 1.2 Policy service v0 | FastAPI service; rules only; returns one of allow, fake-success, fake-error, delay, terminate; logs every decision with its context |
-| 1.3 SSH profile hardening | Remove default tells (hostname `svr04`, user `phil`, mismatched SSH version strings, 2024 kernel string); per-deployment profile generator |
-| 1.4 HTTP decoy | FastAPI app with static templates and planted endpoints; cache keyed on method, path and normalised parameters and body |
-| 1.5 Database decoys | Redis (RESP) and MySQL (handshake, auth, a query subset) with deterministic framing and Faker data; PostgreSQL after the MVP |
-| 1.6 Honeytokens | A small token service that mints and resolves tokens planted in decoy files and rows |
-| 1.7 Sessioniser | Sessions and actor fingerprints (HASSH, client version, credential reuse) |
-| 1.8 Artifact store | Downloads hashed and written to a quarantined volume, never executed |
+| 1.1 Cowrie fork | A patch series on pinned v3.1.6. Contains: the S1 gate; unknown commands routed to the gate; `cowrie.fs.change` events from the filesystem mutators; JA4+ removed; key exchanges OpenSSH 9.2p1 never offered removed |
+| 1.2 Policy service v0 | FastAPI, gate contract v1 for all four protocols. Rules only, from YAML. Returns allow, fake_success, fake_error, delay or terminate. Bearer token, dual-stack, keep-alive, p95 under 10 ms. Every decision logged with its rule and rules version |
+| 1.3 SSH profile hardening | Debian 12 reference image; per-deployment profile generator for all four services; default tells removed; configurable algorithm extras trimmed; default-tell checks for every protocol |
+| 1.4 HTTP decoy | FastAPI imitating the profile's nginx: planted endpoints, nginx-identical errors, every request gated, no outbound requests |
+| 1.5 Database decoys | Redis 7.0 (RESP2 and inline commands) and MariaDB 10.11 (handshake, native auth, a defined query subset over per-source SQLite) with Faker data. Classic attacks are recorded, and `LOCAL INFILE` is never requested. PostgreSQL after the MVP |
+| 1.6 Honeytokens | A library and CLI. Tokens are minted and planted by the profile generator; a pipeline matcher emits `token.triggered` |
+| 1.7 Sessioniser | `session_summary` for all protocols; fingerprints; `actor_links` (honeytoken use, HASSH plus credentials, source address) |
+| 1.8 Artifact store | Files named by hash, mode 0400, on volumes mounted read-write only by their writer; an index table; size caps; never executed |
 
-**Gate 1:** a scripted session on each of the three protocols is captured in full, with every policy decision recorded against its command; the egress test still passes; the profile no longer matches the default-tell checks.
+**Gate 1:** the ten tests in [spec section 6](04-phase-1-spec.md#6-gate-1) pass in CI. In short:
+
+- A scripted session on each protocol is captured in full, as [spec section 5](04-phase-1-spec.md#5-what-captured-in-full-means) defines.
+- Every input has exactly one recorded decision.
+- A honeytoken read over SSH and used on MySQL links both sessions to one actor.
+- The decoys keep working with the policy service down.
+- The extended containment tests pass.
+- The default-tell checks pass apart from listed known gaps.
+- Gating adds under 20 ms at p95.
 
 ### Phase 2 · Lab, labels and first models (weeks 6–10)
 
@@ -144,7 +160,7 @@ Goal: the loop closes. Labelled data exists, models are trained on it, and the b
 | 3.1 State manager | Per-session state (filesystem delta, cwd, processes, users, environment) held outside the prompt |
 | 3.2 LLM responder | `llama-server`, constrained output, state-aware cache, per-IP and per-session token budgets, timeout that falls back to the emulator |
 | 3.3 Bandit goes live in the lab | Off-policy evaluation against the rule baseline before it is allowed to act; action mask enforces safety rules |
-| 3.4 Fingerprint regression suite | Bitter Harvest probes, default-tell checks, latency-distribution checks; runs on every release |
+| 3.4 Fingerprint regression suite | Extends phase 1's default-tell checks with the Bitter Harvest probes and latency-distribution checks; runs on every release |
 | 3.5 High-interaction escalation | Linux host only: sandboxed real container, default-deny egress with sinkholed DNS/HTTP, reset per session |
 | 3.6 Caldera in the lab | Operations against the sandbox; event logs converted to `sim.groundtruth` |
 | 3.7 Tagger v1 | Encoder fine-tuned on lab labels |

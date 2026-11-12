@@ -60,4 +60,5 @@ uv run python tools/seed_sample.py replay data/seed/2025-06-27.json.sample.json
 2. [Spike results](spikes/README.md): the Cowrie policy gate (S1) and SSH transport probes (S3).
 3. [Architecture](docs/02-architecture.md): components, the Cowrie fork, event schema, containment, measured memory.
 4. [AI/ML design](docs/03-ai-ml-design.md): baseline and later model per task, data, evaluation.
-5. [Research report](reports/MIRAGE%20honeypot%20build%20research.md): the evidence behind the plan.
+5. [Phase 1 spec](docs/04-phase-1-spec.md): decoys and capture, with acceptance criteria and the Gate 1 tests.
+6. [Research report](reports/MIRAGE%20honeypot%20build%20research.md): the evidence behind the plan.

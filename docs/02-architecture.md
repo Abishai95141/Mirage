@@ -1,7 +1,7 @@
 # MIRAGE architecture (build view)
 
-Status: draft for review · 11 November 2026
-Companion docs: [build plan](01-build-plan.md) · [AI/ML design](03-ai-ml-design.md)
+Status: draft for review · 11 November 2026, aligned with the phase 1 spec 12 November
+Companion docs: [build plan](01-build-plan.md) · [AI/ML design](03-ai-ml-design.md) · [phase 1 spec](04-phase-1-spec.md)
 
 This describes what gets built in phases 0–3 and what each piece is adapted from. Line numbers refer to Cowrie `main` at commit `ea9513e` (6 Nov 2026).
 
@@ -28,7 +28,14 @@ This describes what gets built in phases 0–3 and what each piece is adapted fr
                                 Grafana
 ```
 
-Two networks: `decoy` (internal, attacker-facing, no egress) and `core` (pipeline and models). Decoys reach only the policy service and write logs to a shared volume that Vector tails.
+Four networks:
+
+- `edge`: the only one the outside reaches; HAProxy alone sits on it.
+- `decoy`: internal, attacker-facing, no egress.
+- `gate`: internal; the decoys and the policy service only.
+- `core`: the pipeline and the models.
+
+Decoys reach only the policy service, over `gate`, with a bearer token. Decoys and the policy service write logs to volumes that Vector tails read-only; they never send telemetry over the network. Details and the containment tests are in the [phase 1 spec](04-phase-1-spec.md#2-topology).
 
 ## 2. Adopt, fork, write
 
@@ -38,7 +45,7 @@ Two networks: `decoy` (internal, attacker-facing, no egress) and `core` (pipelin
 | HTTP decoy | Write | Borrow Galah's prompt and `{"headers","body"}` contract (Apache-2.0) | Static routes first, LLM only on the catch-all. |
 | Responder reference | Read before building | HydraPoT (MIT), HoneyGPT (BSD-3 per its README) | Closest published designs to the router and state manager. Neither has a policy, injection defence or live deployment. |
 | Database decoys | Write | — | Deterministic wire framing in code; templates or the LLM supply only result content. |
-| Honeytokens | Write a minimal service | Canarytokens (modified GPLv3) only as a separate container, if at all | Its licence reaches software built specifically to run it and parse its results. |
+| Honeytokens | Write a minimal library and CLI | Canarytokens (modified GPLv3) only as a separate container, if at all | Its licence reaches software built specifically to run it and parse its results. Phase 1 mints tokens when profiles are generated and detects their use in the pipeline, so decoys never call a token service. |
 | MCP / ICS decoys | Run stock, later | Beelzebub (GPL-3.0), Conpot (GPL-2.0) | Separate containers; consume their logs only. Conpot's public image is amd64-only and old. |
 | Shipper | Adopt | Vector 0.61 | File tail → NATS. |
 | Bus | Adopt | NATS JetStream 2.14 | Subjects mirror the report's topics: `raw.honeypot`, `raw.network`, `raw.host`, `raw.artifact`, `sim.groundtruth`, `events.normalised`, `policy.decisions`. |
@@ -90,13 +97,13 @@ POST /v1/decide
     "decision_id", "propensity" }
 ```
 
-`plant_token` and `escalate` join the action set in phases 1 and 3. Any missing, late, non-200 or malformed reply means `allow`, and the shell behaves exactly like stock Cowrie. The decoy must never hang on the policy service. Config: `[mirage] policy_enabled`, `policy_url`, `policy_timeout_ms` (target 50), `policy_idle_ms` (2000).
+Phase 1 extends this to contract v1, adding the `http`, `redis` and `mysql` protocols and the fields `deployment_id`, `seq`, `src`, `rule_id` and `rules_version`, plus a bearer token ([phase 1 spec §3](04-phase-1-spec.md#3-gate-contract-v1)). `plant_token` joins the action set in phase 2 with the bandit (phase 1 plants tokens statically), and `escalate` joins in phase 3. Any missing, late, non-200 or malformed reply means `allow`, and the shell behaves exactly like stock Cowrie. The decoy must never hang on the policy service. Config: `[mirage] policy_enabled`, `policy_url`, `policy_timeout_ms` (target 50), `policy_idle_ms` (2000).
 
 **Requirements on the policy service**, all measured in S1: listen on IPv4 and IPv6 (Docker resolves names to IPv6 first, and an IPv4-only service costs 300 ms per connection); HTTP/1.1 keep-alive with an idle timeout above the gate's 2 s; TCP_NODELAY (otherwise about 40 ms per decision).
 
 Cowrie's own `llm` backend is not used. It keeps about five command/response pairs, never updates the working directory and has no filesystem. Its `LLMClient.get_response()` (`llm/llm.py:258`) is a reusable Twisted client pattern.
 
-**Default tells to remove:** hostname `svr04`; user `phil`; the wire banner (`OpenSSH_9.2p1`) disagreeing with the shell's `ssh_version` (`OpenSSH_7.9p1`); the 2024 kernel build string; the example user database that accepts almost any root password.
+**Default tells to remove:** hostname `svr04`; user `phil`; the wire banner (`OpenSSH_9.2p1`) disagreeing with the shell's `ssh_version` (`OpenSSH_7.9p1`); the 2024 kernel build string; the example user database, which ends with `*:x:*` and so accepts any user with any password.
 
 **A tell profiles cannot remove** (spike S3). Bitter Harvest's padding tell is gone: Cowrie now zero-pads its key exchange as OpenSSH does. What remains is the algorithm list. Cowrie offers algorithms OpenSSH 9.2p1 never did (CBC, 3DES, `hmac-md5`, and `mlkem768x25519-sha256`, which arrived in OpenSSH 9.9). It lacks ones Twisted does not implement (chacha20-poly1305, AES-GCM, ETM MACs, sntrup761, strict KEX). Its HASSH-server therefore matches no real OpenSSH release, and one passive look identifies it. It also rejects an `SSH-2.2` client that OpenSSH accepts. Phase 1 trims the configurable extras (`[ssh] ciphers`, `macs`, `compression`); the key-exchange list needs a code change, and the missing algorithms need either a Twisted change or a real OpenSSH in front (phase 3 decision).
 
@@ -149,7 +156,7 @@ The order of answering is fixed: deterministic emulator, then pre-rendered profi
 
 | Layer | Laptop (development) | Linux host (lab and external sensor) |
 | --- | --- | --- |
-| Network | Docker `internal` network for decoys; egress test in CI | nftables default-deny egress; DNS and HTTP sinkholed |
+| Network | Docker `internal` networks for decoys and the gate. The CI egress test also allows exactly one destination, the policy port on `gate`. | nftables default-deny egress; DNS and HTTP sinkholed |
 | Runtime | Standard containers, read-only root, dropped capabilities, non-root user | gVisor for decoys; microVM or QEMU pool for the high-interaction sandbox |
 | Samples | Hashed, written to a quarantined volume, not executable | Same, plus optional offline detonation later |
 | Sensors | Application logs only | Zeek, Suricata, eBPF syscall capture, PCAP ring buffer |
@@ -180,10 +187,12 @@ mirage/
   compose/            docker compose files, networks, Vector and Grafana config
   schema/             pydantic models, JSON Schema, mappings (cowrie, http, db, zeek)
   decoys/
-    ssh/              Cowrie fork (submodule or subtree), profiles, patch notes
+    common/           PROXY v2 parser, gate client, JSON-lines logging
+    ssh/              Cowrie fork as a patch series on a pinned commit, patch notes
     http/             FastAPI decoy, templates
     db/               Redis and MySQL decoys
-    tokens/           honeytoken service
+    profiles/         profile generator, profiles, Debian reference facts
+    tokens/           honeytoken library and CLI
   policy/             policy service: rules, bandit, action mask
   responder/          state manager, cache, llama-server client      (phase 3)
   pipeline/           normaliser, sessioniser, ClickHouse DDL, Parquet export
