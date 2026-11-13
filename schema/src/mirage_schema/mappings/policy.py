@@ -40,6 +40,13 @@ def map_record(record: dict[str, Any], *, ingest_ts: datetime | None = None) -> 
         "rule_id": record.get("rule_id"),
         "rules_version": record.get("rules_version"),
         "latency_us": record.get("latency_us"),
+        # The bandit's enriched record (spec 2.5): what it saw, what it was allowed, and what
+        # the acting and shadow policies would do. Present once the exploring policy is wired.
+        "context": record.get("context"),
+        "allowed": record.get("allowed"),
+        "acting": record.get("acting"),
+        "shadow": record.get("shadow"),
+        "explore": record.get("explore"),
         "request": req,
     }
     return MirageEvent(

@@ -329,6 +329,150 @@
    }
   },
   {
+   "type": "stat",
+   "title": "Explore share",
+   "description": "Fraction of decisions where the exploring policy acted (lab explore range).",
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "grafana-clickhouse-datasource",
+      "uid": "clickhouse"
+     },
+     "editorType": "sql",
+     "format": 1,
+     "rawSql": "SELECT countIf(JSONExtractBool(payload, 'explore')) / count() FROM mirage.events WHERE source = 'policy' AND $__timeFilter(ts)"
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "percentunit",
+     "color": {
+      "mode": "fixed",
+      "fixedColor": "orange"
+     },
+     "noValue": "0"
+    },
+    "overrides": []
+   },
+   "options": {
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ],
+     "fields": "/.*/",
+     "values": false
+    },
+    "colorMode": "value",
+    "graphMode": "none",
+    "textMode": "value"
+   },
+   "id": 7,
+   "gridPos": {
+    "x": 0,
+    "y": 12,
+    "w": 6,
+    "h": 4
+   },
+   "datasource": {
+    "type": "grafana-clickhouse-datasource",
+    "uid": "clickhouse"
+   }
+  },
+  {
+   "type": "piechart",
+   "title": "Explored actions",
+   "description": "What the exploring policy chose, over the action mask.",
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "grafana-clickhouse-datasource",
+      "uid": "clickhouse"
+     },
+     "editorType": "sql",
+     "format": 1,
+     "rawSql": "SELECT JSONExtractString(payload, 'acting', 'action') AS action, count() AS n FROM mirage.events WHERE source = 'policy' AND $__timeFilter(ts) AND JSONExtractBool(payload, 'explore') GROUP BY action"
+    }
+   ],
+   "options": {
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ],
+     "fields": "",
+     "values": true
+    },
+    "pieType": "donut",
+    "legend": {
+     "displayMode": "table",
+     "placement": "right",
+     "values": [
+      "value"
+     ]
+    }
+   },
+   "id": 8,
+   "gridPos": {
+    "x": 6,
+    "y": 12,
+    "w": 9,
+    "h": 8
+   },
+   "datasource": {
+    "type": "grafana-clickhouse-datasource",
+    "uid": "clickhouse"
+   }
+  },
+  {
+   "type": "timeseries",
+   "title": "Explore vs rules",
+   "description": "",
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "grafana-clickhouse-datasource",
+      "uid": "clickhouse"
+     },
+     "editorType": "sql",
+     "format": 0,
+     "rawSql": "SELECT $__timeInterval(ts) AS time, if(JSONExtractBool(payload, 'explore'), 'explore', 'rules') AS mode, count() AS decisions FROM mirage.events WHERE source = 'policy' AND $__timeFilter(ts) GROUP BY time, mode ORDER BY time"
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "short",
+     "custom": {
+      "drawStyle": "bars",
+      "fillOpacity": 70,
+      "stacking": {
+       "mode": "normal"
+      },
+      "lineWidth": 1
+     }
+    },
+    "overrides": []
+   },
+   "options": {
+    "legend": {
+     "displayMode": "list",
+     "placement": "bottom"
+    }
+   },
+   "id": 9,
+   "gridPos": {
+    "x": 15,
+    "y": 12,
+    "w": 9,
+    "h": 8
+   },
+   "datasource": {
+    "type": "grafana-clickhouse-datasource",
+    "uid": "clickhouse"
+   }
+  },
+  {
    "type": "timeseries",
    "title": "Gate latency p95 by decoy",
    "description": "",
@@ -364,10 +508,10 @@
      "placement": "bottom"
     }
    },
-   "id": 7,
+   "id": 10,
    "gridPos": {
     "x": 0,
-    "y": 12,
+    "y": 20,
     "w": 12,
     "h": 8
    },
@@ -481,10 +625,10 @@
      "show": false
     }
    },
-   "id": 8,
+   "id": 11,
    "gridPos": {
     "x": 12,
-    "y": 12,
+    "y": 20,
     "w": 12,
     "h": 8
    },
@@ -615,10 +759,10 @@
      "show": false
     }
    },
-   "id": 9,
+   "id": 12,
    "gridPos": {
     "x": 0,
-    "y": 20,
+    "y": 28,
     "w": 24,
     "h": 8
    },

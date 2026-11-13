@@ -843,6 +843,39 @@ def policy() -> Page:
         8,
         8,
     )
+    # The bandit (spec 2.5): the enriched fields live on the service-side record (source=policy).
+    svc_d = "FROM mirage.events WHERE source = 'policy' AND $__timeFilter(ts)"
+    p.add(
+        stat(
+            "Explore share",
+            f"SELECT countIf(JSONExtractBool(payload, 'explore')) / count() {svc_d}",
+            "percentunit",
+            "orange",
+            desc="Fraction of decisions where the exploring policy acted (lab explore range).",
+        ),
+        6,
+        4,
+    )
+    p.add(
+        pie(
+            "Explored actions",
+            "SELECT JSONExtractString(payload, 'acting', 'action') AS action, count() AS n"
+            f" {svc_d} AND JSONExtractBool(payload, 'explore') GROUP BY action",
+            desc="What the exploring policy chose, over the action mask.",
+        ),
+        9,
+        8,
+    )
+    p.add(
+        series(
+            "Explore vs rules",
+            "SELECT $__timeInterval(ts) AS time,"
+            " if(JSONExtractBool(payload, 'explore'), 'explore', 'rules') AS mode,"
+            f" count() AS decisions {svc_d} GROUP BY time, mode ORDER BY time",
+        ),
+        9,
+        8,
+    )
     p.add(
         series(
             "Gate latency p95 by decoy",
@@ -883,7 +916,86 @@ def policy() -> Page:
     return p
 
 
-PAGES = [overview, sessions, session, actors, tokens, artifacts, policy]
+def lab() -> Page:
+    p = Page(
+        "mirage-lab",
+        "MIRAGE · Lab",
+        "The simulation lab: scenario runs, how cleanly the ground truth joined, and the "
+        "actors and protocols exercised.",
+    )
+    runs = "FROM mirage.sim_runs FINAL WHERE final = 1 AND $__timeFilter(ended_ts)"
+    p.add(stat("Runs", f"SELECT count() {runs}"), 6, 4)
+    p.add(stat("Sessions", f"SELECT sum(sessions) {runs}"), 6, 4)
+    p.add(
+        stat(
+            "Steps matched",
+            f"SELECT sum(matched) {runs}",
+            color="green",
+            desc="Scenario steps whose input was captured and joined to its label.",
+        ),
+        6,
+        4,
+    )
+    p.add(
+        stat(
+            "Join misses",
+            f"SELECT sum(no_event) + sum(mismatch) {runs}",
+            color="red",
+            desc="no_event + mismatch. Must be zero for a run to feed a dataset (spec 3).",
+        ),
+        6,
+        4,
+    )
+    p.add(
+        table(
+            "Runs",
+            "SELECT ended_ts, run_id, mode, sessions, matched, no_event, mismatch, not_run,"
+            f" connections, connections_unmatched {runs} ORDER BY ended_ts DESC LIMIT 200",
+            desc="Every lab run and its join health.",
+        ),
+        24,
+        8,
+    )
+    steps = "FROM mirage.sim_steps FINAL WHERE $__timeFilter(start_ts)"
+    p.add(
+        bars(
+            "Steps by join state",
+            f"SELECT state, count() AS n {steps} GROUP BY state ORDER BY n DESC",
+        ),
+        8,
+        8,
+    )
+    p.add(
+        pie(
+            "Sessions by actor class",
+            "SELECT actor_class, count() AS n FROM mirage.sim_sessions FINAL GROUP BY actor_class",
+        ),
+        8,
+        8,
+    )
+    p.add(
+        bars(
+            "Steps by protocol",
+            f"SELECT protocol, count() AS n {steps} GROUP BY protocol ORDER BY n DESC",
+        ),
+        8,
+        8,
+    )
+    p.add(
+        table(
+            "Techniques exercised",
+            "SELECT technique_id, tactic, count() AS steps,"
+            f" countIf(state = 'matched') AS matched {steps} AND technique_id != ''"
+            " GROUP BY technique_id, tactic ORDER BY steps DESC LIMIT 200",
+            desc="Ground-truth techniques the lab has run, and how many joined.",
+        ),
+        24,
+        8,
+    )
+    return p
+
+
+PAGES = [overview, sessions, session, actors, tokens, artifacts, policy, lab]
 
 
 def main() -> None:
