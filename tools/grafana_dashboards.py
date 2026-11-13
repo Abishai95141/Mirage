@@ -995,7 +995,68 @@ def lab() -> Page:
     return p
 
 
-PAGES = [overview, sessions, session, actors, tokens, artifacts, policy, lab]
+def alerts() -> Page:
+    p = Page(
+        "mirage-alerts",
+        "MIRAGE · Alerts",
+        "Sessions worth an analyst's attention: a honeytoken reached, an artifact captured, or "
+        "Persistence or Impact seen. The tactic heatmap shows what techniques the tagger found.",
+    )
+    a = "FROM mirage.alerts FINAL WHERE $__timeFilter(end_ts)"
+    lab = "FROM mirage.labels FINAL WHERE technique != '' AND $__timeFilter(ts)"
+    p.add(stat("Alerts", f"SELECT count() {a}", color="red"), 6, 4)
+    p.add(
+        stat(
+            "Honeytoken alerts", f"SELECT countIf(has(reasons, 'honeytoken')) {a}", color="orange"
+        ),
+        6,
+        4,
+    )
+    p.add(stat("Impact alerts", f"SELECT countIf(has(reasons, 'impact')) {a}", color="red"), 6, 4)
+    p.add(stat("Sessions labelled", "SELECT uniqExact(session_id) " + lab, color="blue"), 6, 4)
+    p.add(
+        table(
+            "Recent alerts",
+            "SELECT end_ts, session_id, src_ip, protocol, arrayStringConcat(reasons, ', ') AS reasons,"
+            " arrayStringConcat(techniques, ', ') AS techniques, inputs"
+            f" {a} ORDER BY end_ts DESC LIMIT 200",
+            links(SESSION_LINK),
+            desc="One row per session that triggered; newest first.",
+        ),
+        24,
+        8,
+    )
+    p.add(
+        pie(
+            "Alerts by reason",
+            f"SELECT arrayJoin(reasons) AS reason, count() AS n {a} GROUP BY reason",
+        ),
+        8,
+        8,
+    )
+    p.add(
+        series(
+            "Tactics over time",
+            f"SELECT $__timeInterval(ts) AS time, tactic, count() AS labels {lab}"
+            " GROUP BY time, tactic ORDER BY time",
+            desc="The heatmap of attacker progression: labelled inputs per tactic over time.",
+        ),
+        16,
+        8,
+    )
+    p.add(
+        bars(
+            "Top techniques",
+            f"SELECT technique, count() AS labels {lab} GROUP BY technique ORDER BY labels DESC"
+            " LIMIT 25",
+        ),
+        24,
+        8,
+    )
+    return p
+
+
+PAGES = [overview, sessions, session, actors, tokens, artifacts, policy, lab, alerts]
 
 
 def main() -> None:

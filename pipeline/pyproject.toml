@@ -11,6 +11,7 @@ mirage-normaliser = "mirage_pipeline.normaliser:main"
 mirage-sessioniser = "mirage_pipeline.sessioniser:main"
 mirage-artifact-indexer = "mirage_pipeline.artifacts:main"
 mirage-sim-join = "mirage_pipeline.simjoin:main"
+mirage-tagger-worker = "mirage_pipeline.tagging:main"
 
 [build-system]
 requires = ["hatchling>=1.25"]

@@ -309,6 +309,31 @@ services:
       normaliser: {condition: service_started}
     mem_limit: 256m
 
+  # Tagger worker (phase 2 spec 2.4, 2.7): technique labels and session alerts.
+  tagger-worker:
+    image: mirage/normaliser:dev
+    <<: *hardening
+    command: ["mirage-tagger-worker"]
+    networks: [core]
+    read_only: true
+    tmpfs: ["/tmp"]
+    environment:
+      NATS_URL: nats://nats:4222
+      CLICKHOUSE_URL: http://clickhouse:8123
+      CLICKHOUSE_USER: ${CLICKHOUSE_USER}
+      CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD}
+      TECHNIQUE_RULES: /rules
+    volumes:
+      - ../intel/rules:/rules:ro
+    healthcheck:
+      test: ["CMD", "python", "-c", "from mirage_pipeline.tagging import healthcheck; healthcheck()"]
+      interval: 10s
+      timeout: 3s
+      retries: 6
+    depends_on:
+      normaliser: {condition: service_started}
+    mem_limit: 256m
+
   # Label join (phase 2 spec section 3): ground truth from the lab -> labels on events.
   sim-join:
     profiles: ["lab"]

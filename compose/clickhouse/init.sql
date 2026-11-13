@@ -320,3 +320,47 @@ SELECT e.*, l.run_id AS sim_run_id, l.session_ref AS sim_session_ref, l.step_id 
        l.attack_version AS attack_version, l.role AS sim_role
 FROM mirage.events AS e
 INNER JOIN mirage.sim_labels_current AS l ON e.event_id = l.event_id;
+
+-- ---------------------------------------------------------------- phase 2 (spec 2.4, 2.7)
+-- Technique labels and session alerts, written by the tagger worker (mirage-tagger-worker).
+-- Both are ReplacingMergeTree on a version column, so re-labelling a session replaces its rows.
+
+-- One row per labelled input event: the technique a rule recognised, with its evidence.
+CREATE TABLE IF NOT EXISTS mirage.labels
+(
+    event_id       String,
+    version        UInt64,
+    session_id     String,
+    protocol       LowCardinality(String),
+    kind           LowCardinality(String),   -- input | session
+    technique      LowCardinality(String),
+    tactic         LowCardinality(String),
+    confidence     Float32,
+    rule_id        String,
+    model_version  LowCardinality(String),
+    attack_version LowCardinality(String),
+    ts             DateTime64(6, 'UTC')
+)
+ENGINE = ReplacingMergeTree(version)
+ORDER BY (event_id, technique);
+
+-- One row per session that is worth an analyst's attention: it reached a honeytoken, captured
+-- an artifact, or showed Persistence or Impact. reasons lists why.
+CREATE TABLE IF NOT EXISTS mirage.alerts
+(
+    session_id   String,
+    version      UInt64,
+    src_ip       String,
+    protocol     LowCardinality(String),
+    reasons      Array(String),
+    tactics      Array(String),
+    techniques   Array(String),
+    tokens       Array(String),
+    artifacts    Array(String),
+    inputs       UInt32,
+    start_ts     DateTime64(6, 'UTC'),
+    end_ts       DateTime64(6, 'UTC'),
+    created_at   DateTime64(6, 'UTC') DEFAULT now64(6)
+)
+ENGINE = ReplacingMergeTree(version)
+ORDER BY session_id;
