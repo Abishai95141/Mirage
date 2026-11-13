@@ -24,10 +24,13 @@ def _hex_le_ip(text: str) -> ipaddress.IPv4Address:
     return ipaddress.IPv4Address(bytes.fromhex(text)[::-1])
 
 
-def attached_networks(route4: str) -> tuple[list[ipaddress.IPv4Network], bool]:
-    """(directly attached IPv4 networks, whether a default route exists) from /proc/net/route."""
+def attached_networks(route4: str) -> tuple[list[ipaddress.IPv4Network], bool, bool]:
+    """(directly attached IPv4 networks, a default route exists, a non-default routed path
+    exists) from /proc/net/route. A gatewayed non-default route is a path off the attached
+    network and breaks isolation just as a default route does."""
     nets: list[ipaddress.IPv4Network] = []
     default = False
+    routed = False
     for line in route4.splitlines()[1:]:
         cols = line.split()
         if len(cols) < 8:
@@ -40,7 +43,9 @@ def attached_networks(route4: str) -> tuple[list[ipaddress.IPv4Network], bool]:
             continue
         if gateway == "00000000":
             nets.append(ipaddress.IPv4Network(f"{_hex_le_ip(dest)}/{_hex_le_ip(mask)}"))
-    return nets, default
+        else:
+            routed = True  # a non-default route through a gateway: an off-link path
+    return nets, default, routed
 
 
 def has_default_route6(route6: str) -> bool:
@@ -58,9 +63,11 @@ def has_default_route6(route6: str) -> bool:
 def check_target(addresses: list[str], route4: str, route6: str) -> list[str]:
     """Why the runner may not start; an empty list means it may."""
     problems: list[str] = []
-    nets, default4 = attached_networks(route4)
+    nets, default4, routed4 = attached_networks(route4)
     if default4:
         problems.append("this container has an IPv4 default route, so it is not isolated")
+    if routed4:
+        problems.append("this container has a gatewayed (off-link) route, so it is not isolated")
     if has_default_route6(route6):
         problems.append("this container has an IPv6 default route, so it is not isolated")
     private = [n for n in nets if n.is_private and n.prefixlen >= 12]

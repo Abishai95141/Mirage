@@ -16,18 +16,17 @@ runs are low volume, and nothing here is durable state.
 
 from __future__ import annotations
 
+import hashlib
 import ipaddress
 import os
 import random
-import re
 import time
-from collections import OrderedDict
+from collections import OrderedDict, deque
 from dataclasses import dataclass, field
 from pathlib import Path
 
-import yaml
-
 from mirage_schema.policy import Action, DecideRequest
+from mirage_schema.techniques import Engine
 
 # RFC 2544, never routed; the runner's explore runs dial from here (spec Q6, lab net section).
 EXPLORE_NET = ipaddress.ip_network("198.19.0.0/16")
@@ -44,12 +43,17 @@ def allowed_actions(req: DecideRequest) -> list[Action]:
     return [a for a in ACTIONS if not (a is Action.TERMINATE and first)]
 
 
+SEEN_CAP = 512  # most recent distinct inputs remembered per session (bounds memory)
+
+
 @dataclass
 class SessionState:
     count: int = 0
     last_ts: float = 0.0
     last_tactic: str | None = None
-    seen: set[str] = field(default_factory=set)
+    # A bounded ring of recent input hashes; the only feature is "have I seen this before",
+    # and an unbounded set would let one long session grow the service to OOM.
+    seen: deque[str] = field(default_factory=lambda: deque(maxlen=SEEN_CAP))
 
 
 class Context:
@@ -75,7 +79,7 @@ class Context:
         """Compute the context for this request and fold it into the session's state."""
         now = self._now()
         st = self._state(req.session_id)
-        text = req.input_text()
+        digest = hashlib.sha1(req.input_text().encode()).hexdigest()  # noqa: S324 - not security
         features = {
             "protocol": req.protocol.value,
             "verb": req.verb() or "",
@@ -83,11 +87,11 @@ class Context:
             "inputs_so_far": st.count,
             "seconds_since_last": round(now - st.last_ts, 3) if st.count else None,
             "last_tactic": st.last_tactic,
-            "seen_before": text in st.seen,
+            "seen_before": digest in st.seen,
         }
         st.count += 1
         st.last_ts = now
-        st.seen.add(text)
+        st.seen.append(digest)
         if tactic:
             st.last_tactic = tactic
         return features
@@ -146,52 +150,23 @@ def explore_enabled() -> bool:
     return os.environ.get("POLICY_EXPLORE", "").lower() == "lab"
 
 
-@dataclass
-class _TacticRule:
-    protocol: str
-    patterns: list[re.Pattern[str]]
-    tactic: str
-    confidence: float
-
-
 class TacticRules:
     """The ``last_tactic`` context feature (spec Q12), read in-process from the tagger's rule
-    files. A minimal reader of the same YAML -- no dependency on the intel package, whose
-    libraries are heavy and do not belong in the policy image."""
+    files. It wraps the shared :class:`mirage_schema.techniques.Engine` so the policy and the
+    tagger agree on rule semantics (all_of vs any_of, confidence ordering); the engine depends
+    only on pyyaml, so the policy image stays free of the heavy intel libraries."""
 
-    def __init__(self, rules: list[_TacticRule]) -> None:
-        self._rules = rules
+    def __init__(self, engine: Engine) -> None:
+        self._engine = engine
 
     @classmethod
     def load(cls, directory: Path | None) -> TacticRules:
-        rules: list[_TacticRule] = []
         if directory and directory.is_dir():
-            for path in sorted(directory.glob("*.yaml")):
-                doc = yaml.safe_load(path.read_text()) or {}
-                for item in doc.get("rules", []):
-                    patterns = item.get("any_of") or item.get("all_of") or []
-                    if isinstance(patterns, str):
-                        patterns = [patterns]
-                    rules.append(
-                        _TacticRule(
-                            protocol=item.get("protocol", "any"),
-                            patterns=[re.compile(p, re.IGNORECASE) for p in patterns],
-                            tactic=item["tactic"],
-                            confidence=float(item.get("confidence", 0.8)),
-                        )
-                    )
-        return cls(rules)
+            return cls(Engine.load(directory))
+        return cls(Engine([], []))
 
     def tactic(self, protocol: str, text: str) -> str | None:
-        best: _TacticRule | None = None
-        for rule in self._rules:
-            if rule.protocol not in (protocol, "any"):
-                continue
-            if any(p.search(text) for p in rule.patterns) and (
-                best is None or rule.confidence > best.confidence
-            ):
-                best = rule
-        return best.tactic if best else None
+        return self._engine.last_tactic(protocol, text)
 
     @classmethod
     def from_env(cls) -> TacticRules:

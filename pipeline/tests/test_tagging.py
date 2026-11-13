@@ -204,3 +204,84 @@ async def test_process_writes_both_tables(tmp_path):
     assert n_labels == 1 and n_alerts == 1
     assert len(ch.inserted["mirage.labels"]) == 1
     assert ch.inserted["mirage.alerts"][0]["reasons"] == ["honeytoken"]
+
+
+SESSION_RULES = {
+    "rules": [
+        {
+            "id": "disc-uname",
+            "technique": "T1082",
+            "tactic": "TA0007",
+            "protocol": "ssh",
+            "confidence": 0.9,
+            "any_of": [r"\buname\b"],
+        },
+    ],
+    "session_rules": [
+        {
+            "id": "persist-brute",
+            "technique": "T1110.001",
+            "tactic": "TA0003",
+            "confidence": 0.9,
+            "when": {"failed_before_success": {">=": 3}, "auth_success": {">=": 1}},
+        },
+    ],
+}
+
+
+def session_engine(tmp_path) -> Engine:
+    (tmp_path / "s.yaml").write_text(yaml.safe_dump(SESSION_RULES))
+    return Engine.load(tmp_path)
+
+
+def test_session_rules_are_applied_and_produce_session_labels(tmp_path):
+    # Regression guard for the review's #1: session rules were loaded but never run.
+    t = Tagger(session_engine(tmp_path), FakeCH(), "20.1")
+    evidence = {
+        "s1": {
+            "session_id": "s1",
+            "protocol": "ssh",
+            "inputs": 6,
+            "auth_attempts": 5,
+            "auth_success": 1,
+            "end_ts": "2026-11-13 12:00:09.0",
+        },
+        "s2": {
+            "session_id": "s2",
+            "protocol": "ssh",
+            "inputs": 2,
+            "auth_attempts": 1,
+            "auth_success": 1,
+            "end_ts": "2026-11-13 12:01:00.0",
+        },
+    }
+    rows = t.session_labels(evidence, version=10)
+    by = {r["session_id"]: r for r in rows}
+    assert set(by) == {"s1"}  # s2 had only one failed-less login, rule does not fire
+    assert by["s1"]["kind"] == "session" and by["s1"]["technique"] == "T1110.001"
+    assert by["s1"]["tactic"] == "TA0003" and by["s1"]["event_id"] == "session:s1:persist-brute"
+
+
+async def test_process_writes_session_labels_then_alerts(tmp_path):
+    # Persistence seen only structurally (brute-then-success) must still raise an alert.
+    ev = {
+        "session_id": "s1",
+        "src_ip": "",
+        "protocol": "ssh",
+        "inputs": 6,
+        "auth_attempts": 5,
+        "auth_success": 1,
+        "start_ts": "2026-11-13 12:00:00.0",
+        "end_ts": "2026-11-13 12:00:09.0",
+        "tokens": [],
+        "artifacts": [],
+    }
+    # After the worker writes the session label, the labels read-back carries TA0003.
+    ch = FakeCH(
+        {"s1": ev}, {"s1": {"session_id": "s1", "tactics": ["TA0003"], "techniques": ["T1110.001"]}}
+    )
+    t = Tagger(session_engine(tmp_path), ch, "20.1")
+    _, n_alerts = await t.process([decision("uname -a")])
+    kinds = sorted(r["kind"] for r in ch.inserted["mirage.labels"])
+    assert kinds == ["input", "session"]  # both an input label and a session label were written
+    assert n_alerts == 1 and ch.inserted["mirage.alerts"][0]["reasons"] == ["persistence"]

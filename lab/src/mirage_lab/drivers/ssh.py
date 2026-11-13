@@ -132,6 +132,7 @@ class SSHDriver:
                 self.conn, self.transport, result.ok = conn, transport, True
                 return result
             transport.close()
+            conn.closed = now()  # record the real close of a failed-login connection
             time.sleep(self.timing.gap())
         return result
 
@@ -157,6 +158,7 @@ class SSHDriver:
         started = now()
         chan = self.transport.open_session(timeout=15)
         chan.settimeout(20)
+        chan.set_combine_stderr(True)  # fold stderr into recv; else exec output and expect miss it
         chan.exec_command(line)
         chunks = []
         with contextlib.suppress(TimeoutError):

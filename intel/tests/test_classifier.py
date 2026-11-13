@@ -90,3 +90,16 @@ def test_training_with_one_class_makes_no_model():
     assert model.predict([row("scripted_bot", "test", inputs=3, auth_success=1)]) == [
         "scripted_bot"
     ]
+
+
+def test_majority_baseline_is_the_most_frequent_class_not_alphabetical():
+    # Regression guard for the review's #8: _majority returned classes[0] (alphabetical).
+    # 'human' sorts after 'bot-ish' names but is the most frequent here; make it dominate.
+    rows = [row("human", "train", auth_success=1, inputs=4) for _ in range(20)]
+    rows += [row("scripted_bot", "train", auth_success=1, inputs=8) for _ in range(4)]
+    model = classifier.train(rows)
+    assert model.majority == "human"
+    assert classifier._majority(model) == "human"
+    # a one-class model predicts the majority, not classes[0]
+    one = classifier.train([row("human", "train", auth_success=1, inputs=4) for _ in range(5)])
+    assert one.predict([row("human", "test", auth_success=1, inputs=4)]) == ["human"]

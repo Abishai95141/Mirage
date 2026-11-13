@@ -177,3 +177,13 @@ def _asdict(m: harness.Metrics) -> dict:
     from dataclasses import asdict
 
     return asdict(m)
+
+
+def test_regression_flags_a_missing_metric_and_an_unrun_evaluation():
+    # Regression guards for the review's #12/#17: a disappeared metric or empty gates must fail.
+    baseline = _asdict(_metrics())
+    gutted = harness.Metrics(dataset_sha256="sha-1", n_sessions=0, n_steps=0)  # nothing evaluated
+    problems = harness.regress(gutted, baseline)
+    assert any("missing from this run" in p for p in problems)
+    assert any("no gates were evaluated" in p for p in problems)
+    assert any("was met in the baseline but is not now" in p for p in problems)

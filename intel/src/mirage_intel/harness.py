@@ -87,15 +87,28 @@ def regress(current: Metrics, baseline: dict, tolerance: float = TOLERANCE) -> l
     if baseline.get("dataset_sha256") != current.dataset_sha256:
         problems.append("the committed baseline is for a different dataset; rebuild it")
     for name in Metrics.TRACKED:
+        was = _dig(baseline, name)
+        if was is None:
+            continue  # the baseline never tracked this metric
         try:
-            now, was = current.get(name), _dig(baseline, name)
+            now = current.get(name)
         except (KeyError, AttributeError, TypeError):
+            # The baseline had this metric but this run did not produce it -- the section did
+            # not run (e.g. no test rows). That is a regression, not a silent pass.
+            problems.append(f"{name} is missing from this run but the baseline has {was:.3f}")
             continue
-        if was is not None and now < was - tolerance:
+        if now < was - tolerance:
             problems.append(f"{name} fell from {was:.3f} to {now:.3f} (> {tolerance} drop)")
+    # Every gate the baseline asserted true must still be present and true.
+    for gate, ok in (baseline.get("gates") or {}).items():
+        if ok and not current.gates.get(gate):
+            problems.append(f"gate {gate} was met in the baseline but is not now")
     for gate, ok in current.gates.items():
         if not ok:
             problems.append(f"gate {gate} is not met")
+    # A run that evaluated nothing must not pass as clean.
+    if not current.gates:
+        problems.append("no gates were evaluated (empty train/test split?)")
     return problems
 
 

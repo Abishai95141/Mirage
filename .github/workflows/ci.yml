@@ -34,6 +34,25 @@ jobs:
       - run: uv sync --frozen || uv sync
       - run: uv run pytest -m ml
 
+  eval-regression:
+    # Fails a PR that drops a tracked model metric below its committed baseline. Dormant until
+    # a frozen dataset is committed under eval/datasets/gate2 (see docs/handoffs/phase-2-finish.md).
+    runs-on: ubuntu-24.04
+    needs: lint-unit
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.12"
+      - run: uv sync --frozen || uv sync
+      - name: regression check (skips until the frozen dataset exists)
+        run: |
+          if [ -f eval/datasets/gate2/sessions.parquet ]; then
+            uv run python -m mirage_intel.harness check --data eval/datasets/gate2
+          else
+            echo "no frozen dataset committed yet; skipping the regression gate"
+          fi
+
   integration:
     # Gates 0 and 1, containment, the default-tell checks and the phase 2 lab (runner
     # isolation, a scenario run, label-join health), against the real compose stack.

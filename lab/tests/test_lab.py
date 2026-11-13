@@ -374,6 +374,43 @@ def test_engine_stops_when_the_decoy_ends_the_session(tmp_path):
     assert len(sent) == 2
 
 
+def test_login_steps_take_each_connection_s_own_outcome(tmp_path):
+    # Regression guard for the review's #3: all login steps were marked ok/failed by login.ok.
+    from datetime import UTC, datetime
+
+    from mirage_lab.drivers.base import AuthPhase, LoginResult
+
+    class TwoPhase(Scripted):
+        def login(self, guesses):
+            t = datetime.now(UTC)
+            c2 = Conn(None, self.dialer.src_ip, 40002, self.dialer.target_ip, 2222, t)
+            self.dialer.opened.append(c2)
+            # first connection's guesses all fail, second connection succeeds
+            return LoginResult(
+                True, [AuthPhase(self.conn, t, t, 3, False), AuthPhase(c2, t, t, 1, True)]
+            )
+
+    doc = BASE.replace("guesses: 2", "guesses: 5")
+    driver = type("D2", (TwoPhase,), {"answers": GOOD})
+    truth = TruthWriter(tmp_path / "gt.json")
+    settings = Settings(
+        target_ip="172.26.0.2", out_dir=tmp_path, profile_dir=tmp_path, time_scale=0
+    )
+    (tmp_path / "cowrie").mkdir(exist_ok=True)
+    (tmp_path / "cowrie/userdb.txt").write_text("root:x:secret-pw\n")
+    actor = ActorRun(scenario(doc), 0, "198.18.0.9", "r1", CATALOGUE, settings, truth)
+    actor.driver_factory = lambda *a: driver(*a)
+    actor.run()
+    truth.close()
+    recs = [json.loads(line) for line in (tmp_path / "gt.json").read_text().splitlines()]
+    login = {
+        r["step_id"]: r["outcome"]
+        for r in recs
+        if r["kind"] == "step" and r["step_id"].startswith("login")
+    }
+    assert login == {"login-0": "failed", "login-1": "ok"}
+
+
 def test_engine_failed_login_skips_everything(tmp_path):
     records, sent = run_actor(tmp_path, login_ok=False)
     got = steps_of(records)

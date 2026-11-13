@@ -309,6 +309,8 @@ LightGBM, Vowpal Wabbit, DuckDB, MLflow and sentence-transformers have wheels fo
 
 **Tests.** 218 unit tests (the runner, the drivers and the join among them) and 51 integration tests, including nine lab tests (`tests/integration/test_lab.py`): Gate 2 tests 1, 2, 3 and 4. Gate 1 still passes with the lab running.
 
+**Robustness review (14 November 2026).** An adversarial multi-agent review swept every Phase 2 source file (finders per subsystem, each finding refuted by a 3-vote panel before it counted): 40 raw findings, 18 confirmed and all fixed. The high-severity two were the session rules being loaded but never applied by the tagger worker, and a dataset feature (`share_unknown`) that was always zero; the rest spanned the label-join key, the dataset reading without FINAL and zeroing HTTP gap features, the classifier majority baseline, the policy context memory bound and its divergent tactic matcher, the isolation check missing off-link routes, and several runner edge cases. Regression guards were added for each. `make gate2` chains the live validation; see `docs/handoffs/phase-2-finish.md`.
+
 **How to run.** `make up`, `make lab-up`, then `make lab-run SCENARIOS=/lab/scenarios` for the whole catalogue (or a subdirectory). Join health: `SELECT * FROM mirage.sim_runs FINAL` — `no_event` and `mismatch` must be zero.
 
 **The `intel` package.** The models live in `intel/`, with the heavy libraries (LightGBM, DuckDB, PyArrow, scikit-learn, Vowpal Wabbit) in the workspace. Their tests carry the `ml` marker and are deselected from the fast unit job (`uv run pytest`); a dedicated CI job runs `uv run pytest -m ml` on synthetic data. `make dataset` and `make classifier` run the pipeline against the live store.

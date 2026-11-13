@@ -35,27 +35,43 @@ from mirage_lab.models import Catalogue
 ROOT = Path(__file__).resolve().parents[3]
 SPLIT_FILE = ROOT / "eval" / "split.yaml"
 
-# One row per capture session: ground truth from sim_sessions, structure from session_summary
-# and a gap-statistics subquery over the input events. No payload column is selected.
-SESSIONS_SQL = """
-WITH inputs AS (
+# The input unit: one gated input, across the three protocols. n_unknown is a SEPARATE signal
+# (Cowrie emits a command.failed event, outcome='failure', beside each unknown command's input),
+# so it is counted over all events, not over the input rows.
+_INPUT = (
+    "((source = 'cowrie' AND class = 'process_activity' AND action = 'command'"
+    " AND outcome = 'unknown')"
+    " OR (class = 'http_activity' AND action = 'request')"
+    " OR (class = 'datastore_activity' AND action = 'query'))"
+)
+_UNKNOWN = "(source = 'cowrie' AND action = 'command' AND outcome = 'failure')"
+
+# One row per capture session. Events are rolled up to their LOGICAL session (the sessioniser
+# groups HTTP connections via session_map), so a multi-connection session's gap/rate features
+# are not zeroed. Reads use FINAL, matching the exactly-once discipline elsewhere in Phase 2.
+SESSIONS_SQL = f"""
+WITH ev AS (
     SELECT
-        session_id,
-        count() AS n_inputs,
-        countIf(source = 'cowrie' AND action = 'command' AND outcome = 'failure') AS n_unknown,
-        arraySort(groupArray(toUnixTimestamp64Milli(ts))) AS ts_ms
-    FROM mirage.events
-    WHERE ( (source = 'cowrie' AND class = 'process_activity' AND action = 'command'
-             AND outcome = 'unknown')
-            OR (class = 'http_activity' AND action = 'request')
-            OR (class = 'datastore_activity' AND action = 'query') )
-    GROUP BY session_id
+        coalesce(m.session_id, e.session_id) AS lsid,
+        e.ts AS ts, e.source AS source, e.class AS class, e.action AS action, e.outcome AS outcome
+    FROM mirage.events FINAL AS e
+    LEFT JOIN (SELECT conn_id, session_id FROM mirage.session_map FINAL) AS m
+        ON e.session_id = m.conn_id
+    WHERE e.source != 'policy'
+),
+agg AS (
+    SELECT
+        lsid AS session_id,
+        countIf({_INPUT}) AS n_inputs,
+        countIf({_UNKNOWN}) AS n_unknown,
+        arraySort(groupArrayIf(toUnixTimestamp64Milli(ts), {_INPUT})) AS ts_ms
+    FROM ev
+    GROUP BY lsid
 ),
 gaps AS (
-    SELECT
-        session_id, n_inputs, n_unknown,
+    SELECT session_id, n_inputs, n_unknown,
         arrayMap(i -> ts_ms[i + 1] - ts_ms[i], range(1, length(ts_ms))) AS d
-    FROM inputs
+    FROM agg
 )
 SELECT
     ss.logical_session_id                               AS session_id,
@@ -78,8 +94,8 @@ SELECT
 FROM (SELECT * FROM mirage.sim_sessions FINAL WHERE mode = 'capture') AS ss
 INNER JOIN (SELECT * FROM mirage.session_summary FINAL) AS sm
     ON ss.logical_session_id = sm.session_id
-LEFT JOIN gaps AS g ON sm.session_id = g.session_id
-"""
+LEFT JOIN gaps AS g ON ss.logical_session_id = g.session_id
+"""  # noqa: S608 - static predicates, no user input
 
 # One row per gated input (role='decision'), with the canonical input text the decoy logged,
 # and the ground-truth technique from its label. Capture runs only. No print path touches it.
@@ -93,7 +109,7 @@ SELECT
     coalesce(nullIf(JSONExtractString(e.payload, 'input'), ''),
              JSONExtractString(e.payload, 'command')) AS input
 FROM mirage.sim_labels_current AS l
-INNER JOIN mirage.events AS e ON l.event_id = e.event_id
+INNER JOIN mirage.events FINAL AS e ON l.event_id = e.event_id
 WHERE l.role = 'decision'
   AND l.run_id IN (SELECT run_id FROM mirage.sim_runs FINAL WHERE mode = 'capture' AND final = 1)
 """

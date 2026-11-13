@@ -207,7 +207,7 @@ class ActorRun:
                     result = Result(sent=True, started=phase.started, ended=phase.ended)
                     self._step_record(
                         session_ref, f"login-{i}", proc, phase.conn, result, "ran",
-                        "ok" if login.ok else "failed",
+                        "ok" if phase.success else "failed",  # this connection's own outcome
                     )  # fmt: skip
             if login.ok:
                 self._steps(session_ref, spec, driver)
@@ -259,7 +259,15 @@ class ActorRun:
             tries[step.id] = tries.get(step.id, 0) + 1
             attempt = f"{step.id}" if tries[step.id] == 1 else f"{step.id}~{tries[step.id]}"
             time.sleep(self.timing.gap(previous_len))
-            result = self._send(step, proc, driver)
+            try:
+                result = self._send(step, proc, driver)
+            except ValueError:
+                # A drawn slot value tripped the input lint. Skip this step, keep the actor
+                # going; never send the offending input.
+                self._step_record(session_ref, attempt, proc, None, None, "skipped")
+                done.add(step.id)
+                index += 1
+                continue
             if not result.sent:
                 self._step_record(session_ref, attempt, proc, result.conn, None, "skipped")
                 done.add(step.id)
@@ -331,7 +339,10 @@ def scenarios_hash(paths: list[Path]) -> str:
 
 
 def run(paths: list[Path], catalogue: Catalogue, settings: Settings) -> Summary:
-    scenarios = [Scenario.load(p) for p in paths]
+    # Deduplicate by scenario id: the same scenario reached by two paths (a file and a dir that
+    # contains it) must not run twice, or two jobs share an id, RNG seed and ground-truth keys.
+    loaded = [Scenario.load(p) for p in paths]
+    scenarios = list({s.id: s for s in loaded}.values())
     problems = [p for s in scenarios for p in lint(s, catalogue, Slots.names())]
     if problems:
         raise ValueError("lint failed, nothing was sent:\n  " + "\n  ".join(problems))

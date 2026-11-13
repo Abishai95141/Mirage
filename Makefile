@@ -1,6 +1,6 @@
 COMPOSE := docker compose --env-file .env -f compose/docker-compose.yml
 
-.PHONY: help env profile profile-ref reference-image dashboards up migrate down nuke ps logs lab-up lab-run lab-down split dataset classifier tagger eval test itest lint fmt schema probe
+.PHONY: help env profile profile-ref reference-image dashboards up migrate down nuke ps logs lab-up lab-run lab-down split dataset classifier tagger eval gate2 test itest lint fmt schema probe
 
 help:
 	@grep -E '^[a-z-]+:.*?## ' $(MAKEFILE_LIST) | awk 'BEGIN{FS=":.*?## "}{printf "  %-12s %s\n",$$1,$$2}'
@@ -71,6 +71,14 @@ tagger: ## Score the rule tagger on build/dataset (make dataset first)
 
 eval: ## Run the evaluation harness and write eval/baselines (make dataset first)
 	uv run python -m mirage_intel.harness run
+
+gate2: ## Full Phase 2 validation (needs Docker): stack up, a capture lab run, dataset, gates
+	$(MAKE) up
+	$(MAKE) lab-up
+	$(LAB) run --rm runner run /lab/scenarios $(ARGS)
+	$(MAKE) dataset
+	$(MAKE) eval
+	$(MAKE) itest
 
 itest: ## Integration tests against the running stack (Gates 0 and 1)
 	uv run pytest -m integration -v

@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import argparse
 import json
+from collections import Counter
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -50,6 +51,7 @@ def _matrix(rows: list[dict[str, Any]]) -> np.ndarray:
 class Model:
     booster: lgb.Booster | None
     classes: list[str]
+    majority: str = "scanner"  # the most frequent training class, for the majority baseline
 
     def predict(self, rows: list[dict[str, Any]]) -> list[str]:
         out: list[str | None] = [rule_label(r) for r in rows]
@@ -59,15 +61,17 @@ class Model:
             probs = np.atleast_2d(probs)
             for i, p in zip(unresolved, probs, strict=True):
                 out[i] = self.classes[int(np.argmax(p))]
-        return [label or self.classes[0] for label in out]
+        return [label or self.majority for label in out]
 
 
 def train(rows: list[dict[str, Any]]) -> Model:
     """Train on the rows a rule does not already settle."""
     learn = [r for r in rows if rule_label(r) is None]
     classes = sorted({r["actor_class"] for r in learn}) or CLASSES
+    majority = Counter(r["actor_class"] for r in rows).most_common(1)
+    majority_class = majority[0][0] if majority else classes[0]
     if len(classes) < 2:
-        return Model(None, classes or CLASSES)
+        return Model(None, classes or CLASSES, majority_class)
     index = {c: i for i, c in enumerate(classes)}
     x = _matrix(learn)
     y = np.array([index[r["actor_class"]] for r in learn])
@@ -83,7 +87,7 @@ def train(rows: list[dict[str, Any]]) -> Model:
         "seed": 0,
     }
     booster = lgb.train(params, lgb.Dataset(x, label=y), num_boost_round=60)
-    return Model(booster, classes)
+    return Model(booster, classes, majority_class)
 
 
 @dataclass
@@ -123,7 +127,7 @@ def evaluate(model: Model, test: list[dict[str, Any]]) -> Report:
 
 
 def _majority(model: Model) -> str:
-    return model.classes[0] if model.classes else "scanner"
+    return model.majority
 
 
 def check_no_forbidden_features() -> None:

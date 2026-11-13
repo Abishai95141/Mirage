@@ -46,6 +46,8 @@ SELECT
              AND outcome = 'unknown')
             OR (class = 'http_activity' AND action = 'request')
             OR (class = 'datastore_activity' AND action = 'query'))  AS inputs,
+    countIf(class = 'authentication' AND action = 'login')    AS auth_attempts,
+    countIf(class = 'authentication' AND action = 'login' AND outcome = 'success') AS auth_success,
     min(ts)                                                   AS start_ts,
     max(ts)                                                   AS end_ts,
     arraySort(groupUniqArrayIf(JSONExtractString(payload, 'token_id'),
@@ -146,12 +148,44 @@ class Tagger:
     async def write_labels(self, rows: list[dict[str, Any]]) -> None:
         await self.ch.insert(rows, "mirage.labels")
 
-    async def alerts(self, session_ids: set[str], version: int) -> list[dict[str, Any]]:
-        if not session_ids:
-            return []
-        ids = sorted(session_ids)
-        evidence = {r["session_id"]: r for r in await self.ch.select(EVIDENCE_SQL, ids=ids)}
-        labelled = {r["session_id"]: r for r in await self.ch.select(LABELS_SQL, ids=ids)}
+    @staticmethod
+    def _summary(ev: dict[str, Any]) -> dict[str, int]:
+        """The structural session summary a SessionRule matches on."""
+        attempts, success = int(ev.get("auth_attempts", 0)), int(ev.get("auth_success", 0))
+        return {
+            "inputs": int(ev.get("inputs", 0)),
+            "auth_attempts": attempts,
+            "auth_success": success,
+            "failed_before_success": max(attempts - success, 0),
+        }
+
+    def session_labels(self, evidence: dict[str, Any], version: int) -> list[dict[str, Any]]:
+        """Apply the session-level rules to each session's structural summary (spec 2.4). These
+        catch tactics no single input shows -- e.g. brute force then success -> Persistence."""
+        rows = []
+        for sid, ev in evidence.items():
+            for hit in self.engine.tag_session(self._summary(ev)):
+                rows.append(
+                    {
+                        "event_id": f"session:{sid}:{hit.rule_id}",
+                        "version": version,
+                        "session_id": sid,
+                        "protocol": ev.get("protocol", ""),
+                        "kind": "session",
+                        "technique": hit.technique,
+                        "tactic": hit.tactic,
+                        "confidence": hit.confidence,
+                        "rule_id": hit.rule_id,
+                        "model_version": self.engine.version,
+                        "attack_version": self.attack_version,
+                        "ts": ev["end_ts"],
+                    }
+                )
+        return rows
+
+    def alert_rows(
+        self, ids: list[str], evidence: dict[str, Any], labelled: dict[str, Any], version: int
+    ) -> list[dict[str, Any]]:
         out = []
         for sid in ids:
             ev = evidence.get(sid)
@@ -180,13 +214,32 @@ class Tagger:
             )
         return out
 
+    async def alerts(self, session_ids: set[str], version: int) -> list[dict[str, Any]]:
+        """Fetch the evidence and labels for these sessions and return their alert rows."""
+        if not session_ids:
+            return []
+        ids = sorted(session_ids)
+        evidence = {r["session_id"]: r for r in await self.ch.select(EVIDENCE_SQL, ids=ids)}
+        labelled = {r["session_id"]: r for r in await self.ch.select(LABELS_SQL, ids=ids)}
+        return self.alert_rows(ids, evidence, labelled, version)
+
     async def process(self, events: list[MirageEvent]) -> tuple[int, int]:
         version = time.time_ns() // 1000
-        label_rows = self.labels(events, version)
-        await self.write_labels(label_rows)
-        alert_rows = await self.alerts(self.touched(events), version)
+        input_rows = self.labels(events, version)
+        await self.write_labels(input_rows)
+        ids = sorted(self.touched(events))
+        evidence = (
+            {r["session_id"]: r for r in await self.ch.select(EVIDENCE_SQL, ids=ids)} if ids else {}
+        )
+        # Session-level labels must land before alerts, which reads tactics back from the table.
+        session_rows = self.session_labels(evidence, version)
+        await self.write_labels(session_rows)
+        labelled = (
+            {r["session_id"]: r for r in await self.ch.select(LABELS_SQL, ids=ids)} if ids else {}
+        )
+        alert_rows = self.alert_rows(ids, evidence, labelled, version)
         await self.ch.insert(alert_rows, "mirage.alerts")
-        return len(label_rows), len(alert_rows)
+        return len(input_rows) + len(session_rows), len(alert_rows)
 
 
 async def run(cfg: Config, stop: asyncio.Event) -> None:

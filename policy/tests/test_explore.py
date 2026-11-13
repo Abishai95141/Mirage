@@ -187,3 +187,31 @@ def test_an_explored_fake_error_is_a_valid_decision(tmp_path, monkeypatch):
             assert r.get("exit_code") == 1
         if r["action"] == "delay":
             assert r["delay_ms"] == 250
+
+
+def test_tactic_rules_honour_all_of_as_and(tmp_path):
+    # Regression guard for the review's #4/#7: the old reader matched all_of like any_of.
+    import yaml
+
+    from mirage_policy.explore import TacticRules
+
+    (tmp_path / "r.yaml").write_text(
+        yaml.safe_dump(
+            {
+                "rules": [
+                    {
+                        "id": "web-env",
+                        "technique": "T1552.001",
+                        "tactic": "TA0006",
+                        "protocol": "http",
+                        "confidence": 0.95,
+                        "all_of": ["GET ", r"\.env"],
+                    },
+                ]
+            }
+        )
+    )
+    rules = TacticRules.load(tmp_path)
+    assert rules.tactic("http", "GET /.env") == "TA0006"  # both patterns present
+    assert rules.tactic("http", "GET /index.html") is None  # only one present -> no match
+    assert rules.tactic("http", "POST /.env") is None  # the other missing -> no match

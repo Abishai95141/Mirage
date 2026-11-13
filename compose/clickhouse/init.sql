@@ -342,7 +342,7 @@ CREATE TABLE IF NOT EXISTS mirage.labels
     ts             DateTime64(6, 'UTC')
 )
 ENGINE = ReplacingMergeTree(version)
-ORDER BY (event_id, technique);
+ORDER BY event_id;
 
 -- One row per session that is worth an analyst's attention: it reached a honeytoken, captured
 -- an artifact, or showed Persistence or Impact. reasons lists why.
