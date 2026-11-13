@@ -146,8 +146,14 @@ services:
       POLICY_TOKEN: ${POLICY_TOKEN:?run make env}
       # Loads the selftest rules the integration tests use. Never on an exposed sensor.
       POLICY_SELFTEST: ${POLICY_SELFTEST:-0}
+      # The bandit acts only when this is "lab" AND the source is in the explore range
+      # (198.19.0.0/16); otherwise the rules decide and the bandit shadows (spec Q6).
+      POLICY_EXPLORE: ${POLICY_EXPLORE:-}
+      # The tagger's rules, read in-process for the last-tactic context feature (spec Q12).
+      POLICY_TECHNIQUE_RULES: /rules
     volumes:
       - policy-log:/var/log/mirage-policy
+      - ../intel/rules:/rules:ro
     mem_limit: 128m
     pids_limit: 64
 

@@ -10,6 +10,7 @@ from __future__ import annotations
 import hmac
 import json
 import os
+import random
 import threading
 import time
 import uuid
@@ -22,8 +23,45 @@ from fastapi import FastAPI, Header, HTTPException, Request
 from fastapi.responses import JSONResponse, PlainTextResponse
 from pydantic import ValidationError
 
-from mirage_policy.rules import RuleSet
-from mirage_schema.policy import DecideRequest, Decision, as_dict
+from mirage_policy.explore import (
+    BanditPolicy,
+    Context,
+    TacticRules,
+    allowed_actions,
+    explore_enabled,
+    is_explore,
+)
+from mirage_policy.rules import Rule, RuleSet
+from mirage_schema.policy import Action, DecideRequest, Decision, as_dict
+
+# Defaults for an action the exploring policy picks that the matched rule did not specify.
+_DELAY_MS = 250
+
+
+def _decision_for(
+    action: Action, rule: Rule, decision_id: str, propensity: float, rules_version: str
+) -> Decision:
+    """Build the decision for the acting action: the rule's own fields when the action is the
+    rule's, otherwise sane defaults so an explored action is still a valid, safe response."""
+    if action is rule.action:
+        output, exit_code, delay_ms = rule.output, rule.exit_code, rule.delay_ms
+    else:
+        output, exit_code, delay_ms = "", None, 0
+        if action is Action.FAKE_ERROR:
+            exit_code = 1
+        elif action is Action.DELAY:
+            delay_ms = _DELAY_MS
+    return Decision(
+        action=action,
+        output=output,
+        exit_code=exit_code,
+        delay_ms=delay_ms,
+        decision_id=decision_id,
+        propensity=propensity,
+        rule_id=rule.id,
+        rules_version=rules_version,
+    )
+
 
 RULES_DIR = Path(__file__).parent / "rulesets"
 
@@ -65,13 +103,19 @@ class DecisionLog:
         self._f.close()
 
 
-def create_app(settings: Settings) -> FastAPI:
+def create_app(settings: Settings, rng: random.Random | None = None) -> FastAPI:
     rules = RuleSet.load(*settings.rule_files)
     log = DecisionLog(settings.log_path)
     expected = f"Bearer {settings.token}".encode()
+    context = Context()
+    policy = BanditPolicy()
+    tactics = TacticRules.from_env()
+    explore_on = explore_enabled()
+    rng = rng or random.Random()  # noqa: S311 - exploration sampling, not cryptography
 
     app = FastAPI(docs_url=None, redoc_url=None, openapi_url=None)
     app.state.rules = rules
+    app.state.context = context
 
     @app.get("/healthz", response_class=PlainTextResponse)
     def healthz() -> str:
@@ -88,16 +132,31 @@ def create_app(settings: Settings) -> FastAPI:
             raise HTTPException(status_code=422, detail=str(exc)[:500]) from exc
 
         rule = rules.decide(req)
-        decision = Decision(
-            action=rule.action,
-            output=rule.output,
-            exit_code=rule.exit_code,
-            delay_ms=rule.delay_ms,
-            decision_id=str(uuid.uuid4()),
-            propensity=1.0,  # deterministic rules; the phase 2 bandit logs real propensities
-            rule_id=rule.id,
-            rules_version=rules.version,
-        )
+        allowed = allowed_actions(req)
+        tactic = tactics.tactic(req.protocol.value, req.input_text())
+        features = context.observe(req, tactic)
+        decision_id = str(uuid.uuid4())
+
+        exploring = is_explore(req, explore_on)
+        if exploring:
+            # In the lab explore range the bandit acts and logs the probability of its choice.
+            choice = policy.sample(allowed, rule.action, rng)
+            decision = _decision_for(
+                choice.action, rule, decision_id, choice.propensity, rules.version
+            )
+            acting = {
+                "name": policy.name,
+                "action": choice.action.value,
+                "propensity": choice.propensity,
+                "probs": choice.probs,
+            }
+            shadow = None
+        else:
+            # Elsewhere the rules decide; the bandit only shadows what it would have chosen.
+            decision = _decision_for(rule.action, rule, decision_id, 1.0, rules.version)
+            acting = {"name": "rules", "action": rule.action.value, "propensity": 1.0}
+            shadow = {"name": policy.name, "probs": policy.shadow(allowed, rule.action)}
+
         body = decision.model_dump(mode="json", exclude_none=True)
         latency_us = round((time.perf_counter() - started) * 1e6)
         log.write(
@@ -107,6 +166,11 @@ def create_app(settings: Settings) -> FastAPI:
                 "request": as_dict(req),
                 "input": req.input_text(),
                 **body,
+                "context": features,
+                "allowed": [a.value for a in allowed],
+                "acting": acting,
+                "shadow": shadow,
+                "explore": exploring,
                 "latency_us": latency_us,
             }
         )
