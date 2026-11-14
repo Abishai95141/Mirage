@@ -2,7 +2,7 @@
 
 Status: draft for review · 11 November 2026, phase 1 tightened and built (except 1.5) 12 November
 Inputs: the technical report (11 Nov 2026) and the research in [`reports/MIRAGE honeypot build research.md`](../reports/MIRAGE%20honeypot%20build%20research.md)
-Companion docs: [architecture](02-architecture.md) · [AI/ML design](03-ai-ml-design.md) · [phase 1 spec](04-phase-1-spec.md) · [phase 2 spec](05-phase-2-spec.md)
+Companion docs: [architecture](02-architecture.md) · [AI/ML design](03-ai-ml-design.md) · [phase 1 spec](04-phase-1-spec.md) · [phase 2 spec](05-phase-2-spec.md) · [phase 3 spec](06-phase-3-spec.md)
 
 ## 1. What we are building first
 
@@ -168,6 +168,8 @@ Specified in the [phase 2 spec](05-phase-2-spec.md) (draft, 12 November 2026), w
 | 3.5 High-interaction escalation | Linux host only: sandboxed real container, default-deny egress with sinkholed DNS/HTTP, reset per session |
 | 3.6 Caldera in the lab | Operations against the sandbox; event logs converted to `sim.groundtruth` |
 | 3.7 Tagger v1 | Encoder fine-tuned on lab labels |
+
+Specified in the [phase 3 spec](06-phase-3-spec.md) (draft, 14 November 2026). It defines demo 3, adds the actions `respond`, `plant_token` and `escalate` (gate contract v2), puts a pre-rendered library ahead of the live model, sets up the D12 decision as a time-boxed spike, and splits the gate into a core part and a part that needs the Linux host (3.5, 3.6 and the live model's GPU numbers).
 
 **Gate 3:** demo 3 passes; on lab scenarios the adaptive stack yields more distinct techniques per session than stock Cowrie; median LLM response time and cost per session are reported; the probe suite passes or its failures are listed as known gaps.
 

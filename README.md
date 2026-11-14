@@ -67,4 +67,6 @@ uv run python tools/seed_sample.py replay data/seed/2025-06-27.json.sample.json
 3. [Architecture](docs/02-architecture.md): components, the Cowrie fork, event schema, containment, measured memory.
 4. [AI/ML design](docs/03-ai-ml-design.md): baseline and later model per task, data, evaluation.
 5. [Phase 1 spec](docs/04-phase-1-spec.md): decoys and capture, with acceptance criteria, the Gate 1 tests and the implementation status.
-6. [Research report](reports/MIRAGE%20honeypot%20build%20research.md): the evidence behind the plan.
+6. [Phase 2 spec](docs/05-phase-2-spec.md): the lab, the label join, the first models and the bandit, with the Gate 2 tests and the implementation status.
+7. [Phase 3 spec](docs/06-phase-3-spec.md): the render library, the LLM responder, the live bandit, the probe suite and the sandbox, with the Gate 3 tests. A draft; nothing in it is built.
+8. [Research report](reports/MIRAGE%20honeypot%20build%20research.md): the evidence behind the plan.
