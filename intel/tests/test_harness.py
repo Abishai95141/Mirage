@@ -48,7 +48,8 @@ def session(cls, split, rng, **over):
             "session_id": f"s{rng.random()}",
             "actor_class": cls,
             "protocol": "ssh",
-            "scenario_id": "x",
+            # several scenarios per class: the classifier is scored by holding scenarios out
+            "scenario_id": f"{cls}-{rng.randint(0, 5)}",
             "real": False,
             "split": split,
         }

@@ -1,0 +1,16 @@
+# Human-paced twin of bot-persist-access: the same steps, typed key by key with pauses.
+# Only the actor differs, so the classifier has to tell the two apart by timing.
+id: human-persist-access
+actor: {class: human, timing: human, patience: 3}
+variant_of: bot-persist-access
+sessions:
+  - protocol: ssh
+    channel: shell
+    login: {user: root, guesses: 2, procedure: ssh-password-guessing}
+    steps:
+      - {id: s1, procedure: webshell-write-php}
+      - {id: s2, procedure: sshkeys-prepare-dir}
+      - {id: s3, procedure: sshkeys-append}
+      - {id: s4, procedure: sshkeys-rewrite}
+      - {id: s5, procedure: useradd-shell, with: {user: deploy}}
+      - {id: s6, procedure: useradd-with-password, with: {user: ops}}

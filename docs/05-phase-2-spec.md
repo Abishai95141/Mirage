@@ -144,7 +144,7 @@ Each dataset has a manifest: the hashes of the catalogue, scenarios, profile see
   - Keystroke-level, ours only: the `tty_stats` columns.
 - **Never features:** source address or port, anything from `sim_*`, session or actor IDs, absolute time, credentials. A unit test fails if the feature frame contains a column outside the allowlist.
 - **Model.** LightGBM, in two variants: event-level only (can be run on the Zenodo corpus) and full.
-- **Reported.** Macro-F1 and the confusion matrix on the held-out split, against two baselines (rules only; majority class). Separately, agreement with heuristic labels on the Zenodo sample (no login or no command is a scanner; a session whose commands repeat exactly across many sources is a bot). The human row comes from real recordings when they exist (Q8).
+- **Reported.** Macro-F1 and the confusion matrix on held-out scenarios (section 5, item 6), against two baselines (rules only; majority class). Separately, agreement with heuristic labels on the Zenodo sample (no login or no command is a scanner; a session whose commands repeat exactly across many sources is a bot). The human row comes from real recordings when they exist (Q8).
 
 ### 2.4 Tagger v0
 
@@ -204,11 +204,11 @@ Not part of this spec or of Gate 2. It waits for a Linux host and a named person
 The split is assigned once, in `eval/split.yaml`, and everything downstream reads it.
 
 1. **Unit.** Procedures are assigned to `train`, `dev` or `test`, about 60/20/20, stratified by technique and by source. `dev` is for thresholds and rule writing; `test` is read only by the harness.
-2. **Scenarios do not mix splits.** A scenario uses procedures from one split only, so no session has training and test steps side by side, and session-level data (the classifier's) splits the same way.
+2. **Scenarios do not mix splits.** A scenario uses procedures from one split only, so no session has training and test steps side by side.
 3. **Content check.** Every input is normalised: addresses, hosts, hex strings, numbers and generated names become placeholders. No test input may equal a train or dev input after that, and any pair above 0.9 token similarity is listed and must be resolved (merged into one procedure, or one of them moved).
 4. **Coverage.** A technique counts in the headline metric only if it has training procedures and test procedures. Others are reported as unseen.
 5. **Index hygiene** (Q4). The retrieval index contains no dev or test procedure.
-6. **Actors.** For the classifier, timing-profile parameters are drawn per actor, and the test split's actors use draws the training split never saw. Real human recordings are test-only.
+6. **The classifier holds out scenarios, not procedures** (changed 14 November 2026, after the first live run). The procedure split exists to stop a model memorising command text, which the classifier never reads; and its dev and test halves turned out to hold four scripted-bot scenarios each, with every scanner scenario and the one human-paced scenario in train. So the classifier is scored by holding out whole scenarios in rotation (five folds, dealt class by class), predicting every session once with a model that never saw its scenario. A scenario and its timing variants (`variant_of`) are held out together, so a human-paced twin is never tested against a model trained on its bot original. Intervals resample scenarios, not sessions. Real human recordings are predicted but never trained on. A session's class is taken at session level: a connection with no successful login and no input is scanner behaviour whoever made it, which is what the rule in 2.3 already says.
 7. **De-duplication.** Identical sessions (same normalised inputs in the same order) are collapsed before any metric is computed.
 8. **No lab marker in the inputs.** A test confirms that a model given only the allowlisted inputs cannot see `sim` fields, addresses or IDs.
 
@@ -225,7 +225,7 @@ The harness refuses to report a metric if any of checks 2, 3, 5 or 8 fails.
 | 3 | Demo 1, live in CI | The assertions of 2.8 |
 | 4 | Demo 2, live in CI | The assertions of 2.8 |
 | 5 | Split integrity | Section 5 checks 2, 3, 5 and 8 pass on the frozen dataset |
-| 6 | Classifier | Reported on the held-out split with both baselines and the Zenodo check; better than rules-only by more than its interval |
+| 6 | Classifier | Reported on held-out scenarios (section 5, item 6) with both baselines and the Zenodo check; better than rules-only and than the majority class by more than its interval |
 | 7 | Tagger | Reported on the held-out split by source, with both baselines; technique-level micro-F1 better than the most-frequent baseline by more than its interval |
 | 8 | Bandit logging | At least 300 explore sessions and 3,000 decisions. Per context bucket, the observed action frequencies agree with the logged probabilities (chi-square). The mean importance weight of a uniform target policy is 1 within its interval. No masked action was taken. No exploration outside the lab range. |
 | 9 | Off-policy estimators | On synthetic logs, each estimator recovers the known value within its interval. The shadow policy's estimated value is reported against the rules'; it does not have to win until Gate 3. |
@@ -310,6 +310,29 @@ LightGBM, Vowpal Wabbit, DuckDB, MLflow and sentence-transformers have wheels fo
 **Tests.** 218 unit tests (the runner, the drivers and the join among them) and 51 integration tests, including nine lab tests (`tests/integration/test_lab.py`): Gate 2 tests 1, 2, 3 and 4. Gate 1 still passes with the lab running.
 
 **Robustness review (14 November 2026).** An adversarial multi-agent review swept every Phase 2 source file (finders per subsystem, each finding refuted by a 3-vote panel before it counted): 40 raw findings, 18 confirmed and all fixed. The high-severity two were the session rules being loaded but never applied by the tagger worker, and a dataset feature (`share_unknown`) that was always zero; the rest spanned the label-join key, the dataset reading without FINAL and zeroing HTTP gap features, the classifier majority baseline, the policy context memory bound and its divergent tactic matcher, the isolation check missing off-link routes, and several runner edge cases. Regression guards were added for each. `make gate2` chains the live validation; see `docs/handoffs/phase-2-finish.md`.
+
+**Live validation (14 November 2026, Linux host).** The first run of the whole phase against a live stack, on Ubuntu 24.04 with Docker 29.2 (the laptop's Docker was down). Every number below is from that run.
+
+| Gate 2 test | Result |
+| --- | --- |
+| 1 Runner safety, 3 Demo 1, 4 Demo 2 | Pass, in the integration suite: 53 passed, 0 failed |
+| 2 Join health | Pass. One controlled capture run (the catalogue six times): 210 scenario runs, 354 connections all matched, 1,200 steps matched, 0 `no_event`, 0 `mismatch`, 12 `not_run`. |
+| 5 Split integrity | Pass (`python -m eval.split check`) |
+| 6 Classifier | The model half passes; the Zenodo check is not built. On the frozen split it could not be scored at all: the dev and test halves hold four scripted-bot scenarios each, so model, rules and majority all scored 0.33 on 24 single-class sessions. Scored on held-out scenarios instead (section 5, item 6), over 414 sessions in 34 scenario groups from two named runs: macro-F1 0.863 against 0.257 for rules only and 0.206 for the majority class. The difference to rules has a 95% interval of 0.43 to 0.74, and to the majority of 0.50 to 0.78. Per class: scanner 0.98, scripted bot 0.90, human 0.71 (36 of 54 human sessions found; 12 bot sessions called human). The human class is our typing generator, eight of its nine scenarios being twins of bot scenarios, so this shows the model separates the generator from a bot replaying the same steps and nothing about real people (Q8). |
+| 7 Tagger | **Open.** It abstained on all 120 held-out steps: the technique rules are still handed off. |
+| 8 Bandit logging | Pass (`make explore-check`, new). 1,020 explore sessions and 3,667 decisions; six buckets tested, smallest p-value 0.16; a uniform target's mean importance weight 0.996 (interval 0.953 to 1.038); no masked action; nothing explored outside the range. |
+| 9 Off-policy estimators | The synthetic-log half passes in the unit suite. The shadow policy's value against the rules' is not reported: no reward-and-estimator step runs against the live store yet, and no model is trained. |
+| 10 Regression job | Open: no baseline is frozen while test 7 cannot be scored, and the committed dataset must come from the fixed lab-only profile seed (Q16), which this host's deployment did not use |
+| 11 Phase 1 still holds | Pass: Gate 1's ten tests, the latency limit among them, with the lab running |
+
+Four defects surfaced only against a live stack, and all are fixed:
+
+- The frozen split could not score the classifier (test 6 above). Eight human-paced twins of existing SSH scenarios were added (`lab/scenarios/human/`, the same steps under a different actor), the classifier is scored on held-out scenarios, and a session with no login and no input is labelled scanner at session level: 42 of the first run's 354 sessions were a bot's failed password guesses stamped with the bot's class. No procedure changed split.
+- The dataset export's two queries put the table alias after `FINAL`, which ClickHouse rejects. A test now guards the pattern.
+- Nothing implemented test 8's checks. `intel/src/mirage_intel/explore_check.py` does, with tests on synthetic logs, one of which catches a sampler that ignores its own logged probabilities.
+- The documented explore procedure did not explore. Switching exploration on and then calling `make lab-run` let compose recreate the policy service from `.env`, with exploration off. `make lab-explore` keeps the switch on for the whole run and turns it off afterwards.
+
+Also seen: 26 of 8,187 decoy decisions were fallbacks, around the policy service's restarts, as the fail-open design intends. The explore run's join reported 6 `no_event` steps out of 4,040; test 2 covers capture runs only, and the likely cause (a step sent into a session the bandit had just terminated) is not yet confirmed. A host note: the Docker snap cannot start a container with `no-new-privileges`, which every service here sets; the stack needs the regular Docker packages.
 
 **How to run.** `make up`, `make lab-up`, then `make lab-run SCENARIOS=/lab/scenarios` for the whole catalogue (or a subdirectory). Join health: `SELECT * FROM mirage.sim_runs FINAL` — `no_event` and `mismatch` must be zero.
 

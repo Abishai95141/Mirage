@@ -1,0 +1,14 @@
+# Human-paced twin of bot-impact-miner: the same steps, typed key by key with pauses.
+# Only the actor differs, so the classifier has to tell the two apart by timing.
+id: human-impact-miner
+actor: {class: human, timing: human, patience: 3}
+variant_of: bot-impact-miner
+sessions:
+  - protocol: ssh
+    channel: shell
+    login: {user: root, guesses: 2, procedure: ssh-password-guessing}
+    steps:
+      - {id: s1, procedure: transfer-sftp-put}
+      - {id: s2, procedure: miner-run-pool}
+      - {id: s3, procedure: miner-cpu-burn}
+      - {id: s4, procedure: miner-process-check}

@@ -10,9 +10,10 @@ Only ``capture`` runs are exported. ``explore`` runs carry the bandit's logged a
 kept apart (spec Q6). A session's split is its scenario's split, which is well defined because
 no scenario spans two splits (spec section 5).
 
-Only ``capture`` runs are exported. ``explore`` runs carry the bandit's logged actions and are
-kept apart (spec Q6). A session's split is its scenario's split, which is well defined because
-no scenario spans two splits (spec section 5).
+A frozen dataset names the runs it was built from (``--run``, repeatable), so sessions left in
+the store by tests or ad-hoc runs do not enter it. Each session row also carries a ``group`` (its
+scenario, or the scenario it is a timing variant of) and a ``label`` (the session-level class);
+the classifier is scored by holding out whole groups, and reads neither as a feature.
 """
 
 from __future__ import annotations
@@ -21,6 +22,7 @@ import argparse
 import hashlib
 import json
 import os
+import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -30,7 +32,7 @@ import pyarrow as pa
 import pyarrow.parquet as pq
 import yaml
 
-from mirage_lab.models import Catalogue
+from mirage_lab.models import Catalogue, Scenario
 
 ROOT = Path(__file__).resolve().parents[3]
 SPLIT_FILE = ROOT / "eval" / "split.yaml"
@@ -54,7 +56,7 @@ WITH ev AS (
     SELECT
         coalesce(m.session_id, e.session_id) AS lsid,
         e.ts AS ts, e.source AS source, e.class AS class, e.action AS action, e.outcome AS outcome
-    FROM mirage.events FINAL AS e
+    FROM mirage.events AS e FINAL
     LEFT JOIN (SELECT conn_id, session_id FROM mirage.session_map FINAL) AS m
         ON e.session_id = m.conn_id
     WHERE e.source != 'policy'
@@ -91,7 +93,7 @@ SELECT
     if(length(g.d) > 0, arrayMax(g.d) / 1000.0, 0.0)    AS gap_max_s,
     if(length(g.d) > 0, arrayAvg(g.d) / 1000.0, 0.0)    AS gap_mean_s,
     if(length(g.d) > 0, arrayReduce('quantileExact(0.5)', g.d) / 1000.0, 0.0) AS gap_median_s
-FROM (SELECT * FROM mirage.sim_sessions FINAL WHERE mode = 'capture') AS ss
+FROM (SELECT * FROM mirage.sim_sessions FINAL WHERE mode = 'capture' /*runs*/) AS ss
 INNER JOIN (SELECT * FROM mirage.session_summary FINAL) AS sm
     ON ss.logical_session_id = sm.session_id
 LEFT JOIN gaps AS g ON ss.logical_session_id = g.session_id
@@ -109,9 +111,11 @@ SELECT
     coalesce(nullIf(JSONExtractString(e.payload, 'input'), ''),
              JSONExtractString(e.payload, 'command')) AS input
 FROM mirage.sim_labels_current AS l
-INNER JOIN mirage.events FINAL AS e ON l.event_id = e.event_id
+INNER JOIN mirage.events AS e FINAL ON l.event_id = e.event_id
 WHERE l.role = 'decision'
-  AND l.run_id IN (SELECT run_id FROM mirage.sim_runs FINAL WHERE mode = 'capture' AND final = 1)
+  AND l.run_id IN (
+      SELECT run_id FROM mirage.sim_runs FINAL WHERE mode = 'capture' AND final = 1 /*runs*/
+  )
 """
 
 # The columns a model may read (spec 2.3). Everything else is identity or ground truth.
@@ -121,7 +125,31 @@ FEATURES = [
     "gap_median_s", "share_unknown",
 ]  # fmt: skip
 # Never a feature: source/destination addresses, IDs, times, anything from sim_*, credentials.
-FORBIDDEN = {"session_id", "actor_class", "scenario_id", "real", "protocol", "split", "src_ip"}
+FORBIDDEN = {
+    "session_id", "actor_class", "label", "group", "scenario_id", "real", "protocol", "split",
+    "src_ip",
+}  # fmt: skip
+
+RUN_ID = re.compile(r"^r\d{14}-[0-9a-f]{6}$")
+
+
+def with_runs(sql: str, runs: list[str] | None) -> str:
+    """Restrict a query to the named runs. Run IDs are checked before they reach the query."""
+    if not runs:
+        return sql.replace("/*runs*/", "")
+    bad = [r for r in runs if not RUN_ID.match(r)]
+    if bad:
+        raise ValueError(f"not a run ID: {bad}")
+    listed = ", ".join(f"'{r}'" for r in sorted(set(runs)))
+    return sql.replace("/*runs*/", f"AND run_id IN ({listed})")
+
+
+def session_label(actor_class: str, auth_success: int, inputs: int) -> str:
+    """The session-level class. The lab stamps every connection with its actor's class, but a
+    connection with no successful login and no input is scanner behaviour by definition (spec
+    2.3), whoever made it: a bot's failed password guess is not told apart from a scanner's by
+    anything the decoy can see."""
+    return "scanner" if auth_success == 0 and inputs == 0 else actor_class
 
 
 @dataclass
@@ -161,9 +189,14 @@ def _env_file() -> dict[str, str]:
     return env
 
 
-def build_rows(raw: list[dict[str, Any]], scenario_split: dict[str, str]) -> list[dict[str, Any]]:
+def build_rows(
+    raw: list[dict[str, Any]],
+    scenario_split: dict[str, str],
+    groups: dict[str, str] | None = None,
+) -> list[dict[str, Any]]:
     """Turn ClickHouse rows into feature rows with a split; drop anything not in a capture
     scenario we know the split of."""
+    groups = groups or {}
     out = []
     for r in raw:
         where = scenario_split.get(r["scenario_id"])
@@ -174,6 +207,8 @@ def build_rows(raw: list[dict[str, Any]], scenario_split: dict[str, str]) -> lis
             {
                 "session_id": r["session_id"],
                 "actor_class": r["actor_class"],
+                "label": session_label(r["actor_class"], int(r["auth_success"]), int(r["inputs"])),
+                "group": groups.get(r["scenario_id"], r["scenario_id"]),
                 "protocol": r["protocol"],
                 "scenario_id": r["scenario_id"],
                 "real": bool(r["real"]),
@@ -241,16 +276,35 @@ def build_steps(
     return out
 
 
-def export(ch: ClickHouse, split: FrozenSplit, catalogue: Catalogue, out: Path) -> dict:
-    steps = build_steps(ch.rows(STEPS_SQL), split.scenario_split, catalogue)
+def scenario_groups(directory: Path) -> dict[str, str]:
+    """Scenario ID -> the group it is held out with: itself, or the scenario it is a variant of."""
+    out = {}
+    for path in sorted(directory.rglob("*.yaml")):
+        sc = Scenario.load(path)
+        out[sc.id] = sc.variant_of or sc.id
+    return out
+
+
+def export(
+    ch: ClickHouse,
+    split: FrozenSplit,
+    catalogue: Catalogue,
+    out: Path,
+    runs: list[str] | None = None,
+    groups: dict[str, str] | None = None,
+) -> dict:
+    steps = build_steps(ch.rows(with_runs(STEPS_SQL, runs)), split.scenario_split, catalogue)
     write_parquet(steps, out / "steps.parquet", {"n_steps": len(steps), "columns": ["input"]})
-    rows = build_rows(ch.rows(SESSIONS_SQL), split.scenario_split)
+    rows = build_rows(ch.rows(with_runs(SESSIONS_SQL, runs)), split.scenario_split, groups)
     by_split: dict[str, int] = {}
     by_class: dict[str, int] = {}
+    by_label: dict[str, int] = {}
     for r in rows:
         by_split[r["split"]] = by_split.get(r["split"], 0) + 1
         by_class[r["actor_class"]] = by_class.get(r["actor_class"], 0) + 1
+        by_label[r["label"]] = by_label.get(r["label"], 0) + 1
     manifest = {
+        "runs": sorted(set(runs)) if runs else "every final capture run in the store",
         "catalogue_sha256": catalogue.sha256,
         "split_catalogue_sha256": split.catalogue_sha256,
         "code_version": os.environ.get("MIRAGE_CODE_VERSION", "dev"),
@@ -259,6 +313,8 @@ def export(ch: ClickHouse, split: FrozenSplit, catalogue: Catalogue, out: Path) 
         "n_steps": len(steps),
         "by_split": by_split,
         "by_class": by_class,
+        "by_label": by_label,
+        "n_groups": len({r["group"] for r in rows}),
         "rows_sha256": hashlib.sha256(json.dumps(rows, sort_keys=True).encode()).hexdigest(),
     }
     write_parquet(rows, out / "sessions.parquet", manifest)
@@ -269,12 +325,20 @@ def export(ch: ClickHouse, split: FrozenSplit, catalogue: Catalogue, out: Path) 
 def main(argv: list[str] | None = None) -> None:
     ap = argparse.ArgumentParser(prog="mirage-dataset")
     ap.add_argument("--out", type=Path, default=ROOT / "build" / "dataset")
+    ap.add_argument(
+        "--run",
+        action="append",
+        dest="runs",
+        metavar="RUN_ID",
+        help="export only this capture run (repeatable); default is every final capture run",
+    )
     args = ap.parse_args(argv)
     os.environ.update({k: v for k, v in _env_file().items() if k not in os.environ})
     ch = ClickHouse.from_env()
     split = FrozenSplit.load()
     catalogue = Catalogue.load(ROOT / "lab" / "catalogue")
-    manifest = export(ch, split, catalogue, args.out)
+    groups = scenario_groups(ROOT / "lab" / "scenarios")
+    manifest = export(ch, split, catalogue, args.out, args.runs, groups)
     print(json.dumps({k: v for k, v in manifest.items() if k != "rows_sha256"}, indent=2))
 
 

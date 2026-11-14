@@ -12,6 +12,7 @@ dependencies = [
     "pyarrow>=18",
     "duckdb>=1.1",
     "scikit-learn>=1.5",
+    "scipy>=1.14",
     "lightgbm>=4.5",
     "vowpalwabbit>=9.10",
     "httpx>=0.28",
@@ -21,6 +22,7 @@ dependencies = [
 mirage-dataset = "mirage_intel.dataset:main"
 mirage-classifier = "mirage_intel.classifier:main"
 mirage-tagger = "mirage_intel.tagger:main"
+mirage-explore-check = "mirage_intel.explore_check:main"
 
 [build-system]
 requires = ["hatchling>=1.25"]

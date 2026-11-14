@@ -54,14 +54,13 @@ class Metrics:
 def evaluate(sessions: list[dict], steps: list[dict], engine: Engine, dataset_sha: str) -> Metrics:
     m = Metrics(dataset_sha256=dataset_sha, n_sessions=len(sessions), n_steps=len(steps))
 
-    train_rows = [r for r in sessions if r["split"] == "train" and not r["real"]]
-    test_rows = [r for r in sessions if r["split"] == "test"]
-    if train_rows and test_rows:
-        model = classifier.train(train_rows)
-        report = classifier.evaluate(model, test_rows)
+    # The classifier is scored by holding out whole scenarios in rotation: it never reads
+    # command text, and the frozen procedure split's test half holds one actor class.
+    report = classifier.cross_validate(sessions) if sessions else None
+    if report is not None:
         m.classifier = asdict(report)
         m.gates["classifier_beats_rules"] = report.beats_rules()
-        m.gates["classifier_beats_majority"] = report.macro_f1 > report.majority_f1
+        m.gates["classifier_beats_majority"] = report.beats_majority()
 
     test_steps = [s for s in steps if s["split"] == "test"]
     if test_steps:

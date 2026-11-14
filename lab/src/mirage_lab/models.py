@@ -139,6 +139,10 @@ class Actor(_Strict):
 class Scenario(_Strict):
     id: str = Field(pattern=ID)
     actor: Actor
+    # Set on a scenario that repeats another one's steps under a different actor (a human-paced
+    # twin of a bot scenario, say). The two are held out together when the classifier is scored,
+    # so a model never trains on one and is tested on the other.
+    variant_of: str | None = Field(default=None, pattern=ID)
     sessions: list[SessionSpec] = Field(min_length=1)
 
     @classmethod

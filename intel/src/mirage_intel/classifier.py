@@ -8,8 +8,13 @@ A rule handles the obvious case with no model: a session with no successful logi
 is a scanner. LightGBM decides the rest, over the feature allowlist in ``dataset.FEATURES`` --
 timings, counts and outcomes, never an address, an ID, a time or anything from ``sim_*``. The
 report compares the rules-plus-model pipeline against two baselines (majority class, rules
-only) on the held-out split; a threshold would be a guess before any data exists, so the gate
-asks only that the model beat rules-only (spec Gate 2 test 6).
+only); a threshold would be a guess before any data exists, so the gate asks only that the
+model beat both by more than its interval (spec Gate 2 test 6).
+
+It is scored by holding out whole scenarios in rotation (``cross_validate``), not on the frozen
+procedure split. That split exists to stop the tagger memorising command text, which this model
+never reads, and its test half turned out to hold a single actor class (first live run, 14
+November 2026). A scenario and its timing variants are held out together.
 """
 
 from __future__ import annotations
@@ -17,7 +22,7 @@ from __future__ import annotations
 import argparse
 import json
 from collections import Counter
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any
 
@@ -130,6 +135,144 @@ def _majority(model: Model) -> str:
     return model.majority
 
 
+def label_of(row: dict[str, Any]) -> str:
+    """The session-level class a row is scored against (``label``; older datasets have only
+    the actor's class)."""
+    return row.get("label") or row["actor_class"]
+
+
+def group_of(row: dict[str, Any]) -> str:
+    """What a row is held out with: its scenario, or the scenario that one is a variant of."""
+    return row.get("group") or row["scenario_id"]
+
+
+def assign_folds(rows: list[dict[str, Any]], k: int, seed: int = 0) -> dict[str, int]:
+    """Group -> fold. Whole groups move together, and groups are dealt out class by class so
+    every fold holds out some of each class where there are enough groups to go round."""
+    by_group: dict[str, Counter] = {}
+    for r in rows:
+        by_group.setdefault(group_of(r), Counter())[label_of(r)] += 1
+    # A group's class is its rarest label overall, so scarce classes are spread first.
+    overall = Counter(label_of(r) for r in rows)
+    rng = np.random.default_rng(seed)
+    order = sorted(by_group)
+    rng.shuffle(order)
+    by_class: dict[str, list[str]] = {}
+    for g in order:
+        rarest = min(by_group[g], key=lambda c: (overall[c], c))
+        by_class.setdefault(rarest, []).append(g)
+    folds: dict[str, int] = {}
+    cursor = 0
+    for cls in sorted(by_class, key=lambda c: (overall[c], c)):
+        for g in by_class[cls]:
+            folds[g] = cursor % k
+            cursor += 1
+    return folds
+
+
+@dataclass
+class CVReport:
+    """Every session predicted once, by a model that never saw its group."""
+
+    n_test: int
+    n_groups: int
+    folds: int
+    macro_f1: float
+    rules_only_f1: float
+    majority_f1: float
+    per_class_f1: dict[str, float]
+    confusion: list[list[int]]
+    labels: list[str]
+    support: dict[str, int]
+    groups_per_class: dict[str, int]
+    # 95% bootstrap intervals over groups, on the difference to each baseline.
+    vs_rules_ci: list[float]
+    vs_majority_ci: list[float]
+    rule_settled: int = 0  # sessions the scanner rule decided, with no model involved
+    model_only_macro_f1: float | None = None  # the model alone, on the sessions the rule left
+
+    def beats_rules(self) -> bool:
+        return self.vs_rules_ci[0] > 0
+
+    def beats_majority(self) -> bool:
+        return self.vs_majority_ci[0] > 0
+
+
+def _macro(truth: list[str], pred: list[str], labels: list[str]) -> float:
+    return float(f1_score(truth, pred, labels=labels, average="macro", zero_division=0))
+
+
+def cross_validate(
+    rows: list[dict[str, Any]], k: int = 5, seed: int = 0, draws: int = 1000
+) -> CVReport | None:
+    """Hold out whole scenarios in rotation (phase 2 spec, section 5). Returns None when there
+    are too few groups to hold any out."""
+    rows = [r for r in rows if label_of(r) in CLASSES]
+    groups = sorted({group_of(r) for r in rows})
+    k = min(k, len(groups))
+    if k < 2:
+        return None
+    fold_of = assign_folds(rows, k, seed)
+    truth: list[str] = []
+    pred: list[str] = []
+    rules_only: list[str] = []
+    majority: list[str] = []
+    group: list[str] = []
+    settled: list[bool] = []
+    for fold in range(k):
+        held = [r for r in rows if fold_of[group_of(r)] == fold]
+        # Real recordings are for testing only (spec Q8): they are predicted, never trained on.
+        learn = [r for r in rows if fold_of[group_of(r)] != fold and not r.get("real")]
+        if not held or not learn:
+            continue
+        model = train([{**r, "actor_class": label_of(r)} for r in learn])
+        truth += [label_of(r) for r in held]
+        pred += model.predict(held)
+        rules_only += [rule_label(r) or model.majority for r in held]
+        majority += [model.majority] * len(held)
+        group += [group_of(r) for r in held]
+        settled += [rule_label(r) is not None for r in held]
+    labels = sorted(set(truth) | set(CLASSES))
+    t, p, ro, mj, g = (np.array(x) for x in (truth, pred, rules_only, majority, group))
+
+    # Sessions of one scenario are not independent, so the interval resamples scenarios.
+    rng = np.random.default_rng(seed)
+    index = {name: np.flatnonzero(g == name) for name in sorted(set(group))}
+    names = list(index)
+    d_rules, d_major = [], []
+    for _ in range(draws):
+        pick = np.concatenate([index[names[i]] for i in rng.integers(0, len(names), len(names))])
+        tt, pp = list(t[pick]), list(p[pick])
+        base = _macro(tt, pp, labels)
+        d_rules.append(base - _macro(tt, list(ro[pick]), labels))
+        d_major.append(base - _macro(tt, list(mj[pick]), labels))
+
+    per_class = f1_score(truth, pred, labels=labels, average=None, zero_division=0)
+    left = [i for i, s in enumerate(settled) if not s]
+    by_class_groups: dict[str, set[str]] = {}
+    for lab, grp in zip(truth, group, strict=True):
+        by_class_groups.setdefault(lab, set()).add(grp)
+    return CVReport(
+        n_test=len(truth),
+        n_groups=len(names),
+        folds=k,
+        macro_f1=_macro(truth, pred, labels),
+        rules_only_f1=_macro(truth, rules_only, labels),
+        majority_f1=_macro(truth, majority, labels),
+        per_class_f1={lab: round(float(v), 3) for lab, v in zip(labels, per_class, strict=True)},
+        confusion=confusion_matrix(truth, pred, labels=labels).tolist(),
+        labels=labels,
+        support=dict(sorted(Counter(truth).items())),
+        groups_per_class={c: len(v) for c, v in sorted(by_class_groups.items())},
+        vs_rules_ci=[round(float(x), 4) for x in np.percentile(d_rules, [2.5, 97.5])],
+        vs_majority_ci=[round(float(x), 4) for x in np.percentile(d_major, [2.5, 97.5])],
+        rule_settled=sum(settled),
+        model_only_macro_f1=(
+            _macro([truth[i] for i in left], [pred[i] for i in left], labels) if left else None
+        ),
+    )
+
+
 def check_no_forbidden_features() -> None:
     """A guard the tests call: no feature column is an identity, address, time or ground truth."""
     leaked = sorted(set(FEATURES) & FORBIDDEN)
@@ -144,17 +287,17 @@ def main(argv: list[str] | None = None) -> None:
     args = ap.parse_args(argv)
     check_no_forbidden_features()
     rows = load_rows(args.data)
-    train_rows = [r for r in rows if r["split"] == "train" and not r["real"]]
-    test_rows = [r for r in rows if r["split"] == "test"]
+    report = cross_validate(rows)
+    # The model that is saved is trained on everything that is not a real recording.
+    train_rows = [{**r, "actor_class": label_of(r)} for r in rows if not r.get("real")]
     model = train(train_rows)
-    report = evaluate(model, test_rows) if test_rows else None
     args.out.mkdir(parents=True, exist_ok=True)
     if model.booster is not None:
         model.booster.save_model(str(args.out / "actor_classifier.txt"))
     result = {
         "classes": model.classes,
         "n_train": len(train_rows),
-        "report": None if report is None else report.__dict__,
+        "report": None if report is None else asdict(report),
     }
     (args.out / "actor_classifier.metrics.json").write_text(json.dumps(result, indent=2) + "\n")
     print(json.dumps(result, indent=2))

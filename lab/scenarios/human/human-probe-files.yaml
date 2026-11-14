@@ -1,0 +1,16 @@
+# Human-paced twin of bot-probe-files: the same steps, typed key by key with pauses.
+# Only the actor differs, so the classifier has to tell the two apart by timing.
+id: human-probe-files
+actor: {class: human, timing: human, patience: 3}
+variant_of: bot-probe-files
+sessions:
+  - protocol: ssh
+    channel: shell
+    login: {user: root, guesses: 2, procedure: ssh-password-guessing}
+    steps:
+      - {id: s1, procedure: change-dir, with: {dir: /etc}}
+      - {id: s2, procedure: files-list-dir, with: {dir: /etc}}
+      - {id: s3, procedure: files-find-hidden, with: {dir: /root}}
+      - {id: s4, procedure: files-find-recent, with: {dir: /var/log}}
+      - {id: s5, procedure: files-which-ls}
+      - {id: s6, procedure: files-which-sh}

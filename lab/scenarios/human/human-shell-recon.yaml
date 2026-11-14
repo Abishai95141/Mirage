@@ -1,0 +1,17 @@
+# Human-paced twin of smoke-shell-recon: the same steps, typed key by key with pauses.
+# Only the actor differs, so the classifier has to tell the two apart by timing.
+id: human-shell-recon
+actor: {class: human, timing: human, patience: 3}
+variant_of: smoke-shell-recon
+sessions:
+  - protocol: ssh
+    channel: shell
+    login: {user: root, guesses: 4, procedure: ssh-password-guessing}
+    steps:
+      - {id: s1, procedure: sysinfo-uname-all, expect: "Linux"}
+      - {id: s2, procedure: owner-id, expect: "uid=0"}
+      - {id: s3, procedure: change-dir}
+      - {id: s4, procedure: files-list-dir}
+      - {id: s5, procedure: accounts-passwd, expect: "root:"}
+      - {id: s6, procedure: transfer-sftp-put}
+      - {id: s7, procedure: owner-w}

@@ -1,0 +1,20 @@
+# Human-paced twin of bot-cover-tracks: the same steps, typed key by key with pauses.
+# Only the actor differs, so the classifier has to tell the two apart by timing.
+id: human-cover-tracks
+actor: {class: human, timing: human, patience: 3}
+variant_of: bot-cover-tracks
+sessions:
+  - protocol: ssh
+    channel: shell
+    login: {user: root, guesses: 2, procedure: ssh-password-guessing}
+    steps:
+      - {id: s1, procedure: delete-single-file}
+      - {id: s2, procedure: delete-folder}
+      - {id: s3, procedure: delete-shred}
+      - {id: s4, procedure: delete-tool-dirs}
+      - {id: s5, procedure: clear-auth-log}
+      - {id: s6, procedure: clear-journal-vacuum}
+      - {id: s7, procedure: obf-base64-decode-file}
+      - {id: s8, procedure: obf-base64-pipe}
+      - {id: s9, procedure: obf-printf-decode}
+      - {id: s10, procedure: obf-gzip-file}

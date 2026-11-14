@@ -1,0 +1,15 @@
+# Human-paced twin of bot-persist-cron: the same steps, typed key by key with pauses.
+# Only the actor differs, so the classifier has to tell the two apart by timing.
+id: human-persist-cron
+actor: {class: human, timing: human, patience: 3}
+variant_of: bot-persist-cron
+sessions:
+  - protocol: ssh
+    channel: shell
+    login: {user: root, guesses: 2, procedure: ssh-password-guessing}
+    steps:
+      - {id: s1, procedure: cron-list-jobs}
+      - {id: s2, procedure: cron-add-reboot}
+      - {id: s3, procedure: cron-spool-append}
+      - {id: s4, procedure: cron-d-write}
+      - {id: s5, procedure: cron-daily-write}

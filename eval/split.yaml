@@ -7,7 +7,7 @@ manifest:
     dev: 41
     test: 41
   scenarios_by_split:
-    train: 26
+    train: 34
     dev: 4
     test: 4
   techniques_total: 41
@@ -247,6 +247,14 @@ scenarios:
   bot-stage-and-run: train
   demo-1-ssh-brute-miner: train
   demo-2-web-cred-mysql: train
+  human-cover-tracks: train
+  human-hunt-secrets: train
+  human-impact-miner: train
+  human-persist-access: train
+  human-persist-cron: train
+  human-probe-files: train
+  human-shell-recon: train
+  human-stage-and-run: train
   scanner-port-sweep: train
   scanner-web-app: train
   scanner-web-creds: train

@@ -25,15 +25,16 @@ Confirm every container is healthy (`make ps`). `tagger-worker` is new this phas
 `healthy`.
 
 ### 2. Freeze a balanced dataset
-The dev store is skewed (ad-hoc runs piled into train). Freeze a clean one from a single
-controlled run that exercises every split in balance:
+The store also holds sessions from tests and ad-hoc runs. Freeze the dataset from one controlled
+run, named by its ID, so nothing else enters it:
 ```
-make lab-run SCENARIOS=/lab/scenarios ARGS="--seed 1 --repeat 6"
+make lab-run SCENARIOS=/lab/scenarios ARGS="--seed 1 --repeat 6"   # prints the run ID
 ```
 Then wait for `sim-join` to finalise (`SELECT * FROM mirage.sim_runs FINAL` shows the run with
-`no_event = 0 AND mismatch = 0`), export, and commit the dataset as the CI fixture:
+`no_event = 0 AND mismatch = 0`; a run that is not settled is joined two minutes after it ends),
+export, and commit the dataset as the CI fixture:
 ```
-make dataset
+make dataset ARGS="--run <run ID>"        # --run may be repeated
 mkdir -p eval/datasets/gate2 && cp build/dataset/*.parquet build/dataset/*.json eval/datasets/gate2/
 make eval                       # writes eval/baselines/gate2.json
 git add eval/datasets/gate2 eval/baselines/gate2.json
@@ -42,16 +43,20 @@ Gate 2 tests 2 and 5: the run must show zero `no_event`/`mismatch`; the content 
 (`python -m eval.split check`) must stay clean.
 
 ### 3. The bandit explore run (Gate 2 test 8)
-Restart the policy service with exploration on, drive the explore range, confirm ≥300 explore
-sessions with propensities that match the observed action frequencies:
+One target switches exploration on, drives the explore range and switches it off again, and a
+second checks the logs:
 ```
-POLICY_EXPLORE=lab docker compose --env-file .env -f compose/docker-compose.yml up -d --force-recreate policy
-make lab-run SCENARIOS=/lab/scenarios ARGS="--mode explore --seed 2 --repeat 10"
+make lab-explore SCENARIOS=/lab/scenarios ARGS="--seed 2 --repeat 20"
+make explore-check ARGS="--since <UTC time the run started>"
 ```
-Check: `SELECT countIf(JSONExtractBool(payload,'explore')) FROM mirage.events WHERE source='policy'`
-≥ 300 sessions' worth of decisions; per context bucket the action frequencies agree with the
-logged `acting.probs` (chi-square); no masked action taken; nothing acted outside 198.19/16.
-Turn exploration back off afterwards (recreate `policy` with `POLICY_EXPLORE=`).
+Do not switch exploration on by hand and then call `make lab-run`: compose recreates the policy
+service from `.env` on that call and exploration is silently off again. That is what happened on
+the first live run (14 November 2026).
+
+`explore-check` asserts Gate 2 test 8: at least 300 explore sessions and 3,000 decisions; within
+each bucket the action counts agree with the logged `acting.probs` (chi-square); a uniform
+target's mean importance weight is 1 within its interval; no masked action; nothing explored
+outside 198.19/16, and only the rules acted elsewhere.
 
 ### 4. Re-run the gates
 ```
@@ -63,7 +68,7 @@ Gate 1 must still pass with the enriched decision record and the context work in
 
 ### 5. Model metrics on the frozen dataset (Gate 2 tests 6, 7)
 ```
-make classifier  # macro-F1 beats rules-only and majority on the held-out split
+make classifier  # held-out scenarios: macro-F1 beats rules-only and majority by more than its interval
 make tagger      # with the real rules: technique micro-F1 beats most-frequent, by source
 ```
 

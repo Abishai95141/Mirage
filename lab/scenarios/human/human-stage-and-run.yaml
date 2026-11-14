@@ -1,0 +1,13 @@
+# Human-paced twin of bot-stage-and-run: the same steps, typed key by key with pauses.
+# Only the actor differs, so the classifier has to tell the two apart by timing.
+id: human-stage-and-run
+actor: {class: human, timing: human, patience: 3}
+variant_of: bot-stage-and-run
+sessions:
+  - protocol: ssh
+    channel: shell
+    login: {user: root, guesses: 3, procedure: ssh-password-guessing}
+    steps:
+      - {id: s1, procedure: fetch-wget-url, expect: "saved", on_fail: continue}
+      - {id: s2, procedure: transfer-sftp-put}
+      - {id: s3, procedure: exec-chmod-run}
