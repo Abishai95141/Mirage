@@ -213,6 +213,8 @@ services:
       # The frozen split: the runner refuses a scenario that mixes splits, and refuses to run
       # at all without this file.
       - ../eval/split.yaml:/lab/split.yaml:ro
+      # The depth scenarios' own split (phase 3 spec, 3.0), read beside the phase 2 one.
+      - ../eval/split-depth.yaml:/lab/split-depth.yaml:ro
       - lab-out:/var/lib/mirage-lab
     depends_on: [lab-edge]
     mem_limit: 256m

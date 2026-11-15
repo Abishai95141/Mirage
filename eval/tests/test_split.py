@@ -179,3 +179,105 @@ def test_build_will_not_overwrite_a_frozen_split(capsys):
         sp.main(["build"])
     assert exc.value.code == 1
     assert "is frozen" in capsys.readouterr().out
+
+
+# ---------------------------------------------------------------- the depth split
+
+
+def _depth_world():
+    """Six scenarios in four groups: two pairs that share a procedure, and two on their own."""
+    rows = [
+        (f"d-p{i:02d}", f"T10{i:02d}", f"TA00{i % 4 + 1:02d}", f"word{i} --flag{i} {{{{file}}}}")
+        for i in range(12)
+    ]
+    catalogue = cat(*rows)
+    scenarios = [
+        scn("depth-a1", "d-p00", "d-p01"),
+        scn("depth-a2", "d-p01", "d-p02"),  # tied to a1 through d-p01
+        scn("depth-b1", "d-p03", "d-p04"),
+        scn("depth-b2", "d-p04", "d-p05"),  # tied to b1 through d-p04
+        scn("depth-c1", "d-p06", "d-p07", "d-p08"),
+        scn("depth-d1", "d-p09", "d-p10", "d-p11"),
+    ]
+    return catalogue, scenarios
+
+
+def test_the_depth_split_deals_whole_groups_into_two_even_halves():
+    from eval import split as sp
+
+    catalogue, scenarios = _depth_world()
+    split = sp.depth_build(catalogue, scenarios)
+    assert split.status == "provisional"
+    assert set(split.of_procedure.values()) == {"dev", "test"}  # nothing is trained on it
+    assert sorted(split.manifest["scenarios_by_half"].values()) == [3, 3]
+    # Scenarios that share a procedure are in the same half.
+    assert split.of_scenario["depth-a1"] == split.of_scenario["depth-a2"]
+    assert split.of_scenario["depth-b1"] == split.of_scenario["depth-b2"]
+    assert sp.depth_check(split, catalogue, scenarios).problems == []
+    # The deal does not depend on the order the files happen to be read in.
+    again = sp.depth_build(catalogue, list(reversed(scenarios)))
+    assert again.of_procedure == split.of_procedure
+
+
+def test_the_depth_check_finds_what_would_make_the_halves_unsound():
+    from eval import split as sp
+
+    catalogue, scenarios = _depth_world()
+    good = sp.depth_build(catalogue, scenarios)
+
+    def problems(**change) -> str:
+        split = sp.Split(
+            dict(good.of_procedure),
+            dict(good.of_scenario),
+            good.catalogue_sha256,
+            {},
+            "provisional",
+        )
+        for key, value in change.items():
+            setattr(split, key, value)
+        return " | ".join(sp.depth_check(split, catalogue, scenarios).problems)
+
+    assert "different depth catalogue" in problems(catalogue_sha256="0" * 64)
+    assert "status" in problems(status=None)
+    missing = {k: v for k, v in good.of_procedure.items() if k != "d-p00"}
+    assert "d-p00 is in no half" in problems(of_procedure=missing)
+    other = "dev" if good.of_procedure["d-p00"] == "test" else "test"
+    assert "depth-a1 mixes halves" in problems(of_procedure={**good.of_procedure, "d-p00": other})
+    assert "half is empty" in problems(of_procedure=dict.fromkeys(good.of_procedure, "dev"))
+    assert "not filed under" in problems(of_scenario={**good.of_scenario, "depth-c1": "nowhere"})
+
+
+def test_a_depth_test_command_that_phase_2_trains_on_is_reported_by_id_only():
+    from eval import split as sp
+
+    catalogue, scenarios = _depth_world()
+    split = sp.depth_build(catalogue, scenarios)
+    in_test = next(p for p, h in sorted(split.of_procedure.items()) if h == "test")
+    same_text = catalogue.procedures[in_test].template
+    phase2 = cat(
+        ("phase2-twin", "T1082", "TA0007", same_text),
+        ("phase2-other", "T1083", "TA0007", "ls {{dir}}"),
+    )
+    phase2_split = sp.Split({"phase2-twin": "train", "phase2-other": "test"}, {}, "x")
+    result = sp.depth_check(split, catalogue, scenarios, phase2, phase2_split)
+    assert result.problems == []  # reported, not refused
+    assert [(a, b) for a, _sa, b, _sb, _score in result.similar_pairs] == [(in_test, "phase2-twin")]
+    assert same_text not in str(result.similar_pairs)
+
+
+def test_the_depth_files_leave_the_phase_2_split_as_it_was():
+    # The checked-in files: the phase 2 set's hash is still the one the frozen split names,
+    # every depth scenario is in the depth split, and no scenario is in both.
+    from eval import split as sp
+    from mirage_lab.models import DEPTH, PHASE2
+
+    sets = sp.load_sets()
+    frozen = sp.Split.load()
+    assert sets[PHASE2][0].sha256 == frozen.catalogue_sha256
+    assert check(frozen, *sets[PHASE2]).ok
+    depth_catalogue, depth_scenarios = sets[DEPTH]
+    depth = sp.Split.load(sp.DEPTH_SPLIT_FILE)
+    assert sp.depth_check(depth, depth_catalogue, depth_scenarios, sets[PHASE2][0], frozen).ok
+    assert set(depth.of_scenario) == {sc.id for sc in depth_scenarios}
+    assert not set(depth.of_scenario) & set(frozen.of_scenario)
+    assert not set(depth.of_procedure) & set(frozen.of_procedure)

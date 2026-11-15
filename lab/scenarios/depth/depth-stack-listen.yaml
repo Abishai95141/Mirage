@@ -1,0 +1,73 @@
+# Generated depth scenario scaffold; gates annotated here.
+# Depth: which services listen, then what their answers admit. The db probes are
+# the valid-account rung: root over the local socket, as any root session has.
+# Gates: s1 sshd listening, s2 nginx (falls back to s5), s4 nginx -t,
+# s6 site enabled (falls back to s9), s8 redis answers (falls back to s11),
+# s11 SELECT 1 over the local socket; s12's pipeline sits behind that gate.
+# Exec channel. Needs no tool beyond the image: ss, nginx, redis-cli, mysqladmin
+# and mysql all ship with the listed packages.
+
+id: depth-stack-listen
+actor:
+  class: scripted_bot
+  timing: bot-fast
+  patience: 2
+sessions:
+- protocol: ssh
+  channel: exec
+  login:
+    user: root
+  steps:
+  - id: s1
+    procedure: d-ss-ssh
+    expect: ok0
+    on_fail: leave
+  - id: s2
+    procedure: d-ss-http
+    expect: ok0
+    on_fail:
+      goto: s5
+  - id: s3
+    procedure: d-ss-db
+    expect: ok0
+  - id: s4
+    procedure: d-nginx-t
+    expect: ok0
+    on_fail: leave
+  - id: s5
+    procedure: d-nginx-docroot
+    expect: ok0
+    on_fail:
+      goto: s8
+  - id: s6
+    procedure: d-nginx-site-on
+    expect: ok0
+    on_fail:
+      goto: s9
+  - id: s7
+    procedure: d-index-mentions
+    expect: ok0
+  - id: s8
+    procedure: d-redis-ping
+    expect: ok0
+    on_fail:
+      goto: s11
+  - id: s9
+    procedure: d-mysql-ping
+    expect: ok0
+    on_fail:
+      goto: s12
+  - id: s10
+    procedure: d-mysql-version
+    expect: ok0
+  - id: s11
+    procedure: d-mysql-select
+    expect: ok0
+    on_fail: leave
+  - id: s12
+    procedure: d-stack-pipe
+    expect: ok0
+    on_fail: leave
+  - id: s13
+    procedure: d-wwwuser
+    expect: ok0

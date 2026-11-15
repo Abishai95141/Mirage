@@ -1,0 +1,71 @@
+# Generated depth scenario scaffold; gates annotated here.
+# Depth: the rotation on the exec channel, with the consistency checks first.
+# Gates: s1 identity+passwd consistency (falls back to s4), s2 uptime shape,
+# s3 setuid fact, s4 capture (the rotate itself; falls back to s6),
+# m1 state (the login with the captured value; everything after depends on it),
+# m2 shadow fact.
+# Session 1 exec, session 2 shell.
+
+id: depth-rotate-exec
+actor:
+  class: scripted_bot
+  timing: bot-slow
+  patience: 1
+sessions:
+- protocol: ssh
+  channel: exec
+  login:
+    user: root
+  steps:
+  - id: s1
+    procedure: d-users-consistent
+    expect: ok0
+    on_fail:
+      goto: s4
+  - id: s2
+    procedure: d-uptime-quick
+    expect: ok0
+  - id: s3
+    procedure: d-passwd-setuid-c
+    expect: ok0
+    on_fail:
+      goto: s5
+  - id: s4
+    procedure: d-rootpw-set
+    expect: set-
+    on_fail: leave
+    capture:
+      name: rootpw
+      regex: set-([0-9a-f]{6,32})
+  - id: s5
+    procedure: d-history-note
+    expect: ok0
+- protocol: ssh
+  channel: shell
+  login:
+    user: root
+    password_from: rootpw
+  steps:
+  - id: m1
+    procedure: d-id-after
+    expect: root
+    on_fail: leave
+  - id: m2
+    procedure: d-shadow-after
+    expect: ok0
+    on_fail: leave
+  - id: m3
+    procedure: d-passwd-age
+    expect: ok0
+  - id: m4
+    procedure: d-rotate-pipe
+    expect: ok0
+    on_fail:
+      goto: m6
+  - id: m5
+    procedure: d-groupfile-root
+    expect: ok0
+  - id: m6
+    procedure: d-users-consistent
+    expect: ok0
+    on_fail: leave

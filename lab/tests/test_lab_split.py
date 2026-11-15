@@ -17,7 +17,15 @@ from pydantic import ValidationError
 from test_lab import BASE, CATALOGUE, GOOD, ROOT, Scripted, drive, scenario, steps_of
 
 from mirage_lab import cli, runner, safety
-from mirage_lab.models import DEFAULT_SPLIT, Catalogue, Scenario, check_input, lint, load_split
+from mirage_lab.models import (
+    DEFAULT_SPLIT,
+    DEPTH,
+    Catalogue,
+    Scenario,
+    check_input,
+    lint,
+    load_split,
+)
 from mirage_lab.runner import Settings
 from mirage_lab.slots import Slots
 from mirage_schema.groundtruth import parse_record
@@ -76,10 +84,14 @@ def scripted(monkeypatch):
 
 
 def test_the_frozen_split_loads_and_covers_the_catalogue():
+    # The phase 2 split and the depth split beside it: between them, every procedure.
     split = load_split(ROOT / "eval/split.yaml")
     assert set(split.procedures.values()) == {"train", "dev", "test"}
     assert set(CATALOGUE.procedures) <= set(split.procedures)
     assert split.scenarios and set(split.scenarios.values()) <= {"train", "dev", "test"}
+    # A depth procedure is held out: it is never a training procedure.
+    depth = {pid for pid, which in CATALOGUE.set_of.items() if which == DEPTH}
+    assert depth and {split.procedures[pid] for pid in depth} == {"dev", "test"}
 
 
 def test_a_broken_split_file_is_an_error_not_an_empty_split(tmp_path):

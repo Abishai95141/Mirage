@@ -77,11 +77,13 @@ def atomic_pairs(
     fitting on ``fit_splits``: every test a procedure outside those splits quotes is left
     out by its GUID, technique IDs the pinned ATT&CK version replaced are translated, and
     only the catalogue's techniques are kept."""
-    from mirage_lab.models import Catalogue
+    from mirage_lab.models import PHASE2, Catalogue
 
     if check_hash and hashlib.sha256(path.read_bytes()).hexdigest() != ATOMIC_SHA256:
         raise ChoiceError(f"{path} is not the pinned Atomic Red Team index")
-    catalogue = Catalogue.load(ROOT / "lab" / "catalogue")
+    # The phase 2 set only: the depth procedures are not training data and are in no part of
+    # the phase 2 split.
+    catalogue = Catalogue.load(ROOT / "lab" / "catalogue").only(PHASE2)
     split = yaml.safe_load((ROOT / "eval" / "split.yaml").read_text())
     of_proc = {pid: s for s, ids in split["procedures"].items() for pid in ids}
     held_out = atomic.guids_in(

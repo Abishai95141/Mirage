@@ -1,0 +1,81 @@
+# Depth procedures for the processes family.
+attack_version: "20.1"
+procedures:
+  - id: d-sleep-start
+    technique: T1059.004
+    tactic: TA0002
+    source: own
+    protocol: ssh
+    template: sleep 120 & echo ok$?
+  - id: d-jobs-running
+    technique: T1057
+    tactic: TA0007
+    source: own
+    protocol: ssh
+    template: jobs | grep -q Running && echo ok$?
+  - id: d-ps-sees-sleep
+    technique: T1057
+    tactic: TA0007
+    source: own
+    protocol: ssh
+    template: ps aux | grep -q "[s]leep 120" && echo ok$?
+  - id: d-pgrep-sleep
+    technique: T1057
+    tactic: TA0007
+    source: own
+    protocol: ssh
+    template: pgrep -f "sleep 120" >/dev/null && echo ok$?
+  - id: d-ps-header
+    technique: T1057
+    tactic: TA0007
+    source: own
+    protocol: ssh
+    template: ps aux | grep -qE "^USER +PID" && echo ok$?
+  - id: d-sshd-in-ps
+    technique: T1057
+    tactic: TA0007
+    source: own
+    protocol: ssh
+    template: ps aux | grep -q "[s]shd" && echo ok$?
+  - id: d-kill-sleep
+    technique: T1489
+    tactic: TA0040
+    source: own
+    protocol: ssh
+    template: kill %1 && echo ok$?
+  - id: d-jobs-gone
+    technique: T1057
+    tactic: TA0007
+    source: own
+    protocol: ssh
+    template: jobs | grep -q Running || echo no$?
+  - id: d-free-shape
+    technique: T1082
+    tactic: TA0007
+    source: own
+    protocol: ssh
+    template: free -m | grep -q "^Mem:" && echo ok$?
+  - id: d-uptime-shape
+    technique: T1082
+    tactic: TA0007
+    source: own
+    protocol: ssh
+    template: uptime | grep -q "load average" && echo ok$?
+  - id: d-vmstat-shape
+    technique: T1082
+    tactic: TA0007
+    source: own
+    protocol: ssh
+    template: vmstat 1 2 | grep -q swpd && echo ok$?
+  - id: d-passwd-setuid
+    technique: T1068
+    tactic: TA0004
+    source: own
+    protocol: ssh
+    template: ls -l /usr/bin/passwd | grep -q "rws" && echo ok$?
+  - id: d-nproc-check
+    technique: T1082
+    tactic: TA0007
+    source: own
+    protocol: ssh
+    template: test "$(nproc)" -ge 1 && echo ok$?

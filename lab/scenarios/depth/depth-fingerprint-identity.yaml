@@ -1,0 +1,63 @@
+# Generated depth scenario scaffold; gates annotated here.
+# Depth: identity consistency in a live shell, then the credential-file branch.
+# Gates: s1 shape, s2 consistency (root line in passwd; falls back to s5),
+# s3 fixed uid, s5 file mode (falls back to s8), s8 fact, s10 route.
+# Shell channel: output is checked between prompts.
+
+id: depth-fingerprint-identity
+actor:
+  class: scripted_bot
+  timing: bot-fast
+  patience: 3
+sessions:
+- protocol: ssh
+  channel: shell
+  login:
+    user: root
+  steps:
+  - id: s1
+    procedure: d-uname-linux
+    expect: Linux
+    on_fail: leave
+  - id: s2
+    procedure: d-passwd-root-line
+    expect: ok0
+    on_fail:
+      goto: s5
+  - id: s3
+    procedure: d-nobody-uid
+    expect: ok0
+    on_fail: leave
+  - id: s4
+    procedure: d-cpuinfo-shape
+    expect: ok0
+  - id: s5
+    procedure: d-stat-passwd-mode
+    expect: ok0
+    on_fail:
+      goto: s8
+  - id: s6
+    procedure: d-shadow-group
+    expect: ok0
+  - id: s7
+    procedure: d-meminfo-shape
+    expect: ok0
+  - id: s8
+    procedure: d-os-release
+    expect: ok0
+    on_fail: leave
+  - id: s9
+    procedure: d-kernel-msg
+    expect: ok0
+  - id: s10
+    procedure: d-env-file-peek
+    expect: ok0
+    on_fail:
+      goto: s12
+  - id: s11
+    procedure: d-facts-pipe
+    expect: ok0
+  - id: s12
+    procedure: d-tmp-sticky
+    expect: ok0
+    on_fail: leave

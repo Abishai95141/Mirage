@@ -1,0 +1,60 @@
+# Generated depth scenario scaffold; gates annotated here.
+# Depth: the application's own secrets first, then account databases.
+# Gates: s1 state of the rendered .env, s2 wp-config (falls back to s5),
+# s4 the maintenance-credential file, s5 shadow readability (falls back to s8),
+# s7 daemon config route.
+# Read-only; the planted files are what a deployment's profile renders.
+
+id: depth-cred-app
+actor:
+  class: scripted_bot
+  timing: bot-fast
+  patience: 2
+sessions:
+- protocol: ssh
+  channel: shell
+  login:
+    user: root
+  steps:
+  - id: s1
+    procedure: d-env-grep-db
+    expect: ok0
+    on_fail:
+      goto: s5
+  - id: s2
+    procedure: d-wpconfig-cred
+    expect: ok0
+    on_fail:
+      goto: s5
+  - id: s3
+    procedure: d-find-env
+    expect: ok0
+    on_fail:
+      goto: s6
+  - id: s4
+    procedure: d-debincnf-cred
+    expect: ok0
+    on_fail: leave
+  - id: s5
+    procedure: d-shadow-readable
+    expect: ok0
+    on_fail:
+      goto: s8
+  - id: s6
+    procedure: d-shadow-root-line
+    expect: ok0
+  - id: s7
+    procedure: d-myconf-struct
+    expect: ok0
+    on_fail:
+      goto: s9
+  - id: s8
+    procedure: d-redis-conf-port
+    expect: ok0
+  - id: s9
+    procedure: d-sshconf-port
+    expect: ok0
+  - id: s10
+    procedure: d-cred-pipe
+    expect: ok0
+    on_fail: leave

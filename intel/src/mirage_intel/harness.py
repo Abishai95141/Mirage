@@ -161,14 +161,23 @@ def load_choices(path: Path = tagserve.CHOICES) -> dict[str, Any]:
 
 def integrity(ds: Dataset, result: Result, allow_unhealthy: bool = False) -> None:
     """The checks of spec section 5 that a dataset on disk can be held to."""
-    from mirage_lab.models import Catalogue, Scenario
+    from mirage_lab.models import PHASE2, Catalogue, Scenario
 
     if str(ROOT) not in sys.path:
         sys.path.insert(0, str(ROOT))  # the split module lives at the repository root
     import eval.split as split_mod
 
-    catalogue = Catalogue.load(ROOT / "lab" / "catalogue")
-    scenarios = [Scenario.load(p) for p in sorted((ROOT / "lab" / "scenarios").rglob("*.yaml"))]
+    # A dataset is checked against the catalogue it was exported from. One made before the
+    # depth procedures existed, or from phase 2 scenarios alone, was exported against the
+    # phase 2 set: its hash is that set's, and the phase 2 split is what it is filed under.
+    full = Catalogue.load(ROOT / "lab" / "catalogue")
+    exported = ds.manifest.get("catalogue_sha256")
+    catalogue = full if exported == full.sha256 else full.only(PHASE2)
+    scenarios = [
+        sc
+        for p in sorted((ROOT / "lab" / "scenarios").rglob("*.yaml"))
+        if full.set_of_scenario(sc := Scenario.load(p)) == PHASE2
+    ]
     split = split_mod.Split.load(ROOT / "eval" / "split.yaml")
 
     # Checks 2 and 3 on the catalogue: no scenario mixes splits, no near-identical command

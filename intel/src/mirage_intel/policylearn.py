@@ -285,6 +285,21 @@ def _arrays(
     return r, w, q_logged, q_target
 
 
+def terms(
+    policy: Policy,
+    rows: list[dict[str, Any]],
+    reward: str,
+    model: LinearPolicy | None = None,
+    smooth: float = 0.0,
+) -> dict[str, np.ndarray]:
+    """One policy's per-decision pieces of the three estimators: the reward, the importance
+    weight, and the reward model's prediction for the logged action and under the policy.
+    ``compare`` sums them over a set of decisions. An analysis that needs them per session or
+    per fold (a cross-fitted comparison) takes them from here, so there is one definition."""
+    r, w, q_logged, q_target = _arrays(policy, rows, reward, model, smooth)
+    return {"reward": r, "weight": w, "q_logged": q_logged, "q_target": q_target}
+
+
 def _point(r, w, ql, qt, weight) -> tuple[float, float, float]:
     total = weight.sum()
     ips = float((weight * w * r).sum() / total)

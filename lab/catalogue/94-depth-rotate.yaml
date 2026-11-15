@@ -1,0 +1,57 @@
+# Depth procedures for the rotate family.
+attack_version: "20.1"
+procedures:
+  - id: d-rootpw-set
+    technique: T1098
+    tactic: TA0003
+    source: own
+    protocol: ssh
+    template: echo 'root:{{hex}}' | chpasswd >/dev/null && echo set-{{hex}}
+  - id: d-id-after
+    technique: T1078
+    tactic: TA0001
+    source: own
+    protocol: ssh
+    template: id -un
+  - id: d-users-consistent
+    technique: T1087.001
+    tactic: TA0007
+    source: own
+    protocol: ssh
+    template: test "$(id -un)" = root && grep -q "^root:" /etc/passwd && echo ok$?
+  - id: d-rotate-pipe
+    technique: T1059.004
+    tactic: TA0002
+    source: own
+    protocol: ssh
+    template: whoami | grep -q root && echo ok$?
+  - id: d-shadow-after
+    technique: T1003.008
+    tactic: TA0006
+    source: own
+    protocol: ssh
+    template: grep -qE "^root:[^*!]" /etc/shadow && echo ok$?
+  - id: d-passwd-age
+    technique: T1098
+    tactic: TA0003
+    source: own
+    protocol: ssh
+    template: 'grep "^root:" /etc/shadow | cut -d: -f3 | grep -qE "^[0-9]+$" && echo ok$?'
+  - id: d-history-note
+    technique: T1059.004
+    tactic: TA0002
+    source: own
+    protocol: ssh
+    template: printf "pw-rotate\n" >> /root/.bash_history && echo ok$?
+  - id: d-groupfile-root
+    technique: T1087.001
+    tactic: TA0007
+    source: own
+    protocol: ssh
+    template: grep -q "^root:" /etc/group && echo ok$?
+  - id: d-uptime-quick
+    technique: T1082
+    tactic: TA0007
+    source: own
+    protocol: ssh
+    template: uptime -p | grep -q "up " && echo ok$?

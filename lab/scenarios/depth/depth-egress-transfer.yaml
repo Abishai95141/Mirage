@@ -1,0 +1,62 @@
+# Generated depth scenario scaffold; gates annotated here.
+# Depth: try to move data out and to a neighbour; the no-egress failures are the
+# checks. Uses bash's /dev/tcp plus ssh/scp from openssh-client.
+# Gates: s1 fetch fails (falls back to s4), s3 exfil pipe fails, s5 sweep,
+# s6 resolution fails (falls back to s9), s8 interface shape, s10 scp fails.
+
+id: depth-egress-transfer
+actor:
+  class: scripted_bot
+  timing: bot-fast
+  patience: 1
+sessions:
+- protocol: ssh
+  channel: exec
+  login:
+    user: root
+  steps:
+  - id: s1
+    procedure: d-fetch-attempt
+    expect: no[0-9]+
+    on_fail:
+      goto: s4
+  - id: s2
+    procedure: d-tcp-probe-fail
+    expect: no[0-9]+
+  - id: s3
+    procedure: d-tar-exfil-fail
+    expect: no[0-9]+
+    on_fail:
+      goto: s5
+  - id: s4
+    procedure: d-port-sweep
+    expect: sweep[0-9]+
+    on_fail: leave
+  - id: s5
+    procedure: d-dns-fail
+    expect: no[0-9]+
+    on_fail:
+      goto: s8
+  - id: s6
+    procedure: d-route-shape
+    expect: ok0
+  - id: s7
+    procedure: d-resolv-shape
+    expect: ok0
+  - id: s8
+    procedure: d-iface-shape
+    expect: ok0
+    on_fail:
+      goto: s10
+  - id: s9
+    procedure: d-scp-remote-fail
+    expect: no[0-9]+
+    on_fail:
+      goto: s11
+  - id: s10
+    procedure: d-keyscan-fail
+    expect: no[0-9]+
+  - id: s11
+    procedure: d-tcp-probe-fail
+    expect: no[0-9]+
+    on_fail: leave

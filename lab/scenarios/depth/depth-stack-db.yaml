@@ -1,0 +1,67 @@
+# Generated depth scenario scaffold; gates annotated here.
+# Depth: the database half. The local-socket probes are the valid-account rung.
+# Gates: s1 mysqladmin ping (falls back to s5), s3 SELECT VERSION(),
+# s5 SELECT 1 as the fixed local account (falls back to s8), s7 redis set+get
+# state pair, s8 sshd still listening (consistency with s1's earlier answer).
+# Exec channel.
+
+id: depth-stack-db
+actor:
+  class: scripted_bot
+  timing: bot-slow
+  patience: 2
+sessions:
+- protocol: ssh
+  channel: exec
+  login:
+    user: root
+  steps:
+  - id: s1
+    procedure: d-mysql-ping
+    expect: ok0
+    on_fail:
+      goto: s5
+  - id: s2
+    procedure: d-ss-db
+    expect: ok0
+  - id: s3
+    procedure: d-mysql-version
+    expect: ok0
+    on_fail:
+      goto: s5
+  - id: s4
+    procedure: d-myconf-struct
+    expect: ok0
+  - id: s5
+    procedure: d-mysql-select
+    expect: ok0
+    on_fail:
+      goto: s8
+  - id: s6
+    procedure: d-debincnf-cred
+    expect: ok0
+  - id: s7
+    procedure: d-redis-set-get
+    expect: ok0
+    on_fail:
+      goto: s9
+  - id: s8
+    procedure: d-ss-ssh
+    expect: ok0
+    on_fail: leave
+  - id: s9
+    procedure: d-redis-ping
+    expect: ok0
+    on_fail: leave
+  - id: s10
+    procedure: d-tar-www
+    expect: ok0
+    on_fail:
+      goto: s12
+  - id: s11
+    procedure: d-stack-pipe
+    expect: ok0
+  - id: s12
+    procedure: d-wwwuser
+    expect: ok0
+    on_fail: leave

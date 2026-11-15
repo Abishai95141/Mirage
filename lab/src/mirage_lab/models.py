@@ -12,7 +12,7 @@ import re
 from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Literal
+from typing import Any, Literal
 
 import yaml
 from pydantic import BaseModel, ConfigDict, Field, model_validator
@@ -30,6 +30,19 @@ TECHNIQUE_IN_TEXT = re.compile(r"\bTA?\d{4}(\.\d{3})?\b")
 MARKER_WORDS = ("mirage", "atomic", "scenario", "selftest", "gate1", "honeypot", "cowrie")
 
 Protocol = Literal["ssh", "http", "redis", "mysql"]
+
+# The catalogue holds two sets of procedures. The phase 2 set is frozen: its hash pins the
+# phase 2 split and every dataset made from it. Phase 3's depth procedures (spec 3.0) live in
+# files of their own, are hashed apart and get a split of their own, so adding or correcting
+# one never unpins anything of phase 2.
+PHASE2, DEPTH = "phase2", "depth"
+DEPTH_FILE = re.compile(r"^9\d*-depth-.+\.yaml$")  # lab/catalogue/9*-depth-*.yaml
+DEPTH_SPLIT = "split-depth.yaml"  # beside the phase 2 split file
+
+
+def set_of_file(name: str) -> str:
+    """The catalogue set a file belongs to, from its name."""
+    return DEPTH if DEPTH_FILE.match(name) else PHASE2
 
 
 class _Strict(BaseModel):
@@ -72,7 +85,9 @@ class Procedure(_Strict):
 class Catalogue(_Strict):
     attack_version: str
     procedures: dict[str, Procedure]
-    sha256: str
+    sha256: str  # of every file loaded
+    set_of: dict[str, str] = Field(default_factory=dict)  # procedure ID -> PHASE2 or DEPTH
+    set_sha256: dict[str, str] = Field(default_factory=dict)  # each set, hashed as the whole is
 
     @classmethod
     def load(cls, directory: Path) -> Catalogue:
@@ -80,12 +95,16 @@ class Catalogue(_Strict):
         procedures: dict[str, Procedure] = {}
         versions: set[str] = set()
         digest = hashlib.sha256()
+        by_set: dict[str, Any] = {}
+        set_of: dict[str, str] = {}
         files = sorted(directory.glob("*.yaml"))
         if not files:
             raise ValueError(f"no catalogue files in {directory}")
         for path in files:
             raw = path.read_bytes()
-            digest.update(path.name.encode() + b"\0" + raw)
+            which = set_of_file(path.name)
+            for d in (digest, by_set.setdefault(which, hashlib.sha256())):
+                d.update(path.name.encode() + b"\0" + raw)
             doc = yaml.safe_load(raw) or {}
             versions.add(str(doc.get("attack_version", "")))
             for item in doc.get("procedures", []):
@@ -93,9 +112,38 @@ class Catalogue(_Strict):
                 if proc.id in procedures:
                     raise ValueError(f"{path.name}: procedure {proc.id} is defined twice")
                 procedures[proc.id] = proc
+                set_of[proc.id] = which
         if len(versions) != 1 or "" in versions:
             raise ValueError(f"catalogue files must all name one attack_version, got {versions}")
-        return cls(attack_version=versions.pop(), procedures=procedures, sha256=digest.hexdigest())
+        return cls(
+            attack_version=versions.pop(),
+            procedures=procedures,
+            sha256=digest.hexdigest(),
+            set_of=set_of,
+            set_sha256={k: d.hexdigest() for k, d in by_set.items()},
+        )
+
+    def only(self, which: str) -> Catalogue:
+        """One set as a catalogue of its own, with that set's hash. The phase 2 set's hash is
+        what the catalogue's was before any depth file existed."""
+        if which not in self.set_sha256:
+            raise KeyError(f"the catalogue has no {which} procedures")
+        keep = {pid: p for pid, p in self.procedures.items() if self.set_of[pid] == which}
+        return Catalogue(
+            attack_version=self.attack_version,
+            procedures=keep,
+            sha256=self.set_sha256[which],
+            set_of={pid: which for pid in keep},
+            set_sha256={which: self.set_sha256[which]},
+        )
+
+    def set_of_scenario(self, scenario: Scenario) -> str | None:
+        """The set a scenario's procedures come from, or ``None`` if it mixes sets or names a
+        procedure the catalogue does not have (the lint reports both)."""
+        used = {st.procedure for s in scenario.sessions for st in s.steps}
+        used |= {s.login.procedure for s in scenario.sessions if s.login.procedure}
+        sets = {self.set_of.get(pid) for pid in used}
+        return sets.pop() if len(sets) == 1 else None
 
 
 class Goto(_Strict):
@@ -213,20 +261,25 @@ class Split:
 
 
 def load_split(path: Path) -> Split:
-    """Read the split file. A missing file raises ``OSError``: the caller decides whether that
-    is a warning (lint) or a refusal (the runner)."""
-    text = path.read_text()
+    """Read the split file, and the depth split beside it if there is one (its halves are
+    ``dev`` and ``test``, held out as the phase 2 ones are). A missing phase 2 file raises
+    ``OSError``: the caller decides whether that is a warning (lint) or a refusal (the
+    runner)."""
     procedures: dict[str, str] = {}
-    try:
-        doc = yaml.safe_load(text)
-        for split, ids in doc["procedures"].items():
-            for pid in ids:
-                if pid in procedures:
-                    raise ValueError(f"{path}: procedure {pid} is in two splits")
-                procedures[pid] = str(split)
-        scenarios = {str(k): str(v) for k, v in (doc.get("scenarios") or {}).items()}
-    except (yaml.YAMLError, KeyError, TypeError, AttributeError) as exc:
-        raise ValueError(f"{path} is not a split file: no procedures by split") from exc
+    scenarios: dict[str, str] = {}
+    depth = path.with_name(DEPTH_SPLIT)
+    for file in (path, depth) if depth.is_file() else (path,):
+        text = file.read_text()
+        try:
+            doc = yaml.safe_load(text)
+            for split, ids in doc["procedures"].items():
+                for pid in ids:
+                    if pid in procedures:
+                        raise ValueError(f"{file}: procedure {pid} is in two splits")
+                    procedures[pid] = str(split)
+            scenarios.update({str(k): str(v) for k, v in (doc.get("scenarios") or {}).items()})
+        except (yaml.YAMLError, KeyError, TypeError, AttributeError) as exc:
+            raise ValueError(f"{file} is not a split file: no procedures by split") from exc
     return Split(procedures, scenarios)
 
 
@@ -241,6 +294,7 @@ def lint(
     frozen split by procedure; ``scenario_ids`` are the IDs of every other scenario."""
     out: list[str] = []
     used_splits: set[str] = set()
+    used_sets: set[str] = set()
     # An input must not carry any procedure's or scenario's ID, not only its own step's: a
     # command that names another procedure hands a reader the label just the same.
     forbidden = tuple(dict.fromkeys((*catalogue.procedures, scenario.id, *scenario_ids)))
@@ -310,9 +364,14 @@ def lint(
                 if step.capture.name in captured | capturing:
                     out.append(f"{at}: capture name {step.capture.name!r} is already used")
                 capturing.add(step.capture.name)
+            used_sets.add(catalogue.set_of.get(proc.id, PHASE2))
             if splits is not None:
                 used_splits.add(splits.get(proc.id, "unassigned"))
         captured |= capturing
+    # A depth scenario and a phase 2 one are split apart and held out apart. A scenario that
+    # drew on both would tie the two splits together through its procedures.
+    if len(used_sets) > 1:
+        out.append(f"{scenario.id}: mixes catalogue sets {sorted(used_sets)}")
     if splits is not None:
         if "unassigned" in used_splits:
             out.append(f"{scenario.id}: uses a procedure with no split")

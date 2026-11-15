@@ -1,0 +1,87 @@
+# Depth procedures for the files family.
+attack_version: "20.1"
+procedures:
+  - id: d-workdir-make
+    technique: T1059.004
+    tactic: TA0002
+    source: own
+    protocol: ssh
+    template: mkdir -p /var/tmp/{{word}}-w && echo ok$?
+  - id: d-secret-write
+    technique: T1059.004
+    tactic: TA0002
+    source: own
+    protocol: ssh
+    template: printf "{{hex}}\n" > /var/tmp/{{word}}-w/{{file}}.txt && echo ok$?
+  - id: d-secret-readback
+    technique: T1005
+    tactic: TA0009
+    source: own
+    protocol: ssh
+    template: grep -q "{{hex}}" /var/tmp/{{word}}-w/{{file}}.txt && echo ok$?
+  - id: d-file-sha
+    technique: T1059.004
+    tactic: TA0002
+    source: own
+    protocol: ssh
+    template: sha256sum /var/tmp/{{word}}-w/{{file}}.txt | grep -qE "^[0-9a-f]{64}" && echo ok$?
+  - id: d-file-listed
+    technique: T1083
+    tactic: TA0007
+    source: own
+    protocol: ssh
+    template: ls /var/tmp/{{word}}-w | grep -q "{{file}}" && echo ok$?
+  - id: d-file-found
+    technique: T1083
+    tactic: TA0007
+    source: own
+    protocol: ssh
+    template: find /var/tmp/{{word}}-w -type f | grep -q "{{file}}" && echo ok$?
+  - id: d-copy-same
+    technique: T1074.001
+    tactic: TA0009
+    source: own
+    protocol: ssh
+    template: cp /etc/hostname /var/tmp/{{word}}-w/host.copy && cmp -s /etc/hostname /var/tmp/{{word}}-w/host.copy && echo ok$?
+  - id: d-hostcopy-read
+    technique: T1005
+    tactic: TA0009
+    source: own
+    protocol: ssh
+    template: grep -q "$(cat /etc/hostname)" /var/tmp/{{word}}-w/host.copy && echo ok$?
+  - id: d-tar-roundtrip
+    technique: T1560.001
+    tactic: TA0009
+    source: own
+    protocol: ssh
+    template: tar czf /var/tmp/{{word}}-w/a.tgz -C /var/tmp/{{word}}-w {{file}}.txt && tar xzf /var/tmp/{{word}}-w/a.tgz -C /tmp && cmp -s /var/tmp/{{word}}-w/{{file}}.txt /tmp/{{file}}.txt && echo ok$?
+  - id: d-gzip-roundtrip
+    technique: T1560.001
+    tactic: TA0009
+    source: own
+    protocol: ssh
+    template: gzip -kc /var/tmp/{{word}}-w/{{file}}.txt > /var/tmp/{{word}}-w/{{file}}.gz && zcat /var/tmp/{{word}}-w/{{file}}.gz | grep -q "{{hex}}" && echo ok$?
+  - id: d-stage-move
+    technique: T1074.001
+    tactic: TA0009
+    source: own
+    protocol: ssh
+    template: mv /var/tmp/{{word}}-w/host.copy /var/tmp/{{word}}-w/host.moved && test -f /var/tmp/{{word}}-w/host.moved && echo ok$?
+  - id: d-file-count
+    technique: T1083
+    tactic: TA0007
+    source: own
+    protocol: ssh
+    template: test "$(ls /var/tmp/{{word}}-w | wc -l)" -ge 3 && echo ok$?
+  - id: d-cd-workdir
+    technique: T1059.004
+    tactic: TA0002
+    source: own
+    protocol: ssh
+    template: cd /var/tmp/{{word}}-w && echo ok$?
+  - id: d-pwd-holds
+    technique: T1059.004
+    tactic: TA0002
+    source: own
+    protocol: ssh
+    template: pwd | grep -q "{{word}}-w" && echo ok$?

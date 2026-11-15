@@ -1,0 +1,67 @@
+# Generated depth scenario scaffold; gates annotated here.
+# Depth: observation-heavy pass with the kill behind the last gate.
+# Gates: s1 header shape (falls back to s4), s2 the session's own sshd in ps,
+# s4 setuid fact (falls back to s7), s6 vmstat shape, s8 state (jobs),
+# s9 state (ps still sees it), s11 kill, s12 gone.
+
+id: depth-proc-observe
+actor:
+  class: human
+  timing: human
+  patience: 1
+sessions:
+- protocol: ssh
+  channel: shell
+  login:
+    user: root
+  steps:
+  - id: s1
+    procedure: d-ps-header
+    expect: ok0
+    on_fail:
+      goto: s4
+  - id: s2
+    procedure: d-sshd-in-ps
+    expect: ok0
+    on_fail: leave
+  - id: s3
+    procedure: d-nproc-check
+    expect: ok0
+  - id: s4
+    procedure: d-passwd-setuid
+    expect: ok0
+    on_fail:
+      goto: s7
+  - id: s5
+    procedure: d-free-shape
+    expect: ok0
+  - id: s6
+    procedure: d-vmstat-shape
+    expect: ok0
+    on_fail:
+      goto: s8
+  - id: s7
+    procedure: d-sleep-start
+    expect: ok0
+    on_fail: leave
+  - id: s8
+    procedure: d-jobs-running
+    expect: ok0
+    on_fail:
+      goto: s10
+  - id: s9
+    procedure: d-ps-sees-sleep
+    expect: ok0
+    on_fail: leave
+  - id: s10
+    procedure: d-pgrep-sleep
+    expect: ok0
+    on_fail:
+      goto: s12
+  - id: s11
+    procedure: d-kill-sleep
+    expect: ok0
+  - id: s12
+    procedure: d-jobs-gone
+    expect: no[0-9]+
+    on_fail: leave

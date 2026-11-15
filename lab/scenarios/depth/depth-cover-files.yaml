@@ -1,0 +1,70 @@
+# Generated depth scenario scaffold; gates annotated here.
+# Depth: write, then erase, then prove the erasure; a renamed binary must run.
+# Gates: s2 state (the log has the marker), s4 state (it is empty after the
+# clear), s6 state (the copy is gone after shred), s8 state (the renamed binary
+# runs; falls back to s11), s10 impersonation timestamp, s12 setuid fact.
+# Shell channel.
+
+id: depth-cover-files
+actor:
+  class: scripted_bot
+  timing: bot-fast
+  patience: 2
+sessions:
+- protocol: ssh
+  channel: shell
+  login:
+    user: root
+  steps:
+  - id: s1
+    procedure: d-log-make
+    expect: ok0
+    on_fail: leave
+  - id: s2
+    procedure: d-log-has
+    expect: ok0
+    on_fail:
+      goto: s5
+  - id: s3
+    procedure: d-log-clear
+    expect: ok0
+    on_fail:
+      goto: s5
+  - id: s4
+    procedure: d-log-empty
+    expect: ok0
+    on_fail: leave
+  - id: s5
+    procedure: d-temp-make
+    expect: ok0
+    on_fail:
+      goto: s8
+  - id: s6
+    procedure: d-shred-file
+    expect: ok0
+    on_fail:
+      goto: s8
+  - id: s7
+    procedure: d-file-gone
+    expect: ok0
+    on_fail: leave
+  - id: s8
+    procedure: d-masq-copy
+    expect: ok0
+    on_fail:
+      goto: s11
+  - id: s9
+    procedure: d-masq-runs
+    expect: ok0
+    on_fail:
+      goto: s12
+  - id: s10
+    procedure: d-touch-ref
+    expect: ok0
+  - id: s11
+    procedure: d-passwd-setuid-c
+    expect: ok0
+  - id: s12
+    procedure: d-keep-make
+    expect: ok0
+    on_fail: leave

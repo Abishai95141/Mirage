@@ -5,7 +5,7 @@ from __future__ import annotations
 import yaml
 
 from mirage_lab import generate
-from mirage_lab.models import Catalogue, Scenario, lint
+from mirage_lab.models import Catalogue, Scenario, lint, load_split
 from mirage_lab.slots import Slots
 
 ROOT = generate.ROOT
@@ -38,15 +38,16 @@ def test_every_procedure_is_exercised_by_some_scenario():
 
 
 def test_a_generated_scenario_stays_inside_one_split():
-    of_procedure = {pid: s for s, ids in _split()["procedures"].items() for pid in ids}
-    assigned = _split()["scenarios"]
+    # Both splits are read: the phase 2 one and the depth one beside it. Every scenario's
+    # procedures sit in one part of one of them, and the scenario is filed under that part.
+    split = load_split(ROOT / "eval" / "split.yaml")
     for sc in _all():
         procs = {st.procedure for s in sc.sessions for st in s.steps}
         procs |= {s.login.procedure for s in sc.sessions if s.login.procedure}
-        assert len({of_procedure[p] for p in procs}) == 1, sc.id
-        assert assigned[sc.id] == of_procedure[next(iter(procs))], sc.id
+        assert len({split.procedures[p] for p in procs}) == 1, sc.id
+        assert split.scenarios[sc.id] == split.procedures[next(iter(procs))], sc.id
         if sc.id.startswith("cover-"):
-            assert sc.id.split("-")[1] == assigned[sc.id]
+            assert sc.id.split("-")[1] == split.scenarios[sc.id]
 
 
 def test_a_human_twin_differs_from_its_original_only_in_the_actor():

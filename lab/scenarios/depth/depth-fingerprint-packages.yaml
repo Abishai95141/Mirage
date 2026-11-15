@@ -1,0 +1,63 @@
+# Generated depth scenario scaffold; gates annotated here.
+# Depth: the package and service-config route, with an identity fallback.
+# Gates: s1 recon (ssh package), s2 version (nginx; falls back to s5),
+# s5 fact (/etc/issue), s6 group fact (falls back to s9), s9 setuid route.
+# Read-only; exec channel.
+
+id: depth-fingerprint-packages
+actor:
+  class: human
+  timing: human
+  patience: 1
+sessions:
+- protocol: ssh
+  channel: exec
+  login:
+    user: root
+  steps:
+  - id: s1
+    procedure: d-ssh-pkg
+    expect: ok0
+    on_fail:
+      goto: s5
+  - id: s2
+    procedure: d-nginx-version
+    expect: ok0
+    on_fail:
+      goto: s5
+  - id: s3
+    procedure: d-nginx-config
+    expect: ok0
+  - id: s4
+    procedure: d-sshd-config-test
+    expect: ok0
+  - id: s5
+    procedure: d-issue-check
+    expect: ok0
+    on_fail: leave
+  - id: s6
+    procedure: d-shadow-group
+    expect: ok0
+    on_fail:
+      goto: s9
+  - id: s7
+    procedure: d-tmp-sticky
+    expect: ok0
+  - id: s8
+    procedure: d-nobody-uid
+    expect: ok0
+  - id: s9
+    procedure: d-find-setuid
+    expect: ok0
+    on_fail:
+      goto: s12
+  - id: s10
+    procedure: d-lsmod-shape
+    expect: ok0
+  - id: s11
+    procedure: d-facts-pipe
+    expect: ok0
+  - id: s12
+    procedure: d-env-file-peek
+    expect: ok0
+    on_fail: leave

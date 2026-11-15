@@ -1,0 +1,75 @@
+# Generated depth scenario scaffold; gates annotated here.
+# Depth: immutable attributes and the erase route around them. chattr on the
+# container's overlay filesystem may refuse; the route continues either way.
+# Gates: s2 state (marker in the log), s4 state (empty), s6 state (file gone),
+# s8 immutable set (falls back to s11), s9 attribute removed and file deleted,
+# s11 renamed binary runs.
+
+id: depth-cover-attrs
+actor:
+  class: scripted_bot
+  timing: bot-slow
+  patience: 3
+sessions:
+- protocol: ssh
+  channel: shell
+  login:
+    user: root
+  steps:
+  - id: s1
+    procedure: d-log-make
+    expect: ok0
+    on_fail: leave
+  - id: s2
+    procedure: d-log-has
+    expect: ok0
+    on_fail:
+      goto: s5
+  - id: s3
+    procedure: d-log-clear
+    expect: ok0
+  - id: s4
+    procedure: d-log-empty
+    expect: ok0
+    on_fail: leave
+  - id: s5
+    procedure: d-temp-make
+    expect: ok0
+    on_fail:
+      goto: s8
+  - id: s6
+    procedure: d-file-delete
+    expect: ok0
+    on_fail:
+      goto: s8
+  - id: s7
+    procedure: d-file-gone
+    expect: ok0
+    on_fail: leave
+  - id: s8
+    procedure: d-keep-make
+    expect: ok0
+    on_fail:
+      goto: s11
+  - id: s9
+    procedure: d-chattr-add
+    expect: ok0
+    on_fail:
+      goto: s11
+  - id: s10
+    procedure: d-chattr-rm
+    expect: ok0
+    on_fail:
+      goto: s12
+  - id: s11
+    procedure: d-masq-copy
+    expect: ok0
+    on_fail:
+      goto: s13
+  - id: s12
+    procedure: d-masq-runs
+    expect: ok0
+  - id: s13
+    procedure: d-touch-ref
+    expect: ok0
+    on_fail: leave

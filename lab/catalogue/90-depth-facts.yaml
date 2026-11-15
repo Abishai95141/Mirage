@@ -1,0 +1,129 @@
+# Depth procedures for the facts family.
+attack_version: "20.1"
+procedures:
+  - id: d-uname-linux
+    technique: T1082
+    tactic: TA0007
+    source: own
+    protocol: ssh
+    template: uname -s
+  - id: d-hostname-agree
+    technique: T1082
+    tactic: TA0007
+    source: own
+    protocol: ssh
+    template: test "$(hostname)" = "$(cat /etc/hostname)" && echo ok$?
+  - id: d-uname-agree
+    technique: T1082
+    tactic: TA0007
+    source: own
+    protocol: ssh
+    template: test "$(uname -n)" = "$(hostname)" && echo ok$?
+  - id: d-os-release
+    technique: T1082
+    tactic: TA0007
+    source: own
+    protocol: ssh
+    template: grep -q "Debian GNU/Linux 12" /etc/os-release && echo ok$?
+  - id: d-issue-check
+    technique: T1082
+    tactic: TA0007
+    source: own
+    protocol: ssh
+    template: grep -q "Debian GNU/Linux 12" /etc/issue && echo ok$?
+  - id: d-meminfo-shape
+    technique: T1082
+    tactic: TA0007
+    source: own
+    protocol: ssh
+    template: grep -q "^MemTotal:" /proc/meminfo && echo ok$?
+  - id: d-lsmod-shape
+    technique: T1082
+    tactic: TA0007
+    source: own
+    protocol: ssh
+    template: lsmod | grep -q '^Module ' && echo ok$?
+  - id: d-cpuinfo-shape
+    technique: T1082
+    tactic: TA0007
+    source: own
+    protocol: ssh
+    template: grep -q "^processor" /proc/cpuinfo && echo ok$?
+  - id: d-kernel-msg
+    technique: T1082
+    tactic: TA0007
+    source: own
+    protocol: ssh
+    template: grep -q "Linux version" /proc/version && echo ok$?
+  - id: d-ssh-pkg
+    technique: T1592.001
+    tactic: TA0043
+    source: own
+    protocol: ssh
+    template: dpkg -l openssh-server 2>/dev/null | grep -q "^ii" && echo ok$?
+  - id: d-nginx-version
+    technique: T1592.001
+    tactic: TA0043
+    source: own
+    protocol: ssh
+    template: nginx -v 2>&1 | grep -q "nginx/1.22" && echo ok$?
+  - id: d-nginx-config
+    technique: T1007
+    tactic: TA0007
+    source: own
+    protocol: ssh
+    template: nginx -t 2>&1 | grep -q "syntax is ok" && echo ok$?
+  - id: d-sshd-config-test
+    technique: T1007
+    tactic: TA0007
+    source: own
+    protocol: ssh
+    template: sshd -t && echo ok$?
+  - id: d-passwd-root-line
+    technique: T1087.001
+    tactic: TA0007
+    source: own
+    protocol: ssh
+    template: grep -q "^root:x:0:0:" /etc/passwd && echo ok$?
+  - id: d-nobody-uid
+    technique: T1087.001
+    tactic: TA0007
+    source: own
+    protocol: ssh
+    template: test "$(id -u nobody)" = 65534 && echo ok$?
+  - id: d-stat-passwd-mode
+    technique: T1083
+    tactic: TA0007
+    source: own
+    protocol: ssh
+    template: test "$(stat -c %a /etc/passwd)" = 644 && echo ok$?
+  - id: d-tmp-sticky
+    technique: T1083
+    tactic: TA0007
+    source: own
+    protocol: ssh
+    template: test "$(stat -c %a /tmp)" = 1777 && echo ok$?
+  - id: d-shadow-group
+    technique: T1069.001
+    tactic: TA0007
+    source: own
+    protocol: ssh
+    template: test "$(stat -c %G /etc/shadow)" = shadow && echo ok$?
+  - id: d-env-file-peek
+    technique: T1552.001
+    tactic: TA0006
+    source: own
+    protocol: ssh
+    template: test -s /var/www/html/.env && grep -q "=" /var/www/html/.env && echo ok$?
+  - id: d-facts-pipe
+    technique: T1059.004
+    tactic: TA0002
+    source: own
+    protocol: ssh
+    template: printf "probe\n" | grep -q probe && echo ok$?
+  - id: d-find-setuid
+    technique: T1068
+    tactic: TA0004
+    source: own
+    protocol: ssh
+    template: find /usr/bin -perm -4000 -type f 2>/dev/null | grep -q . && echo ok$?

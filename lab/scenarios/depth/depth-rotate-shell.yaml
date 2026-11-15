@@ -1,0 +1,62 @@
+# Generated depth scenario scaffold; gates annotated here.
+# Depth: rotate root's password, then log back in with the value the decoy
+# itself echoed (capture -> password_from). If the change does not hold, the
+# second session's login fails and everything after it is skipped.
+# Gates: s1 capture+expect, s2 state (root has a real hash), s4 route,
+# m1 state (the login with the captured value), m2 consistency, m5 fact.
+# Session 1 shell, session 2 exec. chpasswd ships in the base system.
+
+id: depth-rotate-shell
+actor:
+  class: scripted_bot
+  timing: bot-fast
+  patience: 2
+sessions:
+- protocol: ssh
+  channel: shell
+  login:
+    user: root
+  steps:
+  - id: s1
+    procedure: d-rootpw-set
+    expect: set-
+    on_fail: leave
+    capture:
+      name: rootpw
+      regex: set-([0-9a-f]{6,32})
+  - id: s2
+    procedure: d-shadow-after
+    expect: ok0
+    on_fail: leave
+  - id: s3
+    procedure: d-passwd-age
+    expect: ok0
+  - id: s4
+    procedure: d-history-note
+    expect: ok0
+    on_fail: leave
+- protocol: ssh
+  channel: exec
+  login:
+    user: root
+    password_from: rootpw
+  steps:
+  - id: m1
+    procedure: d-id-after
+    expect: root
+    on_fail: leave
+  - id: m2
+    procedure: d-users-consistent
+    expect: ok0
+    on_fail:
+      goto: m4
+  - id: m3
+    procedure: d-rotate-pipe
+    expect: ok0
+  - id: m4
+    procedure: d-groupfile-root
+    expect: ok0
+  - id: m5
+    procedure: d-passwd-age
+    expect: ok0
+    on_fail: leave

@@ -1,0 +1,82 @@
+# Generated depth scenario scaffold; gates annotated here.
+# Depth: the shell-history arc - create it, prove it, clear it, prove it empty.
+# Gates: s2 state (the history has the marker), s4 state (empty after clear),
+# s5 state (the log arc; falls back to s8), s8 shred (falls back to s11),
+# s10 renamed binary runs, s13 setuid (falls back to s15), s15 immutable attr.
+
+id: depth-cover-logs
+actor:
+  class: human
+  timing: human
+  patience: 1
+sessions:
+- protocol: ssh
+  channel: shell
+  login:
+    user: root
+  steps:
+  - id: s1
+    procedure: d-history-make
+    expect: ok0
+    on_fail: leave
+  - id: s2
+    procedure: d-history-has
+    expect: ok0
+    on_fail:
+      goto: s4
+  - id: s3
+    procedure: d-history-clear
+    expect: ok0
+    on_fail:
+      goto: s4
+  - id: s4
+    procedure: d-history-empty
+    expect: ok0
+    on_fail: leave
+  - id: s5
+    procedure: d-log-make
+    expect: ok0
+    on_fail:
+      goto: s8
+  - id: s6
+    procedure: d-log-clear
+    expect: ok0
+  - id: s7
+    procedure: d-log-empty
+    expect: ok0
+    on_fail:
+      goto: s9
+  - id: s8
+    procedure: d-temp-make
+    expect: ok0
+    on_fail:
+      goto: s11
+  - id: s9
+    procedure: d-file-delete
+    expect: ok0
+    on_fail:
+      goto: s11
+  - id: s10
+    procedure: d-file-gone
+    expect: ok0
+  - id: s11
+    procedure: d-masq-copy
+    expect: ok0
+    on_fail:
+      goto: s13
+  - id: s12
+    procedure: d-masq-runs
+    expect: ok0
+    on_fail: leave
+  - id: s13
+    procedure: d-passwd-setuid-c
+    expect: ok0
+    on_fail:
+      goto: s15
+  - id: s14
+    procedure: d-keep-make
+    expect: ok0
+  - id: s15
+    procedure: d-chattr-add
+    expect: ok0
+    on_fail: leave

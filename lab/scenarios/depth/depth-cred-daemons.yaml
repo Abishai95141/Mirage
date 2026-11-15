@@ -1,0 +1,59 @@
+# Generated depth scenario scaffold; gates annotated here.
+# Depth: what the service configurations admit, in one-shot commands.
+# Gates: s1 sshd_config port line, s2 nginx user, s4 my.cnf structure
+# (falls back to s6), s6 redis port (falls back to s8), s8 shadow root line.
+# Exec channel.
+
+id: depth-cred-daemons
+actor:
+  class: human
+  timing: human
+  patience: 1
+sessions:
+- protocol: ssh
+  channel: exec
+  login:
+    user: root
+  steps:
+  - id: s1
+    procedure: d-sshconf-port
+    expect: ok0
+    on_fail:
+      goto: s4
+  - id: s2
+    procedure: d-nginx-conf-user
+    expect: ok0
+    on_fail:
+      goto: s4
+  - id: s3
+    procedure: d-cred-pipe
+    expect: ok0
+  - id: s4
+    procedure: d-myconf-struct
+    expect: ok0
+    on_fail:
+      goto: s6
+  - id: s5
+    procedure: d-debincnf-cred
+    expect: ok0
+    on_fail: leave
+  - id: s6
+    procedure: d-redis-conf-port
+    expect: ok0
+    on_fail:
+      goto: s8
+  - id: s7
+    procedure: d-group-shadow
+    expect: ok0
+  - id: s8
+    procedure: d-shadow-root-line
+    expect: ok0
+    on_fail:
+      goto: s10
+  - id: s9
+    procedure: d-listuser-enum
+    expect: ok0
+  - id: s10
+    procedure: d-shadow-readable
+    expect: ok0
+    on_fail: leave

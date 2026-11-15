@@ -1,0 +1,71 @@
+# Generated depth scenario scaffold; gates annotated here.
+# Depth: full lifecycle - start, observe twice, stop, prove absence.
+# Gates: s2 state (jobs), s3 state (ps; falls back to s6), s5 pgrep,
+# s7 state change (kill; falls back to s9), s8 state (gone),
+# s10 uptime shape, s12 setuid.
+
+id: depth-proc-lifecycle
+actor:
+  class: scripted_bot
+  timing: bot-slow
+  patience: 3
+sessions:
+- protocol: ssh
+  channel: shell
+  login:
+    user: root
+  steps:
+  - id: s1
+    procedure: d-sleep-start
+    expect: ok0
+    on_fail: leave
+  - id: s2
+    procedure: d-jobs-running
+    expect: ok0
+    on_fail:
+      goto: s6
+  - id: s3
+    procedure: d-ps-sees-sleep
+    expect: ok0
+    on_fail:
+      goto: s6
+  - id: s4
+    procedure: d-sshd-in-ps
+    expect: ok0
+  - id: s5
+    procedure: d-pgrep-sleep
+    expect: ok0
+    on_fail:
+      goto: s7
+  - id: s6
+    procedure: d-kill-sleep
+    expect: ok0
+    on_fail:
+      goto: s9
+  - id: s7
+    procedure: d-jobs-gone
+    expect: no[0-9]+
+    on_fail: leave
+  - id: s8
+    procedure: d-vmstat-shape
+    expect: ok0
+  - id: s9
+    procedure: d-free-shape
+    expect: ok0
+    on_fail:
+      goto: s11
+  - id: s10
+    procedure: d-uptime-shape
+    expect: ok0
+  - id: s11
+    procedure: d-nproc-check
+    expect: ok0
+    on_fail:
+      goto: s13
+  - id: s12
+    procedure: d-passwd-setuid
+    expect: ok0
+  - id: s13
+    procedure: d-ps-header
+    expect: ok0
+    on_fail: leave

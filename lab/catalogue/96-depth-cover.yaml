@@ -1,0 +1,117 @@
+# Depth procedures for the cover family.
+attack_version: "20.1"
+procedures:
+  - id: d-log-make
+    technique: T1059.004
+    tactic: TA0002
+    source: own
+    protocol: ssh
+    template: printf "log-{{hex}}\n" > /var/tmp/{{word}}-c/app.log && echo ok$?
+  - id: d-log-has
+    technique: T1059.004
+    tactic: TA0002
+    source: own
+    protocol: ssh
+    template: grep -q "log-{{hex}}" /var/tmp/{{word}}-c/app.log && echo ok$?
+  - id: d-log-clear
+    technique: T1685.006
+    tactic: TA0112
+    source: own
+    protocol: ssh
+    template: cat /dev/null > /var/tmp/{{word}}-c/app.log && echo ok$?
+  - id: d-log-empty
+    technique: T1685.006
+    tactic: TA0112
+    source: own
+    protocol: ssh
+    template: test ! -s /var/tmp/{{word}}-c/app.log && echo ok$?
+  - id: d-temp-make
+    technique: T1059.004
+    tactic: TA0002
+    source: own
+    protocol: ssh
+    template: cp /etc/hostname /var/tmp/{{word}}-c/{{file}}.txt && echo ok$?
+  - id: d-file-delete
+    technique: T1070.004
+    tactic: TA0005
+    source: own
+    protocol: ssh
+    template: rm -f /var/tmp/{{word}}-c/{{file}}.txt && echo ok$?
+  - id: d-file-gone
+    technique: T1070.004
+    tactic: TA0005
+    source: own
+    protocol: ssh
+    template: test ! -e /var/tmp/{{word}}-c/{{file}}.txt && echo ok$?
+  - id: d-shred-file
+    technique: T1070.004
+    tactic: TA0005
+    source: own
+    protocol: ssh
+    template: shred -u /var/tmp/{{word}}-c/{{file}}.txt 2>/dev/null && echo ok$?
+  - id: d-history-make
+    technique: T1059.004
+    tactic: TA0002
+    source: own
+    protocol: ssh
+    template: printf "cmd-{{hex}}\n" > /root/.bash_history && echo ok$?
+  - id: d-history-has
+    technique: T1059.004
+    tactic: TA0002
+    source: own
+    protocol: ssh
+    template: grep -q "cmd-{{hex}}" /root/.bash_history && echo ok$?
+  - id: d-history-clear
+    technique: T1070.003
+    tactic: TA0005
+    source: own
+    protocol: ssh
+    template: cat /dev/null > /root/.bash_history && echo ok$?
+  - id: d-history-empty
+    technique: T1070.003
+    tactic: TA0005
+    source: own
+    protocol: ssh
+    template: test ! -s /root/.bash_history && echo ok$?
+  - id: d-keep-make
+    technique: T1059.004
+    tactic: TA0002
+    source: own
+    protocol: ssh
+    template: printf "keep\n" > /var/tmp/{{word}}-c/keep.txt && echo ok$?
+  - id: d-chattr-add
+    technique: T1222.002
+    tactic: TA0112
+    source: own
+    protocol: ssh
+    template: chattr +i /var/tmp/{{word}}-c/keep.txt && lsattr /var/tmp/{{word}}-c/keep.txt | grep -q "i" && echo ok$?
+  - id: d-chattr-rm
+    technique: T1222.002
+    tactic: TA0112
+    source: own
+    protocol: ssh
+    template: chattr -i /var/tmp/{{word}}-c/keep.txt && rm -f /var/tmp/{{word}}-c/keep.txt && test ! -e /var/tmp/{{word}}-c/keep.txt && echo ok$?
+  - id: d-masq-copy
+    technique: T1036.005
+    tactic: TA0005
+    source: own
+    protocol: ssh
+    template: cp /bin/date /var/tmp/{{word}}-c/{{word2}}-d && echo ok$?
+  - id: d-masq-runs
+    technique: T1036.005
+    tactic: TA0005
+    source: own
+    protocol: ssh
+    template: /var/tmp/{{word}}-c/{{word2}}-d | grep -qE "^[A-Z][a-z]{2} " && echo ok$?
+  - id: d-touch-ref
+    technique: T1036.005
+    tactic: TA0005
+    source: own
+    protocol: ssh
+    template: touch -r /etc/hostname /var/tmp/{{word}}-c/{{word2}}-d && echo ok$?
+  - id: d-passwd-setuid-c
+    technique: T1068
+    tactic: TA0004
+    source: own
+    protocol: ssh
+    template: find /usr/bin -maxdepth 1 -perm -4000 -name "passwd" | grep -q . && echo ok$?

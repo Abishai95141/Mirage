@@ -17,6 +17,13 @@ content.
 ``eval/split.yaml`` is the frozen result. It is written once and then read by everything
 downstream; rebuilding it is deliberate and rare, because a model's scores only compare across
 runs that share a split.
+
+Phase 3's depth scenarios (phase 3 spec, 3.0 and section 5) are a second, independent split,
+``eval/split-depth.yaml``. The phase 2 file is frozen on its set of procedure IDs, so a new
+procedure cannot join it; depth procedures live in catalogue files of their own and are dealt
+into a dev half and a test half here, by the same component rule. That file is
+``provisional`` until every scenario's checks have been confirmed on the reference host, and
+``frozen`` after: a provisional split may be rebuilt, a frozen one only with ``--force``.
 """
 
 from __future__ import annotations
@@ -31,11 +38,13 @@ from pathlib import Path
 
 import yaml
 
-from mirage_lab.models import Catalogue, Scenario
+from mirage_lab.models import DEPTH, PHASE2, Catalogue, Scenario
 
 ROOT = Path(__file__).resolve().parents[1]
 SPLIT_FILE = ROOT / "eval" / "split.yaml"
+DEPTH_SPLIT_FILE = ROOT / "eval" / "split-depth.yaml"
 SPLITS = ("train", "dev", "test")
+HALVES = ("dev", "test")  # the depth split has no training part: nothing is fitted on it
 RATIO = {"train": 0.60, "dev": 0.20, "test": 0.20}
 SIM_THRESHOLD = 0.9
 
@@ -71,13 +80,19 @@ class Split:
     of_scenario: dict[str, str]
     catalogue_sha256: str
     manifest: dict = field(default_factory=dict)
+    status: str | None = None  # the depth split only: provisional or frozen
 
-    def write(self, path: Path = SPLIT_FILE) -> None:
-        by_split: dict[str, list[str]] = {s: [] for s in SPLITS}
+    def write(self, path: Path = SPLIT_FILE, names: tuple[str, ...] = SPLITS) -> None:
+        by_split: dict[str, list[str]] = {s: [] for s in names}
         for pid, split in sorted(self.of_procedure.items()):
             by_split[split].append(pid)
-        doc = {
-            "# ": "Frozen by `python -m eval.split build`. Edit via that, not by hand.",
+        made_by = "depth-build" if self.status else "build"
+        doc: dict = {
+            "# ": f"Written by `python -m eval.split {made_by}`. Edit via that, not by hand.",
+        }
+        if self.status:
+            doc["status"] = self.status
+        doc |= {
             "catalogue_sha256": self.catalogue_sha256,
             "manifest": self.manifest,
             "procedures": by_split,
@@ -90,7 +105,11 @@ class Split:
         doc = yaml.safe_load(path.read_text())
         of_proc = {pid: s for s, ids in doc["procedures"].items() for pid in ids}
         return cls(
-            of_proc, doc.get("scenarios", {}), doc["catalogue_sha256"], doc.get("manifest", {})
+            of_proc,
+            doc.get("scenarios", {}),
+            doc["catalogue_sha256"],
+            doc.get("manifest", {}),
+            doc.get("status"),
         )
 
 
@@ -249,10 +268,150 @@ def check(split: Split, catalogue: Catalogue, scenarios: list[Scenario]) -> Chec
     return r
 
 
+def load_sets(root: Path = ROOT) -> dict[str, tuple[Catalogue, list[Scenario]]]:
+    """Each catalogue set with the scenarios written from it. A scenario that mixes sets
+    belongs to neither and is the lint's to report."""
+    full = Catalogue.load(root / "lab" / "catalogue")
+    scenarios = [Scenario.load(p) for p in sorted((root / "lab" / "scenarios").rglob("*.yaml"))]
+    return {
+        which: (full.only(which), [sc for sc in scenarios if full.set_of_scenario(sc) == which])
+        for which in full.set_sha256
+    }
+
+
 def _load() -> tuple[Catalogue, list[Scenario]]:
-    cat = Catalogue.load(ROOT / "lab" / "catalogue")
-    scn = [Scenario.load(p) for p in sorted((ROOT / "lab" / "scenarios").rglob("*.yaml"))]
-    return cat, scn
+    """What the phase 2 split is made from and checked against: the phase 2 set alone."""
+    return load_sets()[PHASE2]
+
+
+# ---------------------------------------------------------------- the depth split
+
+
+def depth_build(catalogue: Catalogue, scenarios: list[Scenario]) -> Split:
+    """Deal the depth scenarios into a dev half and a test half.
+
+    The unit is the component, as in ``build``: scenarios that share a procedure, or use
+    near-identical ones, stay together. Every way of dealing the components into two halves
+    is tried, and the one kept has the most even scenario counts, then the most tactics
+    present in both halves, then the most techniques present in both. What is still tied is
+    settled by a hash of the IDs, so the result does not depend on file order."""
+    components, scen_procs = _components(catalogue, scenarios)
+    procs = catalogue.procedures
+    if len(components) > 20:
+        raise ValueError(f"{len(components)} components: too many to deal exhaustively")
+    comp_of = {pid: i for i, comp in enumerate(components) for pid in comp}
+    n_scen = [0] * len(components)
+    for ps in scen_procs.values():
+        if ps:
+            n_scen[comp_of[next(iter(ps))]] += 1
+    tactics = [{procs[p].tactic for p in c if procs[p].tactic} for c in components]
+    techniques = [{procs[p].technique for p in c if procs[p].technique} for c in components]
+
+    def both(sets: list[set[str]], test: list[int], dev: list[int]) -> int:
+        return len(set().union(*(sets[i] for i in test)) & set().union(*(sets[i] for i in dev)))
+
+    best: tuple | None = None
+    for mask in range(1, 2 ** len(components) - 1):
+        test = [i for i in range(len(components)) if mask >> i & 1]
+        dev = [i for i in range(len(components)) if not mask >> i & 1]
+        key = (
+            -abs(sum(n_scen[i] for i in test) - sum(n_scen[i] for i in dev)),
+            both(tactics, test, dev),
+            both(techniques, test, dev),
+            _rank("|".join(sorted(p for i in test for p in components[i]))),
+        )
+        if best is None or key > best[0]:
+            best = (key, test)
+    if best is None:
+        raise ValueError("the depth scenarios form one component: they cannot be divided")
+    in_test = set(best[1])
+    of_proc = {
+        pid: "test" if i in in_test else "dev" for i, comp in enumerate(components) for pid in comp
+    }
+    of_scenario = {sc_id: of_proc[next(iter(ps))] for sc_id, ps in scen_procs.items() if ps}
+
+    def held(sets: list[set[str]], half: str) -> set[str]:
+        want = in_test if half == "test" else set(range(len(components))) - in_test
+        return set().union(*(sets[i] for i in want))
+
+    manifest = {
+        "procedures": len(of_proc),
+        "components": len(components),
+        "by_half": {h: sum(1 for v in of_proc.values() if v == h) for h in HALVES},
+        "scenarios_by_half": {h: sum(1 for v in of_scenario.values() if v == h) for h in HALVES},
+        "tactics_by_half": {h: len(held(tactics, h)) for h in HALVES},
+        "tactics_in_both": len(held(tactics, "dev") & held(tactics, "test")),
+        "techniques_in_both": len(held(techniques, "dev") & held(techniques, "test")),
+    }
+    return Split(of_proc, of_scenario, catalogue.sha256, manifest, status="provisional")
+
+
+def depth_check(
+    split: Split,
+    catalogue: Catalogue,
+    scenarios: list[Scenario],
+    phase2: Catalogue | None = None,
+    phase2_split: Split | None = None,
+) -> CheckResult:
+    """The depth split against the depth catalogue and scenarios. ``similar_pairs`` lists
+    depth procedures of the test half that are near-identical to a phase 2 training or dev
+    procedure, by ID and score only. Those are reported, not refused: an ordinary command
+    belongs in both, and what must not happen (an answer prepared from a test scenario) is
+    guarded where the answers are made, by their inventory source (phase 3 spec, section 5)."""
+    r = CheckResult()
+    procs = catalogue.procedures
+    if split.status not in ("provisional", "frozen"):
+        r.problems.append(f"the depth split's status is {split.status!r}")
+    if split.catalogue_sha256 != catalogue.sha256:
+        r.problems.append(
+            "the depth split was made against a different depth catalogue; "
+            + ("rebuild it (depth-build)" if split.status != "frozen" else "it is frozen")
+        )
+    for pid in procs:
+        if split.of_procedure.get(pid) not in HALVES:
+            r.problems.append(f"depth procedure {pid} is in no half")
+    for pid in sorted(set(split.of_procedure) - set(procs)):
+        r.problems.append(f"the depth split names {pid}, which the depth catalogue lacks")
+    _, scen_procs = _components(catalogue, scenarios)
+    for sc_id, ps in sorted(scen_procs.items()):
+        halves = {split.of_procedure.get(p) for p in ps}
+        if len(halves) > 1:
+            r.problems.append(f"depth scenario {sc_id} mixes halves {sorted(map(str, halves))}")
+        elif split.of_scenario.get(sc_id) not in halves:
+            r.problems.append(f"depth scenario {sc_id} is not filed under its procedures' half")
+    for h in HALVES:
+        if not any(v == h for v in split.of_procedure.values()):
+            r.problems.append(f"the {h} half is empty")
+    toks = {pid: tokens(normalise(p.template)) for pid, p in procs.items() if p.template}
+    ids = sorted(pid for pid in toks if pid in split.of_procedure)
+    across = 0
+    for i, a in enumerate(ids):
+        for b in ids[i + 1 :]:
+            differ = split.of_procedure[a] != split.of_procedure[b]
+            if differ and jaccard(toks[a], toks[b]) >= SIM_THRESHOLD:
+                across += 1
+    if across:
+        r.problems.append(f"{across} near-identical depth command(s) span the two halves")
+    if phase2 is not None and phase2_split is not None:
+        other = {
+            pid: tokens(normalise(p.template)) for pid, p in phase2.procedures.items() if p.template
+        }
+        for a in ids:
+            if split.of_procedure[a] != "test":
+                continue
+            for b, tb in sorted(other.items()):
+                where = phase2_split.of_procedure.get(b)
+                if where in ("train", "dev"):
+                    score = jaccard(toks[a], tb)
+                    if score >= SIM_THRESHOLD:
+                        r.similar_pairs.append((a, "depth test", b, where, round(score, 3)))
+    techs = {
+        h: {procs[p].technique for p, v in split.of_procedure.items() if v == h and p in procs}
+        for h in HALVES
+    }
+    r.coverage = len((techs["dev"] & techs["test"]) - {None})
+    r.techniques_total = len((techs["dev"] | techs["test"]) - {None})
+    return r
 
 
 def extend(
@@ -311,8 +470,15 @@ def main(argv: list[str] | None = None) -> None:
         "--force", action="store_true", help="replace a frozen split (moves procedures)"
     )
     sub.add_parser("extend", help="assign new scenarios without moving any procedure")
-    sub.add_parser("check", help="verify the frozen split (IDs and scores only)")
+    sub.add_parser("check", help="verify both splits (IDs and scores only)")
+    p_depth = sub.add_parser(
+        "depth-build", help="deal the depth scenarios into halves (eval/split-depth.yaml)"
+    )
+    p_depth.add_argument("--force", action="store_true", help="replace a frozen depth split")
+    sub.add_parser("depth-freeze", help="mark the depth split frozen, once checked on the host")
     args = ap.parse_args(argv)
+    if args.cmd in ("depth-build", "depth-freeze"):
+        sys.exit(_depth_command(args))
     cat, scn = _load()
     if args.cmd == "extend":
         split, problems = extend(Split.load(), cat, scn)
@@ -352,7 +518,72 @@ def main(argv: list[str] | None = None) -> None:
         print("PROBLEM", p)
     for a, sa, b, sb, score in result.similar_pairs[:20]:
         print(f"  similar: {a} ({sa}) ~ {b} ({sb})  {score}")
-    sys.exit(0 if result.ok else 1)
+    sys.exit(0 if result.ok and _depth_report(split) else 1)
+
+
+def _depth_report(phase2_split: Split) -> bool:
+    """Check the depth split, if the catalogue has depth procedures. True when it is sound."""
+    sets = load_sets()
+    if DEPTH not in sets:
+        return True
+    cat, scn = sets[DEPTH]
+    if not DEPTH_SPLIT_FILE.exists():
+        print(f"PROBLEM {len(cat.procedures)} depth procedures and no depth split: depth-build")
+        return False
+    split = Split.load(DEPTH_SPLIT_FILE)
+    result = depth_check(split, cat, scn, sets[PHASE2][0], phase2_split)
+    print(
+        f"depth ({split.status})",
+        {h: sum(1 for v in split.of_procedure.values() if v == h) for h in HALVES},
+        "scenarios",
+        {h: sum(1 for v in split.of_scenario.values() if v == h) for h in HALVES},
+    )
+    print("depth techniques in both halves", result.coverage, "of", result.techniques_total)
+    for p in result.problems:
+        print("PROBLEM", p)
+    if result.similar_pairs:
+        print(
+            f"  {len(result.similar_pairs)} depth test procedure(s) are near-identical to a "
+            "phase 2 train or dev procedure (reported, not refused):"
+        )
+    for a, _sa, b, sb, score in result.similar_pairs[:20]:
+        print(f"    {a} ~ {b} ({sb})  {score}")
+    return result.ok
+
+
+def _depth_command(args: argparse.Namespace) -> int:
+    sets = load_sets()
+    if DEPTH not in sets:
+        print("the catalogue has no depth procedures")
+        return 1
+    cat, scn = sets[DEPTH]
+    existing = Split.load(DEPTH_SPLIT_FILE) if DEPTH_SPLIT_FILE.exists() else None
+    if args.cmd == "depth-freeze":
+        if existing is None:
+            print("there is no depth split to freeze: depth-build")
+            return 1
+        problems = depth_check(existing, cat, scn).problems
+        for p in problems:
+            print("PROBLEM", p)
+        if problems:
+            return 1
+        existing.status = "frozen"
+        existing.write(DEPTH_SPLIT_FILE, HALVES)
+        print(f"froze {DEPTH_SPLIT_FILE.relative_to(ROOT)}")
+        return 0
+    if existing is not None and existing.status == "frozen" and not args.force:
+        print(f"{DEPTH_SPLIT_FILE.relative_to(ROOT)} is frozen; --force replaces it")
+        return 1
+    split = depth_build(cat, scn)
+    problems = depth_check(split, cat, scn).problems
+    for p in problems:
+        print("PROBLEM", p)
+    if problems:
+        return 1
+    split.write(DEPTH_SPLIT_FILE, HALVES)
+    print(f"wrote {DEPTH_SPLIT_FILE.relative_to(ROOT)} (provisional)")
+    print(" ", split.manifest)
+    return 0
 
 
 if __name__ == "__main__":

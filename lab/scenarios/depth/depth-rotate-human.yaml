@@ -1,0 +1,66 @@
+# Generated depth scenario scaffold; gates annotated here.
+# Depth: a human-paced rotation; the second login rides on the capture.
+# Gates: s2 capture+expect (falls back to s4), s3 shadow, s4 route,
+# m1 the login itself, m2 consistency (falls back to m5), m3 fact, m5 state.
+# Both sessions shell.
+
+id: depth-rotate-human
+actor:
+  class: human
+  timing: human
+  patience: 3
+sessions:
+- protocol: ssh
+  channel: shell
+  login:
+    user: root
+  steps:
+  - id: s1
+    procedure: d-uptime-quick
+    expect: ok0
+    on_fail: leave
+  - id: s2
+    procedure: d-rootpw-set
+    expect: set-
+    on_fail:
+      goto: s4
+    capture:
+      name: rootpw
+      regex: set-([0-9a-f]{6,32})
+  - id: s3
+    procedure: d-shadow-after
+    expect: ok0
+  - id: s4
+    procedure: d-history-note
+    expect: ok0
+    on_fail: leave
+- protocol: ssh
+  channel: shell
+  login:
+    user: root
+    password_from: rootpw
+  steps:
+  - id: m1
+    procedure: d-id-after
+    expect: root
+    on_fail: leave
+  - id: m2
+    procedure: d-users-consistent
+    expect: ok0
+    on_fail:
+      goto: m5
+  - id: m3
+    procedure: d-passwd-age
+    expect: ok0
+  - id: m4
+    procedure: d-shadow-after
+    expect: ok0
+    on_fail:
+      goto: m6
+  - id: m5
+    procedure: d-groupfile-root
+    expect: ok0
+  - id: m6
+    procedure: d-rotate-pipe
+    expect: ok0
+    on_fail: leave

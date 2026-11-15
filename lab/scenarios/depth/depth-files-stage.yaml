@@ -1,0 +1,70 @@
+# Generated depth scenario scaffold; gates annotated here.
+# Depth: staging. Move, count and re-find what earlier steps put in place.
+# Gates: s2 state (the write landed), s3 read-back (falls back to s6),
+# s6 copy compares equal to the live /etc/hostname (consistency), s8 state
+# (the moved file exists), s10 count of everything earlier steps created.
+# Shell channel; patience 1, so two wrong answers end it.
+
+id: depth-files-stage
+actor:
+  class: scripted_bot
+  timing: bot-fast
+  patience: 1
+sessions:
+- protocol: ssh
+  channel: shell
+  login:
+    user: root
+  steps:
+  - id: s1
+    procedure: d-workdir-make
+    expect: ok0
+    on_fail: leave
+  - id: s2
+    procedure: d-secret-write
+    expect: ok0
+    on_fail: leave
+  - id: s3
+    procedure: d-secret-readback
+    expect: ok0
+    on_fail:
+      goto: s6
+  - id: s4
+    procedure: d-file-found
+    expect: ok0
+  - id: s5
+    procedure: d-file-sha
+    expect: ok0
+  - id: s6
+    procedure: d-copy-same
+    expect: ok0
+    on_fail:
+      goto: s9
+  - id: s7
+    procedure: d-hostcopy-read
+    expect: ok0
+  - id: s8
+    procedure: d-stage-move
+    expect: ok0
+    on_fail:
+      goto: s11
+  - id: s9
+    procedure: d-cd-workdir
+    expect: ok0
+    on_fail:
+      goto: s12
+  - id: s10
+    procedure: d-pwd-holds
+    expect: ok0
+  - id: s11
+    procedure: d-gzip-roundtrip
+    expect: ok0
+    on_fail:
+      goto: s13
+  - id: s12
+    procedure: d-file-count
+    expect: ok0
+  - id: s13
+    procedure: d-tar-roundtrip
+    expect: ok0
+    on_fail: leave

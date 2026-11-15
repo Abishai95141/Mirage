@@ -1,0 +1,65 @@
+# Generated depth scenario scaffold; gates annotated here.
+# Depth: fingerprint the host, then branch on what the answers agree with.
+# Gates: s1 shape (uname says Linux), s2 consistency (hostname vs /etc/hostname),
+# s3 consistency (uname -n vs hostname; falls back to s6), s4 fact (os-release),
+# s5 recon (the ssh package), s9 route to the credential-file peek.
+# State/scope: read-only; exec channel, so every step is a fresh shell.
+
+id: depth-fingerprint-core
+actor:
+  class: scripted_bot
+  timing: bot-slow
+  patience: 2
+sessions:
+- protocol: ssh
+  channel: exec
+  login:
+    user: root
+  steps:
+  - id: s1
+    procedure: d-uname-linux
+    expect: Linux
+    on_fail:
+      goto: s6
+  - id: s2
+    procedure: d-hostname-agree
+    expect: ok0
+    on_fail:
+      goto: s6
+  - id: s3
+    procedure: d-uname-agree
+    expect: ok0
+    on_fail:
+      goto: s6
+  - id: s4
+    procedure: d-os-release
+    expect: ok0
+    on_fail: leave
+  - id: s5
+    procedure: d-ssh-pkg
+    expect: ok0
+    on_fail:
+      goto: s8
+  - id: s6
+    procedure: d-nginx-version
+    expect: ok0
+    on_fail:
+      goto: s9
+  - id: s7
+    procedure: d-nginx-config
+    expect: ok0
+  - id: s8
+    procedure: d-find-setuid
+    expect: ok0
+  - id: s9
+    procedure: d-env-file-peek
+    expect: ok0
+    on_fail:
+      goto: s11
+  - id: s10
+    procedure: d-facts-pipe
+    expect: ok0
+  - id: s11
+    procedure: d-stat-passwd-mode
+    expect: ok0
+    on_fail: leave

@@ -1,0 +1,59 @@
+# Generated depth scenario scaffold; gates annotated here.
+# Depth: probe outward. The host has no egress, so every outbound connection
+# fails and the gates say so; a target that lets a connection through fails the
+# gate and the route changes. Uses only bash's /dev/tcp, iproute2 and ssh-keyscan
+# (openssh-client, pulled in by openssh-server).
+# Gates: s1 probe fails (falls back to s4), s2 resolution fails, s4 sweep,
+# s6 fetch fails (falls back to s9), s8 route shape, s10 interface shape.
+# Exec channel.
+
+id: depth-egress-probe
+actor:
+  class: scripted_bot
+  timing: bot-fast
+  patience: 2
+sessions:
+- protocol: ssh
+  channel: exec
+  login:
+    user: root
+  steps:
+  - id: s1
+    procedure: d-tcp-probe-fail
+    expect: no[0-9]+
+    on_fail:
+      goto: s4
+  - id: s2
+    procedure: d-dns-fail
+    expect: no[0-9]+
+    on_fail:
+      goto: s4
+  - id: s3
+    procedure: d-resolv-shape
+    expect: ok0
+  - id: s4
+    procedure: d-port-sweep
+    expect: sweep[0-9]+
+    on_fail: leave
+  - id: s5
+    procedure: d-iface-shape
+    expect: ok0
+  - id: s6
+    procedure: d-fetch-attempt
+    expect: no[0-9]+
+    on_fail:
+      goto: s9
+  - id: s7
+    procedure: d-route-shape
+    expect: ok0
+  - id: s8
+    procedure: d-keyscan-fail
+    expect: no[0-9]+
+  - id: s9
+    procedure: d-tcp-probe-fail
+    expect: no[0-9]+
+    on_fail: leave
+  - id: s10
+    procedure: d-ssh-remote-fail
+    expect: no[0-9]+
+    on_fail: leave

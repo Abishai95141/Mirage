@@ -1,0 +1,71 @@
+# Generated depth scenario scaffold; gates annotated here.
+# Depth: the web-serving half of the stack, in a shell.
+# Gates: s1 nginx -t (falls back to s4), s2 docroot file, s4 site symlink
+# (falls back to s7), s7 index content, s9 redis answers (falls back to s11),
+# s10 outbound fetch fails (falls back to s12), s11 lateral ssh fails.
+
+id: depth-stack-web
+actor:
+  class: human
+  timing: human
+  patience: 1
+sessions:
+- protocol: ssh
+  channel: shell
+  login:
+    user: root
+  steps:
+  - id: s1
+    procedure: d-nginx-t
+    expect: ok0
+    on_fail:
+      goto: s4
+  - id: s2
+    procedure: d-nginx-docroot
+    expect: ok0
+    on_fail: leave
+  - id: s3
+    procedure: d-index-mentions
+    expect: ok0
+  - id: s4
+    procedure: d-nginx-site-on
+    expect: ok0
+    on_fail:
+      goto: s7
+  - id: s5
+    procedure: d-nginx-conf-user
+    expect: ok0
+  - id: s6
+    procedure: d-stack-pipe
+    expect: ok0
+  - id: s7
+    procedure: d-ss-http
+    expect: ok0
+    on_fail:
+      goto: s10
+  - id: s8
+    procedure: d-redis-ping
+    expect: ok0
+    on_fail:
+      goto: s10
+  - id: s9
+    procedure: d-redis-set-get
+    expect: ok0
+    on_fail: leave
+  - id: s10
+    procedure: d-http-probe-remote
+    expect: no[0-9]+
+    on_fail:
+      goto: s12
+  - id: s11
+    procedure: d-ssh-lateral-cred
+    expect: no[0-9]+
+    on_fail:
+      goto: s13
+  - id: s12
+    procedure: d-exfil-devtcp
+    expect: no[0-9]+
+  - id: s13
+    procedure: d-wwwuser
+    expect: ok0
+    on_fail: leave

@@ -1,0 +1,71 @@
+# Generated depth scenario scaffold; gates annotated here.
+# Depth: write a secret, then prove it survived copies, archives and moves.
+# Gates: s3 state (the hex written in s2 is in the file), s5 state (listed),
+# s7 state+consistency (a copy of /etc/hostname compares equal), s8 state
+# (the tar roundtrip restores the bytes), s9 gzip roundtrip, s12 count.
+# Shell channel, so the cd in s6 holds for s10.
+
+id: depth-files-roundtrip
+actor:
+  class: scripted_bot
+  timing: bot-fast
+  patience: 2
+sessions:
+- protocol: ssh
+  channel: shell
+  login:
+    user: root
+  steps:
+  - id: s1
+    procedure: d-workdir-make
+    expect: ok0
+    on_fail: leave
+  - id: s2
+    procedure: d-secret-write
+    expect: ok0
+    on_fail: leave
+  - id: s3
+    procedure: d-secret-readback
+    expect: ok0
+    on_fail:
+      goto: s6
+  - id: s4
+    procedure: d-file-sha
+    expect: ok0
+  - id: s5
+    procedure: d-file-listed
+    expect: ok0
+    on_fail:
+      goto: s7
+  - id: s6
+    procedure: d-file-found
+    expect: ok0
+    on_fail: leave
+  - id: s7
+    procedure: d-copy-same
+    expect: ok0
+    on_fail:
+      goto: s10
+  - id: s8
+    procedure: d-tar-roundtrip
+    expect: ok0
+    on_fail:
+      goto: s11
+  - id: s9
+    procedure: d-gzip-roundtrip
+    expect: ok0
+  - id: s10
+    procedure: d-stage-move
+    expect: ok0
+    on_fail:
+      goto: s13
+  - id: s11
+    procedure: d-cd-workdir
+    expect: ok0
+  - id: s12
+    procedure: d-pwd-holds
+    expect: ok0
+  - id: s13
+    procedure: d-file-count
+    expect: ok0
+    on_fail: leave

@@ -24,7 +24,7 @@ from pathlib import Path
 
 import yaml
 
-from mirage_lab.models import Catalogue, Scenario
+from mirage_lab.models import PHASE2, Catalogue, Scenario
 
 ROOT = Path(__file__).resolve().parents[3]
 SCENARIOS = ROOT / "lab" / "scenarios"
@@ -145,7 +145,8 @@ def generate(scenarios_dir: Path = SCENARIOS, split_file: Path | None = None) ->
     split_file = split_file or ROOT / "eval" / "split.yaml"
     doc = yaml.safe_load(split_file.read_text())
     of_procedure = {pid: s for s, ids in doc["procedures"].items() for pid in ids}
-    catalogue = Catalogue.load(ROOT / "lab" / "catalogue")
+    # Coverage scenarios fill the phase 2 split; the depth set has its own scenarios.
+    catalogue = Catalogue.load(ROOT / "lab" / "catalogue").only(PHASE2)
     return {**human_twins(scenarios_dir), **coverage(catalogue, of_procedure, scenarios_dir)}
 
 

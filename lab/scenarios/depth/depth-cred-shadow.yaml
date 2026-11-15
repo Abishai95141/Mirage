@@ -1,0 +1,56 @@
+# Generated depth scenario scaffold; gates annotated here.
+# Depth: the shadow route, with the application secrets behind it.
+# Gates: s1 shadow readable, s3 root shadow line (falls back to s6),
+# s4 account enumeration, s6 app env (falls back to s9), s9 maintenance creds.
+# Shell channel.
+
+id: depth-cred-shadow
+actor:
+  class: scripted_bot
+  timing: bot-slow
+  patience: 3
+sessions:
+- protocol: ssh
+  channel: shell
+  login:
+    user: root
+  steps:
+  - id: s1
+    procedure: d-shadow-readable
+    expect: ok0
+    on_fail: leave
+  - id: s2
+    procedure: d-cred-pipe
+    expect: ok0
+  - id: s3
+    procedure: d-shadow-root-line
+    expect: ok0
+    on_fail:
+      goto: s6
+  - id: s4
+    procedure: d-listuser-enum
+    expect: ok0
+    on_fail:
+      goto: s7
+  - id: s5
+    procedure: d-group-shadow
+    expect: ok0
+  - id: s6
+    procedure: d-env-grep-db
+    expect: ok0
+    on_fail:
+      goto: s9
+  - id: s7
+    procedure: d-wpconfig-cred
+    expect: ok0
+  - id: s8
+    procedure: d-find-env
+    expect: ok0
+  - id: s9
+    procedure: d-debincnf-cred
+    expect: ok0
+    on_fail: leave
+  - id: s10
+    procedure: d-myconf-struct
+    expect: ok0
+    on_fail: leave

@@ -1,0 +1,61 @@
+# Generated depth scenario scaffold; gates annotated here.
+# Depth: start one background sleeper and watch the session notice it, then end
+# it. A single sleep is not a resource test; the container is thrown away.
+# Gates: s2 state (jobs sees it), s3 state (ps sees it; falls back to s6),
+# s5 ps header shape, s7 state change (kill), s8 state (the job is gone),
+# s10 setuid fact. Shell channel: jobs and %1 belong to this shell.
+
+id: depth-proc-background
+actor:
+  class: scripted_bot
+  timing: bot-fast
+  patience: 2
+sessions:
+- protocol: ssh
+  channel: shell
+  login:
+    user: root
+  steps:
+  - id: s1
+    procedure: d-sleep-start
+    expect: ok0
+    on_fail: leave
+  - id: s2
+    procedure: d-jobs-running
+    expect: ok0
+    on_fail:
+      goto: s5
+  - id: s3
+    procedure: d-ps-sees-sleep
+    expect: ok0
+    on_fail: leave
+  - id: s4
+    procedure: d-pgrep-sleep
+    expect: ok0
+  - id: s5
+    procedure: d-ps-header
+    expect: ok0
+    on_fail:
+      goto: s8
+  - id: s6
+    procedure: d-sshd-in-ps
+    expect: ok0
+  - id: s7
+    procedure: d-kill-sleep
+    expect: ok0
+    on_fail:
+      goto: s9
+  - id: s8
+    procedure: d-jobs-gone
+    expect: no[0-9]+
+    on_fail: leave
+  - id: s9
+    procedure: d-free-shape
+    expect: ok0
+  - id: s10
+    procedure: d-passwd-setuid
+    expect: ok0
+    on_fail: leave
+  - id: s11
+    procedure: d-nproc-check
+    expect: ok0

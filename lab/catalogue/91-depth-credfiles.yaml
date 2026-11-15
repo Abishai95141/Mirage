@@ -1,0 +1,81 @@
+# Depth procedures for the credfiles family.
+attack_version: "20.1"
+procedures:
+  - id: d-env-grep-db
+    technique: T1552.001
+    tactic: TA0006
+    source: own
+    protocol: ssh
+    template: grep -q "^DB_" /var/www/html/.env && echo ok$?
+  - id: d-wpconfig-cred
+    technique: T1552.001
+    tactic: TA0006
+    source: own
+    protocol: ssh
+    template: grep -q "DB_PASSWORD" /var/www/html/wp-config.php && echo ok$?
+  - id: d-find-env
+    technique: T1552.001
+    tactic: TA0006
+    source: own
+    protocol: ssh
+    template: find /var/www -maxdepth 2 -name ".env" 2>/dev/null | grep -q . && echo ok$?
+  - id: d-debincnf-cred
+    technique: T1552.001
+    tactic: TA0006
+    source: own
+    protocol: ssh
+    template: grep -qi "password" /etc/mysql/debian.cnf && echo ok$?
+  - id: d-shadow-readable
+    technique: T1003.008
+    tactic: TA0006
+    source: own
+    protocol: ssh
+    template: test -r /etc/shadow && grep -q ":" /etc/shadow && echo ok$?
+  - id: d-shadow-root-line
+    technique: T1003.008
+    tactic: TA0006
+    source: own
+    protocol: ssh
+    template: grep -q "^root:" /etc/shadow && echo ok$?
+  - id: d-myconf-struct
+    technique: T1007
+    tactic: TA0007
+    source: own
+    protocol: ssh
+    template: grep -q "^\[mysqld\]" /etc/mysql/mariadb.conf.d/50-server.cnf && echo ok$?
+  - id: d-redis-conf-port
+    technique: T1007
+    tactic: TA0007
+    source: own
+    protocol: ssh
+    template: grep -q "^port 6379" /etc/redis/redis.conf && echo ok$?
+  - id: d-sshconf-port
+    technique: T1007
+    tactic: TA0007
+    source: own
+    protocol: ssh
+    template: grep -qiE "^#?Port " /etc/ssh/sshd_config && echo ok$?
+  - id: d-nginx-conf-user
+    technique: T1007
+    tactic: TA0007
+    source: own
+    protocol: ssh
+    template: grep -qE "^user " /etc/nginx/nginx.conf && echo ok$?
+  - id: d-group-shadow
+    technique: T1087.001
+    tactic: TA0007
+    source: own
+    protocol: ssh
+    template: grep -q "^shadow:x:42:" /etc/group && echo ok$?
+  - id: d-listuser-enum
+    technique: T1087.001
+    tactic: TA0007
+    source: own
+    protocol: ssh
+    template: grep -E ":[0-9]{4}:[0-9]{4}:" /etc/passwd | grep -q . && echo ok$?
+  - id: d-cred-pipe
+    technique: T1059.004
+    tactic: TA0002
+    source: own
+    protocol: ssh
+    template: grep -c ":" /etc/passwd | grep -q "[0-9]" && echo ok$?
