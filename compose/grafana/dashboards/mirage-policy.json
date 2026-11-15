@@ -1,7 +1,7 @@
 {
  "uid": "mirage-policy",
  "title": "MIRAGE · Policy",
- "description": "What the policy gate decided, which rules fired, how fast, and when decoys fell back.",
+ "description": "What the policy gate decided, which rules fired, how fast, when decoys fell back, and how often the shadow policy would have done the same.",
  "tags": [
   "mirage"
  ],
@@ -473,6 +473,224 @@
    }
   },
   {
+   "type": "stat",
+   "title": "Shadow agreement",
+   "description": "Share of decisions where the shadow policy's most probable action is the action that was taken.",
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "grafana-clickhouse-datasource",
+      "uid": "clickhouse"
+     },
+     "editorType": "sql",
+     "format": 1,
+     "rawSql": "SELECT avg(preferred = taken) FROM (SELECT ts, JSONExtractBool(payload, 'explore') AS explored, JSONExtractString(payload, 'shadow', 'name') AS shadow, JSONExtractString(payload, 'shadow', 'version') AS shadow_version, JSONExtractString(payload, 'acting', 'action') AS taken, arrayReverseSort(x -> x.2, JSONExtractKeysAndValues(payload, 'shadow', 'probs', 'Float64'))[1].1 AS preferred FROM mirage.events WHERE source = 'policy' AND $__timeFilter(ts) AND JSONHas(payload, 'shadow', 'probs'))"
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "percentunit",
+     "color": {
+      "mode": "fixed",
+      "fixedColor": "green"
+     },
+     "noValue": "0"
+    },
+    "overrides": []
+   },
+   "options": {
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ],
+     "fields": "/.*/",
+     "values": false
+    },
+    "colorMode": "value",
+    "graphMode": "none",
+    "textMode": "value"
+   },
+   "id": 10,
+   "gridPos": {
+    "x": 0,
+    "y": 20,
+    "w": 6,
+    "h": 8
+   },
+   "datasource": {
+    "type": "grafana-clickhouse-datasource",
+    "uid": "clickhouse"
+   }
+  },
+  {
+   "type": "timeseries",
+   "title": "Shadow agreement over time",
+   "description": "The same share over time, apart for decisions the exploring policy made and decisions the rules made. An explored decision departs from the rules' action about as often as the policy explores, so its agreement with any shadow is lower by design.",
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "grafana-clickhouse-datasource",
+      "uid": "clickhouse"
+     },
+     "editorType": "sql",
+     "format": 0,
+     "rawSql": "SELECT $__timeInterval(ts) AS time, if(explored, 'explored', 'rules decided') AS mode, avg(preferred = taken) AS agreement FROM (SELECT ts, JSONExtractBool(payload, 'explore') AS explored, JSONExtractString(payload, 'shadow', 'name') AS shadow, JSONExtractString(payload, 'shadow', 'version') AS shadow_version, JSONExtractString(payload, 'acting', 'action') AS taken, arrayReverseSort(x -> x.2, JSONExtractKeysAndValues(payload, 'shadow', 'probs', 'Float64'))[1].1 AS preferred FROM mirage.events WHERE source = 'policy' AND $__timeFilter(ts) AND JSONHas(payload, 'shadow', 'probs')) GROUP BY time, mode ORDER BY time"
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "percentunit",
+     "custom": {
+      "drawStyle": "line",
+      "fillOpacity": 10,
+      "stacking": {
+       "mode": "none"
+      },
+      "lineWidth": 1
+     },
+     "min": 0,
+     "max": 1
+    },
+    "overrides": []
+   },
+   "options": {
+    "legend": {
+     "displayMode": "list",
+     "placement": "bottom"
+    }
+   },
+   "id": 11,
+   "gridPos": {
+    "x": 6,
+    "y": 20,
+    "w": 18,
+    "h": 8
+   },
+   "datasource": {
+    "type": "grafana-clickhouse-datasource",
+    "uid": "clickhouse"
+   }
+  },
+  {
+   "type": "table",
+   "title": "Shadow policies",
+   "description": "Which policy shadowed. 'shadow-fallback(epsilon-greedy)' means no trained model was loaded: the service says so instead of naming a model.",
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "grafana-clickhouse-datasource",
+      "uid": "clickhouse"
+     },
+     "editorType": "sql",
+     "format": 1,
+     "rawSql": "SELECT shadow, shadow_version, if(explored, 'explored', 'rules decided') AS mode, count() AS decisions, round(avg(preferred = taken), 3) AS agreement, max(ts) AS last FROM (SELECT ts, JSONExtractBool(payload, 'explore') AS explored, JSONExtractString(payload, 'shadow', 'name') AS shadow, JSONExtractString(payload, 'shadow', 'version') AS shadow_version, JSONExtractString(payload, 'acting', 'action') AS taken, arrayReverseSort(x -> x.2, JSONExtractKeysAndValues(payload, 'shadow', 'probs', 'Float64'))[1].1 AS preferred FROM mirage.events WHERE source = 'policy' AND $__timeFilter(ts) AND JSONHas(payload, 'shadow', 'probs')) GROUP BY shadow, shadow_version, mode ORDER BY last DESC"
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "custom": {
+      "filterable": true,
+      "minWidth": 90
+     }
+    },
+    "overrides": [
+     {
+      "matcher": {
+       "id": "byRegexp",
+       "options": "^(ts|start_ts|end_ts|stored_at|first_seen|last_seen|last|last_used|published_at)$"
+      },
+      "properties": [
+       {
+        "id": "custom.width",
+        "value": 185
+       }
+      ]
+     },
+     {
+      "matcher": {
+       "id": "byRegexp",
+       "options": "^(session_id|actor_id|a|b|exposed_in|token_id|request_id)$"
+      },
+      "properties": [
+       {
+        "id": "custom.width",
+        "value": 215
+       }
+      ]
+     },
+     {
+      "matcher": {
+       "id": "byRegexp",
+       "options": "^(sha256)$"
+      },
+      "properties": [
+       {
+        "id": "custom.width",
+        "value": 270
+       }
+      ]
+     },
+     {
+      "matcher": {
+       "id": "byRegexp",
+       "options": "^(source|protocol|outcome|type|action|reason|mime|kind|tactic|split|mode|gate)$"
+      },
+      "properties": [
+       {
+        "id": "custom.width",
+        "value": 115
+       }
+      ]
+     },
+     {
+      "matcher": {
+       "id": "byRegexp",
+       "options": "^(class|src_ip|sensor|rule_id|location|used_in|predicted_class|actor_class|decided_by|technique)$"
+      },
+      "properties": [
+       {
+        "id": "custom.width",
+        "value": 150
+       }
+      ]
+     },
+     {
+      "matcher": {
+       "id": "byRegexp",
+       "options": "^(seq|inputs|decisions|fallbacks|tokens|artifacts|logged_in|strength|times|size|n_sessions|sessions|attempts|succeeded|exposures|uses|logins|sources|honeytokens|auth_attempts|duration_s|latency_us|status|confidence|class_confidence|agreement|scenarios|steps|matched|procedures|techniques_seen|value|ci_low|ci_high|baseline|delta)$"
+      },
+      "properties": [
+       {
+        "id": "custom.width",
+        "value": 95
+       }
+      ]
+     }
+    ]
+   },
+   "options": {
+    "showHeader": true,
+    "cellHeight": "sm",
+    "footer": {
+     "show": false
+    }
+   },
+   "id": 12,
+   "gridPos": {
+    "x": 0,
+    "y": 28,
+    "w": 24,
+    "h": 6
+   },
+   "datasource": {
+    "type": "grafana-clickhouse-datasource",
+    "uid": "clickhouse"
+   }
+  },
+  {
    "type": "timeseries",
    "title": "Gate latency p95 by decoy",
    "description": "",
@@ -508,10 +726,10 @@
      "placement": "bottom"
     }
    },
-   "id": 10,
+   "id": 13,
    "gridPos": {
     "x": 0,
-    "y": 20,
+    "y": 34,
     "w": 12,
     "h": 8
    },
@@ -547,7 +765,7 @@
      {
       "matcher": {
        "id": "byRegexp",
-       "options": "^(ts|start_ts|stored_at|first_seen|last_seen|last|last_used)$"
+       "options": "^(ts|start_ts|end_ts|stored_at|first_seen|last_seen|last|last_used|published_at)$"
       },
       "properties": [
        {
@@ -583,7 +801,7 @@
      {
       "matcher": {
        "id": "byRegexp",
-       "options": "^(source|protocol|outcome|type|action|reason|mime)$"
+       "options": "^(source|protocol|outcome|type|action|reason|mime|kind|tactic|split|mode|gate)$"
       },
       "properties": [
        {
@@ -595,7 +813,7 @@
      {
       "matcher": {
        "id": "byRegexp",
-       "options": "^(class|src_ip|sensor|rule_id|location|used_in)$"
+       "options": "^(class|src_ip|sensor|rule_id|location|used_in|predicted_class|actor_class|decided_by|technique)$"
       },
       "properties": [
        {
@@ -607,7 +825,7 @@
      {
       "matcher": {
        "id": "byRegexp",
-       "options": "^(seq|inputs|decisions|fallbacks|tokens|artifacts|logged_in|strength|times|size|n_sessions|sessions|attempts|succeeded|exposures|uses|logins|sources|honeytokens|auth_attempts|duration_s|latency_us|status)$"
+       "options": "^(seq|inputs|decisions|fallbacks|tokens|artifacts|logged_in|strength|times|size|n_sessions|sessions|attempts|succeeded|exposures|uses|logins|sources|honeytokens|auth_attempts|duration_s|latency_us|status|confidence|class_confidence|agreement|scenarios|steps|matched|procedures|techniques_seen|value|ci_low|ci_high|baseline|delta)$"
       },
       "properties": [
        {
@@ -625,10 +843,10 @@
      "show": false
     }
    },
-   "id": 11,
+   "id": 14,
    "gridPos": {
     "x": 12,
-    "y": 20,
+    "y": 34,
     "w": 12,
     "h": 8
    },
@@ -664,7 +882,7 @@
      {
       "matcher": {
        "id": "byRegexp",
-       "options": "^(ts|start_ts|stored_at|first_seen|last_seen|last|last_used)$"
+       "options": "^(ts|start_ts|end_ts|stored_at|first_seen|last_seen|last|last_used|published_at)$"
       },
       "properties": [
        {
@@ -700,7 +918,7 @@
      {
       "matcher": {
        "id": "byRegexp",
-       "options": "^(source|protocol|outcome|type|action|reason|mime)$"
+       "options": "^(source|protocol|outcome|type|action|reason|mime|kind|tactic|split|mode|gate)$"
       },
       "properties": [
        {
@@ -712,7 +930,7 @@
      {
       "matcher": {
        "id": "byRegexp",
-       "options": "^(class|src_ip|sensor|rule_id|location|used_in)$"
+       "options": "^(class|src_ip|sensor|rule_id|location|used_in|predicted_class|actor_class|decided_by|technique)$"
       },
       "properties": [
        {
@@ -724,7 +942,7 @@
      {
       "matcher": {
        "id": "byRegexp",
-       "options": "^(seq|inputs|decisions|fallbacks|tokens|artifacts|logged_in|strength|times|size|n_sessions|sessions|attempts|succeeded|exposures|uses|logins|sources|honeytokens|auth_attempts|duration_s|latency_us|status)$"
+       "options": "^(seq|inputs|decisions|fallbacks|tokens|artifacts|logged_in|strength|times|size|n_sessions|sessions|attempts|succeeded|exposures|uses|logins|sources|honeytokens|auth_attempts|duration_s|latency_us|status|confidence|class_confidence|agreement|scenarios|steps|matched|procedures|techniques_seen|value|ci_low|ci_high|baseline|delta)$"
       },
       "properties": [
        {
@@ -759,10 +977,10 @@
      "show": false
     }
    },
-   "id": 12,
+   "id": 15,
    "gridPos": {
     "x": 0,
-    "y": 28,
+    "y": 42,
     "w": 24,
     "h": 8
    },

@@ -47,6 +47,7 @@ def map_record(record: dict[str, Any], *, ingest_ts: datetime | None = None) -> 
         "acting": record.get("acting"),
         "shadow": record.get("shadow"),
         "explore": record.get("explore"),
+        "context_version": record.get("context_version"),
         "request": req,
     }
     return MirageEvent(

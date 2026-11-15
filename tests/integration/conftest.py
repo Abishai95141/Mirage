@@ -1,4 +1,5 @@
 import json
+import os
 import subprocess
 from pathlib import Path
 
@@ -6,6 +7,17 @@ import httpx
 import pytest
 
 ROOT = Path(__file__).parents[2]
+# In a gate run a missing stack is a failure, not a skip: a skipped test is green, and a gate
+# that is green because nothing ran proves nothing (completion plan, F2). CI and `make gate2`
+# set this.
+REQUIRE_STACK = os.environ.get("MIRAGE_REQUIRE_STACK") == "1"
+
+
+def unavailable(reason: str) -> None:
+    """Skip a test whose stack is not up; in a gate run, fail it."""
+    if REQUIRE_STACK:
+        pytest.fail(f"{reason} (MIRAGE_REQUIRE_STACK=1: this is a gate run)")
+    pytest.skip(reason)
 
 
 class Env(dict):
@@ -36,10 +48,17 @@ def container_ip(service: str, network: str) -> str:
     return json.loads(out)[0]["NetworkSettings"]["Networks"][network]["IPAddress"]
 
 
+def container_ips(service: str) -> dict[str, str]:
+    """Every address a service has, by network."""
+    out = docker("inspect", f"mirage-{service}-1").stdout
+    networks = json.loads(out)[0]["NetworkSettings"]["Networks"]
+    return {name: net["IPAddress"] for name, net in networks.items() if net.get("IPAddress")}
+
+
 @pytest.fixture(scope="session")
 def env() -> Env:
     if not (ROOT / ".env").exists():
-        pytest.skip("no .env; run make up")
+        unavailable("no .env; run make up")
     return read_env()
 
 
@@ -62,5 +81,11 @@ def clickhouse(env):
     try:
         query("SELECT 1")
     except httpx.HTTPError:
-        pytest.skip("ClickHouse not reachable; run make up")
+        unavailable("ClickHouse not reachable; run make up")
     return query
+
+
+def pytest_collection_modifyitems(items):
+    """The dashboard checks read what the other tests produce, so they run after them. (On a
+    fresh stack they would otherwise find no sessions, which a gate run counts as a failure.)"""
+    items.sort(key=lambda item: "test_dashboards" in item.nodeid)

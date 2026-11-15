@@ -1,0 +1,432 @@
+{
+ "dataset": "gate2",
+ "identity": {
+  "sessions.parquet": "9f987148884bf558f4900bd357c1f9da2b8e781f9f051c2c9a7944dd8ecd10dd",
+  "steps.parquet": "531daa4e1dba038142474389d45c963667e010c913ab65e5272e2d71f0e792db",
+  "decisions.parquet": "d851c0b15ab74944b37199985aadfd39826052d18e2522559a67bd8f6affa561"
+ },
+ "choices": {
+  "classifier": {
+   "family": "forest",
+   "features": "both"
+  },
+  "classifier_event": {
+   "family": "forest",
+   "features": "event"
+  },
+  "tagger": {
+   "name": "retrieval-shellbert-k1+atomic/pieces",
+   "kind": "retrieval",
+   "embedder": "shellbert",
+   "k": 1,
+   "unit": "pieces",
+   "threshold": 0.95,
+   "atomic": true,
+   "layers": [
+    "model"
+   ]
+  },
+  "policy": {
+   "acting": "rules",
+   "shadow": "linear(ridge=1,ipw)",
+   "reward": "reward_truth"
+  }
+ },
+ "checks": {
+  "split_integrity": {
+   "ok": true,
+   "detail": "205 procedures, one split each"
+  },
+  "dataset_matches_catalogue": {
+   "ok": true,
+   "detail": "the dataset was exported against the catalogue on disk"
+  },
+  "sessions_one_split": {
+   "ok": true,
+   "detail": "0 of 354 sessions mix splits"
+  },
+  "procedures_one_split": {
+   "ok": true,
+   "detail": "0 procedure(s) appear under two splits"
+  },
+  "splits_match_frozen": {
+   "ok": true,
+   "detail": "0 step row(s) and 0 session(s) are not filed under the split eval/split.yaml gives them"
+  },
+  "held_out_coverage": {
+   "ok": true,
+   "detail": "41 of 41 test procedures have captured steps"
+  },
+  "session_columns_allowlisted": {
+   "ok": true,
+   "detail": "24 columns, all allowlisted"
+  },
+  "no_lab_marker_in_inputs": {
+   "ok": true,
+   "detail": "none found"
+  },
+  "collection_healthy": {
+   "ok": true,
+   "detail": "every run joined cleanly, from the lab seed"
+  },
+  "index_hygiene": {
+   "ok": true,
+   "detail": "954 index entries; 0 from held-out procedures; 0 scored inputs present in the index; 12 scored inputs share one gated command with it"
+  }
+ },
+ "metrics": {
+  "classifier.macro_f1": {
+   "value": 0.9944,
+   "ci": [
+    0.981,
+    1.0
+   ],
+   "detail": "forest/both; 312 sessions the rule leaves, 44 scenario groups"
+  },
+  "classifier.above_majority": {
+   "value": 0.5418,
+   "ci": [
+    0.5157,
+    0.5689
+   ],
+   "detail": ""
+  },
+  "classifier.above_rules_only": {
+   "value": 0.3612,
+   "ci": [
+    0.3434,
+    0.3788
+   ],
+   "detail": "all sessions: the rule alone, with the majority class where it does not decide"
+  },
+  "classifier_event.macro_f1": {
+   "value": 0.9021,
+   "ci": [
+    0.7871,
+    0.9789
+   ],
+   "detail": "forest/event; 312 sessions the rule leaves, 44 scenario groups"
+  },
+  "tagger.micro_f1": {
+   "value": 0.2116,
+   "ci": [
+    0.0668,
+    0.3465
+   ],
+   "detail": "retrieval-shellbert-k1+atomic/pieces at 0.95; 35 held-out procedures over 23 techniques; the index frozen with the dataset"
+  },
+  "tagger.above_most_frequent": {
+   "value": 0.2116,
+   "ci": [
+    0.0668,
+    0.3465
+   ],
+   "detail": ""
+  },
+  "tagger.session_tactic_f1": {
+   "value": 0.4637,
+   "ci": null,
+   "detail": "54 sessions"
+  },
+  "tagger.micro_f1_no_shared_command": {
+   "value": 0.1921,
+   "ci": [
+    0.0663,
+    0.3315
+   ],
+   "detail": "the same, leaving out the 12 inputs that share a gated command with the index; 33 procedures"
+  },
+  "tagger.abstention": {
+   "value": 0.2,
+   "ci": null,
+   "detail": ""
+  },
+  "tagger.unseen_technique_recall": {
+   "value": 0.25,
+   "ci": null,
+   "detail": "4 held-out procedures of 1 technique(s) with no lab training procedure"
+  },
+  "policy.shadow_minus_rules": {
+   "value": -0.1638,
+   "ci": [
+    -0.5094,
+    0.1074
+   ],
+   "detail": "linear(ridge=1,ipw), doubly robust, 874 decisions in 160 test sessions; effective sample 208; differs from the rules on 25%"
+  }
+ },
+ "gates": {
+  "integrity": {
+   "ok": true,
+   "detail": "9 checks passed"
+  },
+  "classifier_beats_majority": {
+   "ok": true,
+   "detail": "on the sessions the rule leaves, above the majority class by [0.5157, 0.5689]"
+  },
+  "classifier_beats_rules": {
+   "ok": true,
+   "detail": "on all sessions, above the rule alone by [0.3434, 0.3788]"
+  },
+  "tagger_beats_most_frequent": {
+   "ok": true,
+   "detail": "technique micro-F1 above the most frequent technique by [0.067, 0.346]"
+  },
+  "shadow_value_reported": {
+   "ok": true,
+   "detail": "shadow minus rules -0.164 [-0.5094, 0.1074]; it need not win before Gate 3"
+  }
+ },
+ "reports": {
+  "classifier": {
+   "family": "forest",
+   "features": "both",
+   "model_only": {
+    "n": 312,
+    "groups": 44,
+    "macro_f1": 0.9944,
+    "majority_f1": 0.4526,
+    "per_class_f1": {
+     "human": 0.991,
+     "scripted_bot": 0.998
+    },
+    "support": {
+     "human": 54,
+     "scripted_bot": 258
+    },
+    "macro_f1_ci": [
+     0.981,
+     1.0
+    ],
+    "vs_majority_ci": [
+     0.5157,
+     0.5689
+    ]
+   },
+   "all_sessions_macro_f1": 0.9962,
+   "rules_only_f1": 0.6351,
+   "majority_f1": 0.2654,
+   "vs_rules_ci": [
+    0.3434,
+    0.3788
+   ],
+   "per_class_f1": {
+    "human": 0.991,
+    "scanner": 1.0,
+    "scripted_bot": 0.998
+   },
+   "confusion": [
+    [
+     53,
+     0,
+     1
+    ],
+    [
+     0,
+     78,
+     0
+    ],
+    [
+     0,
+     0,
+     258
+    ]
+   ],
+   "labels": [
+    "human",
+    "scanner",
+    "scripted_bot"
+   ],
+   "rule_settled": 78,
+   "support": {
+    "human": 54,
+    "scanner": 78,
+    "scripted_bot": 258
+   }
+  },
+  "classifier_event": {
+   "family": "forest",
+   "features": "event",
+   "model_only": {
+    "n": 312,
+    "groups": 44,
+    "macro_f1": 0.9021,
+    "majority_f1": 0.4526,
+    "per_class_f1": {
+     "human": 0.839,
+     "scripted_bot": 0.965
+    },
+    "support": {
+     "human": 54,
+     "scripted_bot": 258
+    },
+    "macro_f1_ci": [
+     0.7871,
+     0.9789
+    ],
+    "vs_majority_ci": [
+     0.3195,
+     0.5299
+    ]
+   },
+   "all_sessions_macro_f1": 0.9347,
+   "rules_only_f1": 0.6351,
+   "majority_f1": 0.2654,
+   "vs_rules_ci": [
+    0.2137,
+    0.3546
+   ],
+   "per_class_f1": {
+    "human": 0.839,
+    "scanner": 1.0,
+    "scripted_bot": 0.965
+   },
+   "confusion": [
+    [
+     47,
+     0,
+     7
+    ],
+    [
+     0,
+     78,
+     0
+    ],
+    [
+     11,
+     0,
+     247
+    ]
+   ],
+   "labels": [
+    "human",
+    "scanner",
+    "scripted_bot"
+   ],
+   "rule_settled": 78,
+   "support": {
+    "human": 54,
+    "scanner": 78,
+    "scripted_bot": 258
+   }
+  },
+  "tagger": {
+   "model": "retrieval-shellbert-k1+atomic/pieces",
+   "unit": "pieces",
+   "split": "test",
+   "n_steps": 246,
+   "n_procedures": 39,
+   "n_leaked_renderings": 12,
+   "headline": {
+    "procedures": 35,
+    "techniques": 23,
+    "micro_f1": 0.2116,
+    "micro_f1_ci": [
+     0.0668,
+     0.3465
+    ],
+    "precision": 0.2381,
+    "recall": 0.1905,
+    "macro_f1": 0.1879,
+    "micro_f1_parent_folded": 0.2116,
+    "abstention": 0.2
+   },
+   "unseen": {
+    "procedures": 4,
+    "techniques": 1,
+    "recall": 0.25,
+    "abstention": 0.0
+   },
+   "negatives": {
+    "procedures": 0,
+    "false_positive_rate": 0.0
+   },
+   "by_source": {
+    "atomic": {
+     "procedures": 10,
+     "techniques": 8,
+     "micro_f1": 0.2034,
+     "micro_f1_ci": [
+      0.0,
+      0.4138
+     ],
+     "precision": 0.2069,
+     "recall": 0.2,
+     "macro_f1": 0.1458,
+     "micro_f1_parent_folded": 0.2034,
+     "abstention": 0.0333
+    },
+    "corpus": {
+     "procedures": 5,
+     "techniques": 4,
+     "micro_f1": 0.0,
+     "micro_f1_ci": [
+      0.0,
+      0.0
+     ],
+     "precision": 0.0,
+     "recall": 0.0,
+     "macro_f1": 0.0,
+     "micro_f1_parent_folded": 0.0,
+     "abstention": 0.4
+    },
+    "own": {
+     "procedures": 20,
+     "techniques": 16,
+     "micro_f1": 0.2642,
+     "micro_f1_ci": [
+      0.0791,
+      0.4717
+     ],
+     "precision": 0.3043,
+     "recall": 0.2333,
+     "macro_f1": 0.2348,
+     "micro_f1_parent_folded": 0.2642,
+     "abstention": 0.2333
+    }
+   },
+   "sessions": {
+    "sessions": 54,
+    "precision": 0.411,
+    "recall": 0.5317,
+    "f1": 0.4637
+   }
+  },
+  "policy": {
+   "shadow": "linear(ridge=1,ipw)",
+   "reward": "reward_truth",
+   "decisions": {
+    "fit": 4181,
+    "scored": 874,
+    "sessions": 160
+   },
+   "vs_rules": {
+    "ips": {
+     "diff": -0.0309,
+     "ci": [
+      -0.3025,
+      0.2504
+     ]
+    },
+    "snips": {
+     "diff": -0.1295,
+     "ci": [
+      -0.3639,
+      0.0931
+     ]
+    },
+    "dr": {
+     "diff": -0.1638,
+     "ci": [
+      -0.5094,
+      0.1074
+     ]
+    },
+    "sessions": 160,
+    "same_sign": true,
+    "changed": 0.2471
+   },
+   "ess": 207.8
+  }
+ }
+}

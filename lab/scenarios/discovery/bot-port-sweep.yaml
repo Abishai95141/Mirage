@@ -1,6 +1,7 @@
-# A scanner that enumerates listening services from a shell.
-id: scanner-port-sweep
-actor: {class: scanner, timing: scan, patience: 4}
+# A bot that logs in and enumerates listening services from a shell. (Labelled a scanner
+# until the first live run: by the class definitions, authenticated activity is a bot's.)
+id: bot-port-sweep
+actor: {class: scripted_bot, timing: bot-fast, patience: 4}
 sessions:
   - protocol: ssh
     channel: exec

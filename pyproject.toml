@@ -22,6 +22,12 @@ mirage-http-decoy = { workspace = true }
 mirage-db-decoy = { workspace = true }
 mirage-lab = { workspace = true }
 mirage-intel = { workspace = true }
+torch = [{ index = "pytorch-cpu", marker = "sys_platform == 'linux'" }]
+
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true
 
 [dependency-groups]
 dev = [
@@ -43,6 +49,18 @@ dev = [
     "paramiko>=3.5",
     "httpx>=0.28",
     "pre-commit>=4.0",
+]
+# The model experiments of docs/experiments/ and the tagger's neural layers: a text-embedding
+# stack and experiment tracking. Not installed by default (`uv sync --group research`); the
+# unit and `ml` test jobs do not need it. On Linux the lock names PyTorch's CPU build, which
+# is what CI and a host without a GPU install. A lab host with an NVIDIA GPU gets a second
+# environment with the same versions and the CUDA build: `make gpu-env`, then `GPU=1`.
+research = [
+    "torch>=2.4",
+    "transformers>=4.44",
+    "sentence-transformers>=3.0",
+    "huggingface-hub>=0.24",
+    "mlflow>=2.16",
 ]
 
 [tool.pytest.ini_options]
@@ -74,6 +92,8 @@ known-first-party = ["mirage_schema", "mirage_pipeline", "mirage_policy", "mirag
 "eval/**" = ["S"]
 "spikes/**" = ["S", "E501"]
 "tools/**" = ["S", "E501"]
+# The experiment scripts print result tables.
+"intel/src/mirage_intel/experiments/**" = ["E501"]
 # The profile generator and reference extractor are offline dev tools full of template data:
 # seeded (not cryptographic) randomness, MariaDB's SHA-1 password hash, docker subprocesses.
 "decoys/profiles/**" = ["S", "E501", "E731"]

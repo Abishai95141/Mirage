@@ -1,0 +1,35 @@
+# What the phase 2 experiments chose (docs/experiments/phase-2/). The harness, the trainers and
+# the live workers build their models from this file and from nothing else, so the model that
+# is scored is the model that runs. Change a value only with a new experiment behind it.
+
+classifier:
+  # Random forest on event-level and keystroke features. No simpler family was shown to be
+  # within 0.02 macro-F1 of it on held-out scenarios (classifier.md).
+  family: forest
+  features: both
+
+classifier_event:
+  # The variant for data with no keystroke log (any plain Cowrie corpus).
+  family: forest
+  features: event
+
+tagger:
+  # Nearest neighbour over the training procedures and Atomic Red Team's Linux tests, embedded
+  # with SecureShellBert, one answer per input from its most confident gated command. Best
+  # technique micro-F1 on dev; threshold tuned there (tagger.md).
+  name: retrieval-shellbert-k1+atomic/pieces
+  kind: retrieval
+  embedder: shellbert
+  k: 1
+  unit: pieces
+  threshold: 0.95
+  atomic: true
+  # Layers that label inputs, in order. The starter rules in front made it worse (0.405 to
+  # 0.324), and LogPrécis alone is weaker at tactic level, so the model stands alone.
+  layers: [model]
+
+policy:
+  # No learner beat the rules (bandit.md): the rules act. This one shadows and never acts.
+  acting: rules
+  shadow: linear(ridge=1,ipw)
+  reward: reward_truth

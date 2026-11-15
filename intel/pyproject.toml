@@ -23,6 +23,11 @@ mirage-dataset = "mirage_intel.dataset:main"
 mirage-classifier = "mirage_intel.classifier:main"
 mirage-tagger = "mirage_intel.tagger:main"
 mirage-explore-check = "mirage_intel.explore_check:main"
+mirage-decisions = "mirage_intel.decisions:main"
+mirage-classifier-worker = "mirage_intel.classify_worker:main"
+mirage-tagger-train = "mirage_intel.tagserve:main"
+mirage-eval = "mirage_intel.harness:main"
+mirage-tagger-model-worker = "mirage_intel.tag_worker:main"
 
 [build-system]
 requires = ["hatchling>=1.25"]

@@ -1,0 +1,94 @@
+# How an explored fake_error is rendered (phase 2 spec 2.5: "a per-verb message from a small
+# table"). Used only when the exploring policy picks fake_error and the matched rule did not:
+# a rule's own fake_error keeps the rule's output and exit_code. The table never changes which
+# action is chosen or its probability, only what the decoy is told to say.
+#
+# Per protocol: `verbs` (an exact verb) is tried first, then `classes` (the verb class of
+# mirage_policy/verbs.py), then `default`. An entry whose output needs something the input
+# does not have (an `{arg}` when the command has no argument) is skipped.
+#
+# Placeholders, filled from the request (so the text is the attacker's own input, as a real
+# tool echoes it):
+#   {verb}        the verb as sent: the command word for a shell, the command or method otherwise
+#   {verb_lower}  the same, lower case (Redis names commands in lower case in its errors)
+#   {arg}         ssh only: the last word after the command that is not an option
+#   {shell}       ssh only: "-bash" in an interactive session, "bash: line 1" for an exec request
+#
+# What each decoy does with `output` and `exit_code` decides what may be written here; the
+# loader (mirage_policy/fake_errors.py) enforces it:
+#   ssh    output goes to stderr as it is, exit_code is $?            (Cowrie gate, _apply)
+#   http   exit_code is the status, 400-599. An EMPTY output makes the decoy send its
+#          profile's own nginx error page for that status, byte for byte what the reference
+#          server sends; a body written here would replace it      (http handler.py, decide)
+#   redis  the decoy prepends "ERR " itself and ignores exit_code, so write the text after
+#          "ERR " and no code. Errors with another prefix (MISCONF, READONLY, OOM, NOAUTH)
+#          cannot be expressed                                     (redis handler.py, command)
+#   mysql  exit_code is the error number, output the message. The decoy always sends
+#          SQLSTATE HY000, so only errors MariaDB itself reports as HY000 belong here
+#                                                                  (mysql handler.py, commands)
+#
+# The messages follow the hosts the profile imitates (Debian 12: bash 5.2, GNU coreutils 9.1
+# in the C locale, apt 2.6; nginx 1.22; Redis 7.0; MariaDB 10.11). They say something a root
+# user can meet (never "Permission denied" on a read) and something that can pass, so a later
+# success does not contradict them.
+version: 1
+
+ssh:
+  # Any external program can crash; bash reports it the same way whatever the program.
+  default: {output: "Segmentation fault\n", exit_code: 139}
+  classes:
+    # GNU cat, wc, md5sum: "<program>: <file>: <strerror>".
+    file_read: {output: "{verb}: {arg}: Input/output error\n", exit_code: 1}
+    # The same form, as tee prints it. EPERM is what root gets on an immutable file.
+    file_write: {output: "{verb}: {arg}: Operation not permitted\n", exit_code: 1}
+    # iputils ping with no route; exact for ping, the usual shape for the rest.
+    network: {output: "{verb}: connect: Network is unreachable\n", exit_code: 2}
+    # A builtin that cannot write its output (echo, printf, pwd).
+    shell_builtin: {output: "{shell}: {verb}: write error: Input/output error\n", exit_code: 1}
+  verbs:
+    ls: {output: "{verb}: cannot access '{arg}': Input/output error\n", exit_code: 2}
+    rm: {output: "{verb}: cannot remove '{arg}': Operation not permitted\n", exit_code: 1}
+    mkdir:
+      output: "{verb}: cannot create directory '{arg}': Operation not permitted\n"
+      exit_code: 1
+    touch: {output: "{verb}: cannot touch '{arg}': Operation not permitted\n", exit_code: 1}
+    chmod:
+      output: "{verb}: changing permissions of '{arg}': Operation not permitted\n"
+      exit_code: 1
+    cd: {output: "{shell}: cd: {arg}: Input/output error\n", exit_code: 1}
+    # libcurl's text for CURLE_COULDNT_CONNECT, and its exit status.
+    curl: {output: "curl: (7) Couldn't connect to server\n", exit_code: 7}
+    # Another apt holds the lock (unattended upgrades do, on a fresh Debian host).
+    apt: &apt_locked
+      output: "E: Could not get lock /var/lib/dpkg/lock-frontend. It is held by process 1187\
+        \ (unattended-upgr)\nN: Be aware that removing the lock file is not a solution and may\
+        \ break your system.\nE: Unable to acquire the dpkg frontend lock\
+        \ (/var/lib/dpkg/lock-frontend), is another process using it?\n"
+      exit_code: 100
+    apt-get: *apt_locked
+
+http:
+  # Empty output everywhere: the decoy's own nginx page for the status (see above).
+  default: {exit_code: 500}
+  classes:
+    read: {exit_code: 503}   # what nginx answers when it sheds load (limit_req, limit_conn)
+    write: {exit_code: 502}  # nginx's own page when the application behind it is down
+    other: {exit_code: 405}  # a method the location does not serve
+
+redis:
+  # Redis 7.0's arity error, the one error every command can give.
+  default: {output: "wrong number of arguments for '{verb_lower}' command"}
+  verbs:
+    SAVE: &saving {output: "Background save already in progress"}
+    BGSAVE: *saving
+
+mysql:
+  default: {output: "Unknown error", exit_code: 1105}  # ER_UNKNOWN_ERROR
+  classes:
+    # ER_TABLE_DEF_CHANGED
+    read: {output: "Table definition has changed, please retry transaction", exit_code: 1412}
+    # ER_LOCK_WAIT_TIMEOUT; DDL waiting on a metadata lock times out with the same error.
+    write: &lock_wait
+      output: "Lock wait timeout exceeded; try restarting transaction"
+      exit_code: 1205
+    schema: *lock_wait

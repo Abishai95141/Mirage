@@ -162,6 +162,51 @@ ENGINE = ReplacingMergeTree(version)
 ORDER BY (token_id, session_id, event_id);
 
 -- Every stored artifact file, hashed and typed by the indexer.
+-- Keystroke statistics from Cowrie's TTY logs (phase 2 spec, 2.0), one row per finished log,
+-- keyed by the log's SHA-256 (the name Cowrie gives the file when the channel closes).
+CREATE TABLE IF NOT EXISTS mirage.tty_stats
+(
+    sha256              String,
+    input_chunks        UInt32,
+    input_bytes         UInt32,
+    single_byte_chunks  UInt32,
+    backspaces          UInt32,
+    paste_bursts        UInt32,
+    lines               UInt32,
+    key_gap_p10_s       Float32,
+    key_gap_p50_s       Float32,
+    key_gap_p90_s       Float32,
+    duration_s          Float32,
+    truncated           UInt8,
+    indexed_at          DateTime64(6, 'UTC')
+)
+ENGINE = ReplacingMergeTree(indexed_at)
+ORDER BY sha256;
+
+-- The same statistics per decoy session. A session can close several logs (one per channel);
+-- counts add up, and the gap quantiles come from the log with the most input.
+CREATE OR REPLACE VIEW mirage.tty_by_session AS
+SELECT
+    c.session_id                        AS session_id,
+    count()                             AS tty_logs,
+    sum(t.input_chunks)                 AS input_chunks,
+    sum(t.input_bytes)                  AS input_bytes,
+    sum(t.single_byte_chunks)           AS single_byte_chunks,
+    sum(t.backspaces)                   AS backspaces,
+    sum(t.paste_bursts)                 AS paste_bursts,
+    sum(t.lines)                        AS lines,
+    argMax(t.key_gap_p10_s, t.input_chunks) AS key_gap_p10_s,
+    argMax(t.key_gap_p50_s, t.input_chunks) AS key_gap_p50_s,
+    argMax(t.key_gap_p90_s, t.input_chunks) AS key_gap_p90_s
+FROM
+(
+    SELECT DISTINCT session_id, JSONExtractString(payload, 'sha256') AS sha256
+    FROM mirage.events
+    WHERE source = 'cowrie' AND action = 'ttylog_closed'
+) AS c
+INNER JOIN (SELECT * FROM mirage.tty_stats FINAL) AS t ON c.sha256 = t.sha256
+GROUP BY c.session_id;
+
 CREATE TABLE IF NOT EXISTS mirage.artifact_files
 (
     sha256        String,
@@ -346,6 +391,42 @@ ORDER BY event_id;
 
 -- One row per session that is worth an analyst's attention: it reached a honeytoken, captured
 -- an artifact, or showed Persistence or Impact. reasons lists why.
+-- The actor classifier's prediction for a session (phase 2 spec, 2.3), written by the
+-- classifier worker and recomputed as the session grows. `decided_by` says whether the scanner
+-- rule or the model made the call. This is a prediction: ground truth lives in sim_sessions and
+-- nothing here is ever copied from it.
+CREATE TABLE IF NOT EXISTS mirage.actor_class
+(
+    session_id     String,
+    version        UInt64,
+    actor_class    LowCardinality(String),   -- scanner | scripted_bot | human
+    confidence     Float32,
+    decided_by     LowCardinality(String),   -- rule | model
+    model_version  LowCardinality(String),
+    ts             DateTime64(6, 'UTC')
+)
+ENGINE = ReplacingMergeTree(version)
+ORDER BY session_id;
+
+-- The evaluation harness's latest numbers, published so the Lab dashboard can show them beside
+-- their baselines (phase 2 spec, 2.7). One row per dataset and metric; `gate` is 1 when the
+-- metric is a gate that is met, 0 when it is a gate that is not, 255 when it is not a gate.
+CREATE TABLE IF NOT EXISTS mirage.eval_metrics
+(
+    dataset       String,
+    metric        String,
+    value         Float64,
+    ci_low        Float64,
+    ci_high       Float64,
+    baseline      Float64,
+    gate          UInt8,
+    detail        String,
+    published_at  DateTime64(6, 'UTC'),
+    version       UInt64
+)
+ENGINE = ReplacingMergeTree(version)
+ORDER BY (dataset, metric);
+
 CREATE TABLE IF NOT EXISTS mirage.alerts
 (
     session_id   String,
@@ -364,3 +445,47 @@ CREATE TABLE IF NOT EXISTS mirage.alerts
 )
 ENGINE = ReplacingMergeTree(version)
 ORDER BY session_id;
+
+-- ---------------------------------------------------------------- phase 2 completion (docs/07)
+-- Lost ground truth, shown on the run (gap register R2). Written by sim-join.
+--   truth_sessions_missing / truth_steps_missing: the run record counts the session and step
+--     records the runner wrote; this many of them never arrived.
+--   truth_invalid: records of the run that did not validate. They are kept in sim_truth with
+--     kind 'invalid' (the key is the hash of the message) instead of being dropped.
+--   incomplete: 1 when the run's closing record never arrived and the run was joined, after a
+--     wait, with what there was. `sessions` and `steps` are then the records that arrived,
+--     `mode` comes from the session records (empty if there were none), and the hashes and
+--     the seed are unknown. A run is healthy only with all four at zero.
+ALTER TABLE mirage.sim_runs ADD COLUMN IF NOT EXISTS truth_sessions_missing UInt32 DEFAULT 0;
+ALTER TABLE mirage.sim_runs ADD COLUMN IF NOT EXISTS truth_steps_missing UInt32 DEFAULT 0;
+ALTER TABLE mirage.sim_runs ADD COLUMN IF NOT EXISTS truth_invalid UInt32 DEFAULT 0;
+ALTER TABLE mirage.sim_runs ADD COLUMN IF NOT EXISTS incomplete UInt8 DEFAULT 0;
+
+-- One row per actor with at least one alert reason across its sessions (gap register V2),
+-- written by the tagger worker beside mirage.alerts and recomputed as the actor changes.
+-- session_ids are the sessioniser's sessions (mirage.session_summary.session_id), src_ips
+-- every address they came from; actor_classes are the classifier's predictions from
+-- mirage.actor_class and may be empty. Every array is sorted and distinct.
+-- When the sessioniser links two actors into one, the alert under the ID that went away is
+-- replaced by a row with empty arrays and start_ts = end_ts = 1970-01-01. Read live alerts
+-- with: FROM mirage.actor_alerts FINAL WHERE notEmpty(reasons)
+CREATE TABLE IF NOT EXISTS mirage.actor_alerts
+(
+    actor_id       String,
+    version        UInt64,
+    session_ids    Array(String),
+    src_ips        Array(String),
+    protocols      Array(String),
+    actor_classes  Array(String),
+    reasons        Array(String),
+    tactics        Array(String),
+    techniques     Array(String),
+    tokens         Array(String),
+    artifacts      Array(String),
+    inputs         UInt32,
+    start_ts       DateTime64(6, 'UTC'),
+    end_ts         DateTime64(6, 'UTC'),
+    created_at     DateTime64(6, 'UTC') DEFAULT now64(6)
+)
+ENGINE = ReplacingMergeTree(version)
+ORDER BY actor_id;

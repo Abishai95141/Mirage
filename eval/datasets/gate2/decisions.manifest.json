@@ -1,0 +1,20 @@
+{
+  "runs": [
+    "r20261114214550-b64a24"
+  ],
+  "reward_version": "reward-v1",
+  "decisions": 5181,
+  "sessions": 942,
+  "usable": 5055,
+  "no_decoy_event": 0,
+  "fallbacks": 126,
+  "applied_differs_from_logged": 0,
+  "ok": true,
+  "mean_reward_tagged": 1.5111,
+  "mean_reward_truth": 1.3553,
+  "by_split": {
+    "dev": 750,
+    "test": 914,
+    "train": 3517
+  }
+}

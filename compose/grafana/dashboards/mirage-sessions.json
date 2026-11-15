@@ -390,7 +390,7 @@
   {
    "type": "table",
    "title": "Recent sessions",
-   "description": "",
+   "description": "predicted_class is the actor classifier's prediction, tactics and techniques the tagger's labels (ATT&CK IDs). Empty where a model has said nothing yet.",
    "targets": [
     {
      "refId": "A",
@@ -400,7 +400,7 @@
      },
      "editorType": "sql",
      "format": 1,
-     "rawSql": "SELECT start_ts, session_id, protocol, src_ip, actor_id, round(dateDiff('millisecond', start_ts, end_ts) / 1000, 1) AS duration_s, inputs, decisions, fallbacks, auth_attempts, auth_success AS logged_in, arrayStringConcat(arrayMap(c -> concat(c.1, ' / ', c.2), credentials), ', ') AS credentials, coalesce(nullIf(JSONExtractString(fingerprints, 'client_version'), ''), nullIf(JSONExtractString(fingerprints, 'user_agent'), ''), '') AS client, length(tokens) AS tokens, length(artifacts) AS artifacts FROM mirage.session_summary FINAL WHERE $__timeFilter(start_ts) AND ('${protocol}' = 'all' OR protocol = '${protocol}') AND (match('${src}', '^[0-9A-Fa-f:.]{0,45}$') AND ('${src}' = '' OR src_ip = '${src}')) ORDER BY start_ts DESC LIMIT 500"
+     "rawSql": "SELECT s.start_ts AS start_ts, s.session_id AS session_id, s.protocol AS protocol, s.src_ip AS src_ip, s.actor_id AS actor_id, ac.cls AS predicted_class, round(ac.cls_confidence, 2) AS class_confidence, tg.tactics AS tactics, tg.techniques AS techniques, s.duration_s AS duration_s, s.inputs AS inputs, s.decisions AS decisions, s.fallbacks AS fallbacks, s.auth_attempts AS auth_attempts, s.logged_in AS logged_in, s.credentials AS credentials, s.client AS client, s.tokens AS tokens, s.artifacts AS artifacts FROM (SELECT start_ts, session_id, protocol, src_ip, actor_id, round(dateDiff('millisecond', start_ts, end_ts) / 1000, 1) AS duration_s, inputs, decisions, fallbacks, auth_attempts, auth_success AS logged_in, arrayStringConcat(arrayMap(c -> concat(c.1, ' / ', c.2), credentials), ', ') AS credentials, coalesce(nullIf(JSONExtractString(fingerprints, 'client_version'), ''), nullIf(JSONExtractString(fingerprints, 'user_agent'), ''), '') AS client, length(tokens) AS tokens, length(artifacts) AS artifacts FROM mirage.session_summary FINAL WHERE $__timeFilter(start_ts) AND ('${protocol}' = 'all' OR protocol = '${protocol}') AND (match('${src}', '^[0-9A-Fa-f:.]{0,45}$') AND ('${src}' = '' OR src_ip = '${src}')) ORDER BY start_ts DESC LIMIT 500) AS s LEFT JOIN (SELECT if(cm.session_id != '', cm.session_id, a.session_id) AS lsid, argMax(a.actor_class, a.ts) AS cls, argMax(a.confidence, a.ts) AS cls_confidence, argMax(a.decided_by, a.ts) AS cls_decided_by FROM (SELECT session_id, actor_class, confidence, decided_by, ts FROM mirage.actor_class FINAL WHERE ts >= $__fromTime) AS a LEFT JOIN (SELECT conn_id, session_id FROM mirage.session_map FINAL) AS cm ON cm.conn_id = a.session_id GROUP BY lsid) AS ac ON ac.lsid = s.session_id LEFT JOIN (SELECT lsid, arrayStringConcat(arraySort(groupUniqArray(tactic)), ', ') AS tactics, arrayStringConcat(arraySort(groupUniqArray(technique)), ', ') AS techniques FROM (SELECT DISTINCT if(m.session_id != '', m.session_id, l.session_id) AS lsid, l.tactic AS tactic, l.technique AS technique FROM (SELECT session_id, tactic, technique FROM mirage.labels FINAL WHERE technique != '' AND ts >= $__fromTime) AS l LEFT JOIN (SELECT conn_id, session_id FROM mirage.session_map FINAL) AS m ON m.conn_id = l.session_id) GROUP BY lsid) AS tg ON tg.lsid = s.session_id ORDER BY start_ts DESC"
     }
    ],
    "fieldConfig": {
@@ -414,7 +414,7 @@
      {
       "matcher": {
        "id": "byRegexp",
-       "options": "^(ts|start_ts|stored_at|first_seen|last_seen|last|last_used)$"
+       "options": "^(ts|start_ts|end_ts|stored_at|first_seen|last_seen|last|last_used|published_at)$"
       },
       "properties": [
        {
@@ -450,7 +450,7 @@
      {
       "matcher": {
        "id": "byRegexp",
-       "options": "^(source|protocol|outcome|type|action|reason|mime)$"
+       "options": "^(source|protocol|outcome|type|action|reason|mime|kind|tactic|split|mode|gate)$"
       },
       "properties": [
        {
@@ -462,7 +462,7 @@
      {
       "matcher": {
        "id": "byRegexp",
-       "options": "^(class|src_ip|sensor|rule_id|location|used_in)$"
+       "options": "^(class|src_ip|sensor|rule_id|location|used_in|predicted_class|actor_class|decided_by|technique)$"
       },
       "properties": [
        {
@@ -474,7 +474,7 @@
      {
       "matcher": {
        "id": "byRegexp",
-       "options": "^(seq|inputs|decisions|fallbacks|tokens|artifacts|logged_in|strength|times|size|n_sessions|sessions|attempts|succeeded|exposures|uses|logins|sources|honeytokens|auth_attempts|duration_s|latency_us|status)$"
+       "options": "^(seq|inputs|decisions|fallbacks|tokens|artifacts|logged_in|strength|times|size|n_sessions|sessions|attempts|succeeded|exposures|uses|logins|sources|honeytokens|auth_attempts|duration_s|latency_us|status|confidence|class_confidence|agreement|scenarios|steps|matched|procedures|techniques_seen|value|ci_low|ci_high|baseline|delta)$"
       },
       "properties": [
        {
@@ -539,6 +539,121 @@
    }
   },
   {
+   "type": "piechart",
+   "title": "Predicted actor class",
+   "description": "The classifier's prediction for the sessions above (mirage.actor_class).",
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "grafana-clickhouse-datasource",
+      "uid": "clickhouse"
+     },
+     "editorType": "sql",
+     "format": 1,
+     "rawSql": "SELECT if(ac.cls = '', 'not classified', ac.cls) AS actor_class, count() AS sessions FROM (SELECT session_id FROM mirage.session_summary FINAL WHERE $__timeFilter(start_ts) AND ('${protocol}' = 'all' OR protocol = '${protocol}') AND (match('${src}', '^[0-9A-Fa-f:.]{0,45}$') AND ('${src}' = '' OR src_ip = '${src}'))) AS s LEFT JOIN (SELECT if(cm.session_id != '', cm.session_id, a.session_id) AS lsid, argMax(a.actor_class, a.ts) AS cls, argMax(a.confidence, a.ts) AS cls_confidence, argMax(a.decided_by, a.ts) AS cls_decided_by FROM (SELECT session_id, actor_class, confidence, decided_by, ts FROM mirage.actor_class FINAL WHERE ts >= $__fromTime) AS a LEFT JOIN (SELECT conn_id, session_id FROM mirage.session_map FINAL) AS cm ON cm.conn_id = a.session_id GROUP BY lsid) AS ac ON ac.lsid = s.session_id GROUP BY actor_class"
+    }
+   ],
+   "options": {
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ],
+     "fields": "",
+     "values": true
+    },
+    "pieType": "donut",
+    "legend": {
+     "displayMode": "table",
+     "placement": "right",
+     "values": [
+      "value"
+     ]
+    }
+   },
+   "id": 8,
+   "gridPos": {
+    "x": 0,
+    "y": 16,
+    "w": 8,
+    "h": 8
+   },
+   "datasource": {
+    "type": "grafana-clickhouse-datasource",
+    "uid": "clickhouse"
+   }
+  },
+  {
+   "type": "barchart",
+   "title": "Tactics found (sessions)",
+   "description": "Sessions in which the tagger found each ATT&CK tactic (mirage.labels).",
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "grafana-clickhouse-datasource",
+      "uid": "clickhouse"
+     },
+     "editorType": "sql",
+     "format": 1,
+     "rawSql": "SELECT t.tactic AS tactic, uniqExact(t.lsid) AS sessions FROM (SELECT DISTINCT if(m.session_id != '', m.session_id, l.session_id) AS lsid, l.tactic AS tactic, l.technique AS technique FROM (SELECT session_id, tactic, technique FROM mirage.labels FINAL WHERE technique != '' AND ts >= $__fromTime) AS l LEFT JOIN (SELECT conn_id, session_id FROM mirage.session_map FINAL) AS m ON m.conn_id = l.session_id) AS t INNER JOIN (SELECT session_id FROM mirage.session_summary FINAL WHERE $__timeFilter(start_ts) AND ('${protocol}' = 'all' OR protocol = '${protocol}') AND (match('${src}', '^[0-9A-Fa-f:.]{0,45}$') AND ('${src}' = '' OR src_ip = '${src}'))) AS s ON s.session_id = t.lsid GROUP BY tactic ORDER BY sessions DESC"
+    }
+   ],
+   "options": {
+    "orientation": "horizontal",
+    "showValue": "auto",
+    "legend": {
+     "showLegend": false
+    }
+   },
+   "id": 9,
+   "gridPos": {
+    "x": 8,
+    "y": 16,
+    "w": 8,
+    "h": 8
+   },
+   "datasource": {
+    "type": "grafana-clickhouse-datasource",
+    "uid": "clickhouse"
+   }
+  },
+  {
+   "type": "barchart",
+   "title": "Techniques found (sessions)",
+   "description": "Sessions in which the tagger found each ATT&CK technique (mirage.labels).",
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "grafana-clickhouse-datasource",
+      "uid": "clickhouse"
+     },
+     "editorType": "sql",
+     "format": 1,
+     "rawSql": "SELECT t.technique AS technique, uniqExact(t.lsid) AS sessions FROM (SELECT DISTINCT if(m.session_id != '', m.session_id, l.session_id) AS lsid, l.tactic AS tactic, l.technique AS technique FROM (SELECT session_id, tactic, technique FROM mirage.labels FINAL WHERE technique != '' AND ts >= $__fromTime) AS l LEFT JOIN (SELECT conn_id, session_id FROM mirage.session_map FINAL) AS m ON m.conn_id = l.session_id) AS t INNER JOIN (SELECT session_id FROM mirage.session_summary FINAL WHERE $__timeFilter(start_ts) AND ('${protocol}' = 'all' OR protocol = '${protocol}') AND (match('${src}', '^[0-9A-Fa-f:.]{0,45}$') AND ('${src}' = '' OR src_ip = '${src}'))) AS s ON s.session_id = t.lsid GROUP BY technique ORDER BY sessions DESC LIMIT 15"
+    }
+   ],
+   "options": {
+    "orientation": "horizontal",
+    "showValue": "auto",
+    "legend": {
+     "showLegend": false
+    }
+   },
+   "id": 10,
+   "gridPos": {
+    "x": 16,
+    "y": 16,
+    "w": 8,
+    "h": 8
+   },
+   "datasource": {
+    "type": "grafana-clickhouse-datasource",
+    "uid": "clickhouse"
+   }
+  },
+  {
    "type": "timeseries",
    "title": "Events by class",
    "description": "",
@@ -574,10 +689,10 @@
      "placement": "bottom"
     }
    },
-   "id": 8,
+   "id": 11,
    "gridPos": {
     "x": 0,
-    "y": 16,
+    "y": 24,
     "w": 24,
     "h": 7
    },
@@ -613,7 +728,7 @@
      {
       "matcher": {
        "id": "byRegexp",
-       "options": "^(ts|start_ts|stored_at|first_seen|last_seen|last|last_used)$"
+       "options": "^(ts|start_ts|end_ts|stored_at|first_seen|last_seen|last|last_used|published_at)$"
       },
       "properties": [
        {
@@ -649,7 +764,7 @@
      {
       "matcher": {
        "id": "byRegexp",
-       "options": "^(source|protocol|outcome|type|action|reason|mime)$"
+       "options": "^(source|protocol|outcome|type|action|reason|mime|kind|tactic|split|mode|gate)$"
       },
       "properties": [
        {
@@ -661,7 +776,7 @@
      {
       "matcher": {
        "id": "byRegexp",
-       "options": "^(class|src_ip|sensor|rule_id|location|used_in)$"
+       "options": "^(class|src_ip|sensor|rule_id|location|used_in|predicted_class|actor_class|decided_by|technique)$"
       },
       "properties": [
        {
@@ -673,7 +788,7 @@
      {
       "matcher": {
        "id": "byRegexp",
-       "options": "^(seq|inputs|decisions|fallbacks|tokens|artifacts|logged_in|strength|times|size|n_sessions|sessions|attempts|succeeded|exposures|uses|logins|sources|honeytokens|auth_attempts|duration_s|latency_us|status)$"
+       "options": "^(seq|inputs|decisions|fallbacks|tokens|artifacts|logged_in|strength|times|size|n_sessions|sessions|attempts|succeeded|exposures|uses|logins|sources|honeytokens|auth_attempts|duration_s|latency_us|status|confidence|class_confidence|agreement|scenarios|steps|matched|procedures|techniques_seen|value|ci_low|ci_high|baseline|delta)$"
       },
       "properties": [
        {
@@ -691,10 +806,10 @@
      "show": false
     }
    },
-   "id": 9,
+   "id": 12,
    "gridPos": {
     "x": 0,
-    "y": 23,
+    "y": 31,
     "w": 8,
     "h": 10
    },
@@ -730,7 +845,7 @@
      {
       "matcher": {
        "id": "byRegexp",
-       "options": "^(ts|start_ts|stored_at|first_seen|last_seen|last|last_used)$"
+       "options": "^(ts|start_ts|end_ts|stored_at|first_seen|last_seen|last|last_used|published_at)$"
       },
       "properties": [
        {
@@ -766,7 +881,7 @@
      {
       "matcher": {
        "id": "byRegexp",
-       "options": "^(source|protocol|outcome|type|action|reason|mime)$"
+       "options": "^(source|protocol|outcome|type|action|reason|mime|kind|tactic|split|mode|gate)$"
       },
       "properties": [
        {
@@ -778,7 +893,7 @@
      {
       "matcher": {
        "id": "byRegexp",
-       "options": "^(class|src_ip|sensor|rule_id|location|used_in)$"
+       "options": "^(class|src_ip|sensor|rule_id|location|used_in|predicted_class|actor_class|decided_by|technique)$"
       },
       "properties": [
        {
@@ -790,7 +905,7 @@
      {
       "matcher": {
        "id": "byRegexp",
-       "options": "^(seq|inputs|decisions|fallbacks|tokens|artifacts|logged_in|strength|times|size|n_sessions|sessions|attempts|succeeded|exposures|uses|logins|sources|honeytokens|auth_attempts|duration_s|latency_us|status)$"
+       "options": "^(seq|inputs|decisions|fallbacks|tokens|artifacts|logged_in|strength|times|size|n_sessions|sessions|attempts|succeeded|exposures|uses|logins|sources|honeytokens|auth_attempts|duration_s|latency_us|status|confidence|class_confidence|agreement|scenarios|steps|matched|procedures|techniques_seen|value|ci_low|ci_high|baseline|delta)$"
       },
       "properties": [
        {
@@ -808,10 +923,10 @@
      "show": false
     }
    },
-   "id": 10,
+   "id": 13,
    "gridPos": {
     "x": 8,
-    "y": 23,
+    "y": 31,
     "w": 8,
     "h": 10
    },
@@ -847,7 +962,7 @@
      {
       "matcher": {
        "id": "byRegexp",
-       "options": "^(ts|start_ts|stored_at|first_seen|last_seen|last|last_used)$"
+       "options": "^(ts|start_ts|end_ts|stored_at|first_seen|last_seen|last|last_used|published_at)$"
       },
       "properties": [
        {
@@ -883,7 +998,7 @@
      {
       "matcher": {
        "id": "byRegexp",
-       "options": "^(source|protocol|outcome|type|action|reason|mime)$"
+       "options": "^(source|protocol|outcome|type|action|reason|mime|kind|tactic|split|mode|gate)$"
       },
       "properties": [
        {
@@ -895,7 +1010,7 @@
      {
       "matcher": {
        "id": "byRegexp",
-       "options": "^(class|src_ip|sensor|rule_id|location|used_in)$"
+       "options": "^(class|src_ip|sensor|rule_id|location|used_in|predicted_class|actor_class|decided_by|technique)$"
       },
       "properties": [
        {
@@ -907,7 +1022,7 @@
      {
       "matcher": {
        "id": "byRegexp",
-       "options": "^(seq|inputs|decisions|fallbacks|tokens|artifacts|logged_in|strength|times|size|n_sessions|sessions|attempts|succeeded|exposures|uses|logins|sources|honeytokens|auth_attempts|duration_s|latency_us|status)$"
+       "options": "^(seq|inputs|decisions|fallbacks|tokens|artifacts|logged_in|strength|times|size|n_sessions|sessions|attempts|succeeded|exposures|uses|logins|sources|honeytokens|auth_attempts|duration_s|latency_us|status|confidence|class_confidence|agreement|scenarios|steps|matched|procedures|techniques_seen|value|ci_low|ci_high|baseline|delta)$"
       },
       "properties": [
        {
@@ -925,10 +1040,10 @@
      "show": false
     }
    },
-   "id": 11,
+   "id": 14,
    "gridPos": {
     "x": 16,
-    "y": 23,
+    "y": 31,
     "w": 8,
     "h": 10
    },

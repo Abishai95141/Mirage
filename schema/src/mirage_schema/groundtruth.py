@@ -61,6 +61,9 @@ class GroundTruth(_Model):
     status: Literal["ran", "failed", "skipped"]
     # What the scenario's own check concluded about the decoy's answer.
     outcome: Literal["ok", "failed", "unchecked"] = "unchecked"
+    # For an ``auth`` step: how many login attempts the runner made on this connection, so the
+    # join can count the captured ones against it instead of accepting any one of them.
+    attempts: int | None = Field(default=None, ge=0)
 
     @model_validator(mode="after")
     def _consistent(self) -> GroundTruth:
@@ -100,6 +103,10 @@ class SessionTruth(_Model):
     connections: list[Connection] = Field(min_length=1)
     start_ts: AwareDatetime
     end_ts: AwareDatetime
+    # Set when the session was cut short by a failure on the runner's side (the connection
+    # dropped under a step, a driver raised). The record is written all the same: without it
+    # the join cannot match the connection, and every step of the session reads as no_event.
+    error: str | None = Field(default=None, max_length=300)
 
 
 class RunRecord(_Model):

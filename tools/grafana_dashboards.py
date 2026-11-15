@@ -12,15 +12,25 @@ reaches a query as SQL. Template variables (typed or in the URL) are interpolate
 unescaped, so a crafted URL can shape a query: Grafana therefore reads ClickHouse as a user
 that can only SELECT (compose/clickhouse/users.d/grafana.xml). The ID patterns in the SQL only
 keep an empty or malformed ID from matching anything; they are not the protection.
+
+Before anything is written, ``check`` reads every page the way tests/integration/
+test_dashboards.py will run it (each target of each top-level panel) and refuses a panel that
+test could not reach, a variable it could not fill in, a replaced table read without FINAL, or
+lab ground truth (a ``sim_*`` table) on the pages that show the models' predictions.
 """
 
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 from typing import Any
 
-OUT = Path(__file__).resolve().parents[1] / "compose/grafana/dashboards"
+import yaml
+
+ROOT = Path(__file__).resolve().parents[1]
+OUT = ROOT / "compose/grafana/dashboards"
+SPLIT_FILE = ROOT / "eval/split.yaml"
 DS = {"type": "grafana-clickhouse-datasource", "uid": "clickhouse"}
 TABLE, SERIES = 1, 0
 
@@ -159,13 +169,16 @@ def stat(title: str, sql: str, unit: str = "none", color: str = "blue", desc: st
 # Column widths shared by every table, so timestamps and IDs are never cut off; the remaining
 # columns (commands, details, evidence) share what is left.
 WIDTHS = [
-    (r"^(ts|start_ts|stored_at|first_seen|last_seen|last|last_used)$", 185),
+    (r"^(ts|start_ts|end_ts|stored_at|first_seen|last_seen|last|last_used|published_at)$", 185),
     (r"^(session_id|actor_id|a|b|exposed_in|token_id|request_id)$", 215),
     (r"^(sha256)$", 270),
-    (r"^(source|protocol|outcome|type|action|reason|mime)$", 115),
-    (r"^(class|src_ip|sensor|rule_id|location|used_in)$", 150),
+    (r"^(source|protocol|outcome|type|action|reason|mime|kind|tactic|split|mode|gate)$", 115),
     (
-        r"^(seq|inputs|decisions|fallbacks|tokens|artifacts|logged_in|strength|times|size|n_sessions|sessions|attempts|succeeded|exposures|uses|logins|sources|honeytokens|auth_attempts|duration_s|latency_us|status)$",
+        r"^(class|src_ip|sensor|rule_id|location|used_in|predicted_class|actor_class|decided_by|technique)$",
+        150,
+    ),
+    (
+        r"^(seq|inputs|decisions|fallbacks|tokens|artifacts|logged_in|strength|times|size|n_sessions|sessions|attempts|succeeded|exposures|uses|logins|sources|honeytokens|auth_attempts|duration_s|latency_us|status|confidence|class_confidence|agreement|scenarios|steps|matched|procedures|techniques_seen|value|ci_low|ci_high|baseline|delta)$",
         95,
     ),
 ]
@@ -246,6 +259,83 @@ def text(title: str, md: str) -> dict:
     return {"type": "text", "title": title, "options": {"mode": "markdown", "content": md}}
 
 
+def heatmap(title: str, sql: str, row: str, desc: str = "") -> dict:
+    """A heatmap of ready-made cells. The query returns ``(time, <row>, value)`` in long form,
+    sorted by time; the datasource pivots it into one field per ``row`` value, and the panel
+    draws each field as a row of cells, one per time step (``calculate`` off: nothing is
+    re-bucketed)."""
+    return {
+        "type": "heatmap",
+        "title": title,
+        "description": desc,
+        "targets": [target(sql, SERIES)],
+        # Name each row by its label alone ("TA0007", not "sessions TA0007"). Only the value
+        # fields: the time field has no such label.
+        "fieldConfig": {
+            "defaults": {},
+            "overrides": [
+                {
+                    "matcher": {"id": "byType", "options": "number"},
+                    "properties": [{"id": "displayName", "value": f"${{__field.labels.{row}}}"}],
+                }
+            ],
+        },
+        "options": {
+            "calculate": False,
+            "cellGap": 2,
+            "color": {
+                "mode": "scheme",
+                "scheme": "Oranges",
+                "fill": "dark-orange",
+                "scale": "exponential",
+                "exponent": 0.5,
+                "steps": 64,
+                "reverse": False,
+            },
+            "yAxis": {"axisPlacement": "left", "reverse": False},
+            "rowsFrame": {"layout": "auto"},
+            "cellValues": {"unit": "short"},
+            "filterValues": {"le": 1e-9},  # an empty cell is left blank, not drawn as zero
+            "showValue": "auto",
+            "legend": {"show": True},
+            "tooltip": {"mode": "single", "yHistogram": False, "showColorScale": True},
+            "exemplars": {"color": "rgba(255,0,255,0.7)"},
+        },
+    }
+
+
+def matrix(title: str, sql: str, row: str, desc: str = "") -> dict:
+    """A heatmap of two categories: a table whose first column (``row``) names the row and
+    whose other columns are counts, each cell shaded by its value on one scale for the whole
+    table (Grafana's heatmap panel needs time on one axis)."""
+    panel = table(
+        title,
+        sql,
+        [
+            {
+                "matcher": {"id": "byName", "options": row},
+                "properties": [
+                    {"id": "custom.cellOptions", "value": {"type": "auto"}},
+                    {"id": "custom.align", "value": "left"},
+                    {"id": "custom.width", "value": 160},
+                ],
+            }
+        ],
+        desc,
+    )
+    panel["fieldConfig"]["defaults"] = {
+        "custom": {
+            "filterable": False,
+            "minWidth": 90,
+            "align": "center",
+            "cellOptions": {"type": "color-background", "mode": "basic"},
+        },
+        "color": {"mode": "continuous-YlRd"},
+        "min": 0,
+    }
+    return panel
+
+
 # ------------------------------------------------------------------------------ SQL pieces
 
 S = "mirage.session_summary FINAL"
@@ -283,6 +373,84 @@ DETAIL = """multiIf(
     '')"""
 PROTOCOL_FILTER = "('${protocol}' = 'all' OR protocol = '${protocol}')"
 SRC_FILTER = f"({SRC_OK} AND ('${{src}}' = '' OR src_ip = '${{src}}'))"
+
+# ---- what the models said (phase 2 spec 2.7). Predictions only: mirage.labels is the tagger's
+# output and mirage.actor_class the classifier's. Never a sim_* table here: those hold the
+# lab's ground truth, which is what a prediction is compared with, not what a page shows.
+#
+# The tagger labels events, so its session_id is the decoy connection's; the sessioniser
+# groups an HTTP client's connections into one logical session and records that in
+# session_map. Both pieces below key on the logical session (``lsid``), the ID the Sessions
+# page lists. A LEFT JOIN that finds no mapping leaves m.session_id empty (or NULL under
+# join_use_nulls), and the connection's own ID is then the session's.
+SESSION_MAP = "(SELECT conn_id, session_id FROM mirage.session_map FINAL)"
+
+
+def tags(where: str) -> str:
+    """One row per (logical session, tactic, technique) the tagger found, for labels
+    matching ``where`` (a condition on mirage.labels)."""
+    return (
+        "SELECT DISTINCT if(m.session_id != '', m.session_id, l.session_id) AS lsid,"
+        " l.tactic AS tactic, l.technique AS technique"
+        " FROM (SELECT session_id, tactic, technique FROM mirage.labels FINAL"
+        f" WHERE technique != '' AND {where}) AS l"
+        f" LEFT JOIN {SESSION_MAP} AS m ON m.conn_id = l.session_id"
+    )
+
+
+def tags_by_session(where: str) -> str:
+    """One row per logical session: its tactics and techniques as sorted, comma-separated text."""
+    return (
+        "SELECT lsid, arrayStringConcat(arraySort(groupUniqArray(tactic)), ', ') AS tactics,"
+        " arrayStringConcat(arraySort(groupUniqArray(technique)), ', ') AS techniques"
+        f" FROM ({tags(where)}) GROUP BY lsid"
+    )
+
+
+def predicted_class(where: str) -> str:
+    """One row per logical session: the classifier's latest prediction (``cls``), its
+    confidence and whether the scanner rule or the model made it. ``where`` is a condition on
+    mirage.actor_class."""
+    return (
+        "SELECT if(cm.session_id != '', cm.session_id, a.session_id) AS lsid,"
+        " argMax(a.actor_class, a.ts) AS cls, argMax(a.confidence, a.ts) AS cls_confidence,"
+        " argMax(a.decided_by, a.ts) AS cls_decided_by"
+        " FROM (SELECT session_id, actor_class, confidence, decided_by, ts"
+        f" FROM mirage.actor_class FINAL WHERE {where}) AS a"
+        f" LEFT JOIN {SESSION_MAP} AS cm ON cm.conn_id = a.session_id GROUP BY lsid"
+    )
+
+
+# A session's labels and prediction are written after it starts, so on a page that lists the
+# sessions started in the time range, nothing older than the range's start can belong to one.
+SINCE_FROM = "ts >= $__fromTime"
+
+
+# ---- the frozen split (phase 2 spec, section 5). ClickHouse does not store it: it lives in
+# eval/split.yaml, which assigns every scenario to train, dev or test. The Lab page counts
+# what the lab captured for each, so the mapping is written into its SQL here. Regenerate the
+# dashboards after the split is rebuilt or extended.
+def split_of(column: str) -> str:
+    """SQL for the split of the scenario ID in ``column``; 'unassigned' for one the frozen
+    split does not list (a scenario added since, or no split file at all)."""
+    scenarios: dict[str, str] = {}
+    if SPLIT_FILE.exists():
+        scenarios = (yaml.safe_load(SPLIT_FILE.read_text()) or {}).get("scenarios") or {}
+    for name, split in scenarios.items():  # they go into SQL: accept only plain IDs
+        if not re.fullmatch(r"[a-z0-9][a-z0-9._-]{0,63}", name) or split not in SPLITS:
+            raise SystemExit(f"{SPLIT_FILE}: unexpected scenario or split: {name!r}: {split!r}")
+    if not scenarios:
+        return "'unassigned'"
+    ids = ", ".join(f"'{name}'" for name in sorted(scenarios))
+    splits = ", ".join(f"'{scenarios[name]}'" for name in sorted(scenarios))
+    return f"transform({column}, [{ids}], [{splits}], 'unassigned')"
+
+
+SPLITS = ("train", "dev", "test")
+# train, dev, test, then anything else: the order a reader expects, not the alphabet's.
+SPLIT_ORDER = (
+    "indexOf(['train', 'dev', 'test'], split) = 0, indexOf(['train', 'dev', 'test'], split)"
+)
 
 
 # ------------------------------------------------------------------------------ pages
@@ -415,18 +583,70 @@ def sessions() -> Page:
     p.add(stat("Auth attempts", f"SELECT sum(auth_attempts) {q}", color="purple"), 4, 4)
     p.add(stat("With honeytokens", f"SELECT countIf(length(tokens) > 0) {q}", color="red"), 4, 4)
     p.add(stat("With artifacts", f"SELECT countIf(length(artifacts) > 0) {q}", color="green"), 4, 4)
+    # The newest 500 sessions, then what the classifier and the tagger said about each.
+    recent = (
+        "SELECT start_ts, session_id, protocol, src_ip, actor_id,"
+        " round(dateDiff('millisecond', start_ts, end_ts) / 1000, 1) AS duration_s,"
+        " inputs, decisions, fallbacks, auth_attempts, auth_success AS logged_in,"
+        f" {CREDS} AS credentials, {CLIENT} AS client, length(tokens) AS tokens,"
+        f" length(artifacts) AS artifacts {q} ORDER BY start_ts DESC LIMIT 500"
+    )
     p.add(
         table(
             "Recent sessions",
-            "SELECT start_ts, session_id, protocol, src_ip, actor_id,"
-            " round(dateDiff('millisecond', start_ts, end_ts) / 1000, 1) AS duration_s,"
-            " inputs, decisions, fallbacks, auth_attempts, auth_success AS logged_in,"
-            f" {CREDS} AS credentials, {CLIENT} AS client, length(tokens) AS tokens,"
-            f" length(artifacts) AS artifacts {q} ORDER BY start_ts DESC LIMIT 500",
+            "SELECT s.start_ts AS start_ts, s.session_id AS session_id, s.protocol AS protocol,"
+            " s.src_ip AS src_ip, s.actor_id AS actor_id, ac.cls AS predicted_class,"
+            " round(ac.cls_confidence, 2) AS class_confidence, tg.tactics AS tactics,"
+            " tg.techniques AS techniques, s.duration_s AS duration_s, s.inputs AS inputs,"
+            " s.decisions AS decisions, s.fallbacks AS fallbacks,"
+            " s.auth_attempts AS auth_attempts, s.logged_in AS logged_in,"
+            " s.credentials AS credentials, s.client AS client, s.tokens AS tokens,"
+            " s.artifacts AS artifacts"
+            f" FROM ({recent}) AS s"
+            f" LEFT JOIN ({predicted_class(SINCE_FROM)}) AS ac ON ac.lsid = s.session_id"
+            f" LEFT JOIN ({tags_by_session(SINCE_FROM)}) AS tg ON tg.lsid = s.session_id"
+            " ORDER BY start_ts DESC",
             links(SESSION_LINK, ACTOR_LINK),
+            desc="predicted_class is the actor classifier's prediction, tactics and techniques "
+            "the tagger's labels (ATT&CK IDs). Empty where a model has said nothing yet.",
         ),
         24,
         12,
+    )
+    in_filter = f"(SELECT session_id {q})"
+    p.add(
+        pie(
+            "Predicted actor class",
+            "SELECT if(ac.cls = '', 'not classified', ac.cls) AS actor_class,"
+            f" count() AS sessions FROM {in_filter} AS s"
+            f" LEFT JOIN ({predicted_class(SINCE_FROM)}) AS ac ON ac.lsid = s.session_id"
+            " GROUP BY actor_class",
+            desc="The classifier's prediction for the sessions above (mirage.actor_class).",
+        ),
+        8,
+        8,
+    )
+    p.add(
+        bars(
+            "Tactics found (sessions)",
+            "SELECT t.tactic AS tactic, uniqExact(t.lsid) AS sessions"
+            f" FROM ({tags(SINCE_FROM)}) AS t INNER JOIN {in_filter} AS s"
+            " ON s.session_id = t.lsid GROUP BY tactic ORDER BY sessions DESC",
+            desc="Sessions in which the tagger found each ATT&CK tactic (mirage.labels).",
+        ),
+        8,
+        8,
+    )
+    p.add(
+        bars(
+            "Techniques found (sessions)",
+            "SELECT t.technique AS technique, uniqExact(t.lsid) AS sessions"
+            f" FROM ({tags(SINCE_FROM)}) AS t INNER JOIN {in_filter} AS s"
+            " ON s.session_id = t.lsid GROUP BY technique ORDER BY sessions DESC LIMIT 15",
+            desc="Sessions in which the tagger found each ATT&CK technique (mirage.labels).",
+        ),
+        8,
+        8,
     )
     ev = (
         "FROM mirage.events WHERE $__timeFilter(ts) AND source != 'policy' "
@@ -529,6 +749,37 @@ def session() -> Page:
         ),
         24,
         4,
+    )
+    p.add(
+        table(
+            "Predicted actor class",
+            "SELECT actor_class, round(confidence, 3) AS confidence, decided_by, model_version, ts"
+            f" FROM mirage.actor_class FINAL WHERE session_id IN {SESSION_IDS} ORDER BY ts DESC",
+            desc="The actor classifier's prediction for this session, and whether the scanner "
+            "rule or the model made it. A prediction, recomputed as the session grows.",
+        ),
+        8,
+        7,
+    )
+    p.add(
+        table(
+            "Tactics and techniques",
+            "SELECT l.ts AS ts, l.kind AS kind, l.tactic AS tactic, l.technique AS technique,"
+            " round(l.confidence, 2) AS confidence, e.input AS input, l.rule_id AS rule_id,"
+            " l.model_version AS model_version"
+            " FROM (SELECT event_id, ts, kind, tactic, technique, confidence, rule_id,"
+            f" model_version FROM mirage.labels FINAL WHERE session_id IN {SESSION_IDS}"
+            " AND technique != '') AS l"
+            " LEFT JOIN (SELECT event_id, if(JSONExtractString(payload, 'command') != '',"
+            " JSONExtractString(payload, 'command'), JSONExtractString(payload, 'input'))"
+            f" AS input FROM mirage.events FINAL WHERE session_id IN {SESSION_IDS}"
+            " AND class = 'policy_decision' AND source != 'policy') AS e"
+            " ON e.event_id = l.event_id ORDER BY ts",
+            desc="The tagger's labels (ATT&CK IDs): one row per labelled input, and one per "
+            "session-level rule (kind = session, which has no single input).",
+        ),
+        16,
+        7,
     )
     p.add(
         table(
@@ -790,7 +1041,8 @@ def policy() -> Page:
     p = Page(
         "mirage-policy",
         "MIRAGE · Policy",
-        "What the policy gate decided, which rules fired, how fast, and when decoys fell back.",
+        "What the policy gate decided, which rules fired, how fast, when decoys fell back, and "
+        "how often the shadow policy would have done the same.",
     )
     d = "FROM mirage.events WHERE class = 'policy_decision' AND source != 'policy' AND $__timeFilter(ts)"
     srv = "FROM mirage.events WHERE source = 'policy' AND $__timeFilter(ts)"
@@ -876,6 +1128,56 @@ def policy() -> Page:
         9,
         8,
     )
+    # Shadow agreement (spec 2.7): on each decision the shadow policy logs a probability for
+    # every allowed action; it "agrees" when its most probable action is the one taken.
+    # Records from before the shadow was logged on explored decisions have none and are left
+    # out, not counted as disagreement.
+    shadowed = (
+        "FROM (SELECT ts, JSONExtractBool(payload, 'explore') AS explored,"
+        " JSONExtractString(payload, 'shadow', 'name') AS shadow,"
+        " JSONExtractString(payload, 'shadow', 'version') AS shadow_version,"
+        " JSONExtractString(payload, 'acting', 'action') AS taken,"
+        " arrayReverseSort(x -> x.2,"
+        " JSONExtractKeysAndValues(payload, 'shadow', 'probs', 'Float64'))[1].1 AS preferred"
+        f" {svc_d} AND JSONHas(payload, 'shadow', 'probs'))"
+    )
+    mode = "if(explored, 'explored', 'rules decided') AS mode"
+    p.add(
+        stat(
+            "Shadow agreement",
+            f"SELECT avg(preferred = taken) {shadowed}",
+            "percentunit",
+            "green",
+            desc="Share of decisions where the shadow policy's most probable action is the "
+            "action that was taken.",
+        ),
+        6,
+        8,
+    )
+    agreement = series(
+        "Shadow agreement over time",
+        f"SELECT $__timeInterval(ts) AS time, {mode}, avg(preferred = taken) AS agreement"
+        f" {shadowed} GROUP BY time, mode ORDER BY time",
+        "percentunit",
+        stack=False,
+        desc="The same share over time, apart for decisions the exploring policy made and "
+        "decisions the rules made. An explored decision departs from the rules' action about "
+        "as often as the policy explores, so its agreement with any shadow is lower by design.",
+    )
+    agreement["fieldConfig"]["defaults"].update(min=0, max=1)
+    p.add(agreement, 18, 8)
+    p.add(
+        table(
+            "Shadow policies",
+            f"SELECT shadow, shadow_version, {mode}, count() AS decisions,"
+            " round(avg(preferred = taken), 3) AS agreement, max(ts) AS last"
+            f" {shadowed} GROUP BY shadow, shadow_version, mode ORDER BY last DESC",
+            desc="Which policy shadowed. 'shadow-fallback(epsilon-greedy)' means no trained "
+            "model was loaded: the service says so instead of naming a model.",
+        ),
+        24,
+        6,
+    )
     p.add(
         series(
             "Gate latency p95 by decoy",
@@ -920,8 +1222,9 @@ def lab() -> Page:
     p = Page(
         "mirage-lab",
         "MIRAGE · Lab",
-        "The simulation lab: scenario runs, how cleanly the ground truth joined, and the "
-        "actors and protocols exercised.",
+        "The simulation lab: scenario runs, how cleanly the ground truth joined, the actors "
+        "and protocols exercised, what was captured for each side of the frozen split, and the "
+        "latest evaluation metrics beside their baselines.",
     )
     runs = "FROM mirage.sim_runs FINAL WHERE final = 1 AND $__timeFilter(ended_ts)"
     p.add(stat("Runs", f"SELECT count() {runs}"), 6, 4)
@@ -992,6 +1295,109 @@ def lab() -> Page:
         24,
         8,
     )
+    # Split sizes (spec 2.7): what the lab captured for each side of the frozen split. Ground
+    # truth is the subject here, so the sim_* tables are the right source on this page.
+    in_runs = f"run_id IN (SELECT run_id {runs})"
+    p.add(
+        table(
+            "Split sizes",
+            f"SELECT {split_of('scenario_id')} AS split, uniqExact(scenario_id) AS scenarios,"
+            " uniqExact(run_id, session_ref) AS sessions, count() AS steps,"
+            " countIf(state = 'matched') AS matched, uniqExact(procedure_id) AS procedures,"
+            " uniqExactIf(technique_id, technique_id != '') AS techniques_seen"
+            f" FROM mirage.sim_steps FINAL WHERE {in_runs} GROUP BY split ORDER BY {SPLIT_ORDER}",
+            desc="Scenarios, simulated sessions and steps captured for each side of the frozen "
+            "split (eval/split.yaml), from the final runs in the time range. 'unassigned' is a "
+            "scenario the split does not list.",
+        ),
+        14,
+        6,
+    )
+    p.add(
+        table(
+            "Sessions by split and actor class",
+            f"SELECT {split_of('scenario_id')} AS split,"
+            " uniqExactIf((run_id, session_ref), actor_class = 'scanner') AS scanner,"
+            " uniqExactIf((run_id, session_ref), actor_class = 'scripted_bot') AS scripted_bot,"
+            " uniqExactIf((run_id, session_ref), actor_class = 'human') AS human,"
+            " uniqExact(run_id, session_ref) AS sessions"
+            f" FROM mirage.sim_sessions FINAL WHERE {in_runs} GROUP BY split"
+            f" ORDER BY {SPLIT_ORDER}",
+            desc="The scenarios' own actor classes (ground truth), per side of the split.",
+        ),
+        10,
+        6,
+    )
+    # The evaluation harness publishes its latest numbers; one row per dataset and metric.
+    metrics = "FROM mirage.eval_metrics FINAL"
+    p.add(
+        stat(
+            "Gates met",
+            f"SELECT countIf(gate = 1) {metrics}",
+            color="green",
+            desc="Gate metrics of the latest evaluation that meet their threshold.",
+        ),
+        4,
+        4,
+    )
+    p.add(
+        stat(
+            "Gates not met",
+            f"SELECT countIf(gate = 0) {metrics}",
+            color="red",
+            desc="Gate metrics of the latest evaluation that miss their threshold.",
+        ),
+        4,
+        4,
+    )
+    p.add(
+        stat(
+            "Last evaluation",
+            f"SELECT toUnixTimestamp64Milli(published_at) {metrics}"
+            " ORDER BY published_at DESC LIMIT 1",
+            "dateTimeAsIso",
+            "text",
+            desc="When the evaluation harness last published.",
+        ),
+        16,
+        4,
+    )
+    p.add(
+        table(
+            "Latest evaluation metrics and baselines",
+            "SELECT m.dataset AS dataset, m.metric AS metric, round(m.value, 4) AS value,"
+            " round(m.ci_low, 4) AS ci_low, round(m.ci_high, 4) AS ci_high,"
+            " round(m.baseline, 4) AS baseline, round(m.value - m.baseline, 4) AS delta,"
+            " multiIf(m.gate = 1, 'met', m.gate = 0, 'NOT MET', '') AS gate,"
+            " m.detail AS detail, m.published_at AS published_at"
+            " FROM mirage.eval_metrics AS m FINAL ORDER BY dataset, metric",
+            [
+                {
+                    "matcher": {"id": "byName", "options": "gate"},
+                    "properties": [
+                        {
+                            "id": "mappings",
+                            "value": [
+                                {
+                                    "type": "value",
+                                    "options": {
+                                        "met": {"color": "green", "index": 0},
+                                        "NOT MET": {"color": "red", "index": 1},
+                                    },
+                                }
+                            ],
+                        },
+                        {"id": "custom.cellOptions", "value": {"type": "color-text"}},
+                    ],
+                }
+            ],
+            desc="Each metric beside the baseline it is compared with; ci_low and ci_high are "
+            "its bootstrap interval, delta is value minus baseline. The gate column is empty "
+            "for a metric that is reported but is not a gate. Not limited by the time range.",
+        ),
+        24,
+        10,
+    )
     return p
 
 
@@ -999,10 +1405,17 @@ def alerts() -> Page:
     p = Page(
         "mirage-alerts",
         "MIRAGE · Alerts",
-        "Sessions worth an analyst's attention: a honeytoken reached, an artifact captured, or "
-        "Persistence or Impact seen. The tactic heatmap shows what techniques the tagger found.",
+        "Sessions and actors worth an analyst's attention: a honeytoken reached, an artifact "
+        "captured, or Persistence or Impact seen. The tactic heatmaps show what the tagger "
+        "found, by day and by predicted actor class.",
     )
     a = "FROM mirage.alerts FINAL WHERE $__timeFilter(end_ts)"
+    # notEmpty(reasons): an actor merged into another leaves a retired row with empty arrays
+    # (compose/clickhouse/init.sql). Filtered in a subquery, before any column is renamed.
+    aa = (
+        "FROM (SELECT * FROM mirage.actor_alerts FINAL"
+        " WHERE notEmpty(reasons) AND $__timeFilter(end_ts))"
+    )
     lab = "FROM mirage.labels FINAL WHERE technique != '' AND $__timeFilter(ts)"
     p.add(stat("Alerts", f"SELECT count() {a}", color="red"), 6, 4)
     p.add(
@@ -1014,6 +1427,30 @@ def alerts() -> Page:
     )
     p.add(stat("Impact alerts", f"SELECT countIf(has(reasons, 'impact')) {a}", color="red"), 6, 4)
     p.add(stat("Sessions labelled", "SELECT uniqExact(session_id) " + lab, color="blue"), 6, 4)
+    p.add(
+        table(
+            "Actor alerts",
+            "SELECT end_ts, actor_id, length(session_ids) AS sessions,"
+            " arrayStringConcat(src_ips, ', ') AS src_ips,"
+            " arrayStringConcat(protocols, ', ') AS protocols,"
+            " arrayStringConcat(actor_classes, ', ') AS actor_classes,"
+            " arrayStringConcat(reasons, ', ') AS reasons,"
+            " arrayStringConcat(tactics, ', ') AS tactics,"
+            " arrayStringConcat(techniques, ', ') AS techniques,"
+            " arrayStringConcat(tokens, ', ') AS honeytokens, length(artifacts) AS n_artifacts,"
+            # all_sessions, not session_ids: an alias with the column's name would be what
+            # length() and [1] see, and they need the array.
+            " inputs, session_ids[1] AS session_id,"
+            " arrayStringConcat(session_ids, ', ') AS all_sessions, start_ts"
+            f" {aa} ORDER BY end_ts DESC LIMIT 200",
+            links(SESSION_LINK, ACTOR_LINK),
+            desc="One row per actor: every session, address and predicted class the links "
+            "group under it, so an attack that moves between addresses is one alert. "
+            "session_id opens the actor's first session; actor_id opens the actor.",
+        ),
+        24,
+        8,
+    )
     p.add(
         table(
             "Recent alerts",
@@ -1035,14 +1472,49 @@ def alerts() -> Page:
         8,
     )
     p.add(
-        series(
-            "Tactics over time",
-            f"SELECT $__timeInterval(ts) AS time, tactic, count() AS labels {lab}"
-            " GROUP BY time, tactic ORDER BY time",
-            desc="The heatmap of attacker progression: labelled inputs per tactic over time.",
+        heatmap(
+            "Tactic heatmap: by day",
+            # Every day of the range is a column for every tactic (WITH FILL), so a quiet day
+            # is an empty cell, not a missing one; the day before the range pads the left
+            # edge so there are always two columns to size a cell from. The outer ORDER BY
+            # puts the rows back in time order, which the datasource needs to pivot them.
+            "SELECT time, tactic, sessions FROM (SELECT toStartOfDay(t.day_ts) AS time,"
+            " t.tactic AS tactic, uniqExact(t.lsid) AS sessions FROM ("
+            "SELECT if(m.session_id != '', m.session_id, l.session_id) AS lsid,"
+            " l.tactic AS tactic, l.ts AS day_ts"
+            " FROM (SELECT session_id, tactic, ts FROM mirage.labels FINAL"
+            " WHERE technique != '' AND $__timeFilter(ts)) AS l"
+            f" LEFT JOIN {SESSION_MAP} AS m ON m.conn_id = l.session_id) AS t"
+            " GROUP BY time, tactic ORDER BY tactic, time WITH FILL"
+            " FROM toStartOfDay($__fromTime) - INTERVAL 1 DAY TO $__toTime STEP INTERVAL 1 DAY)"
+            " ORDER BY time, tactic",
+            row="tactic",
+            desc="Sessions in which the tagger found each ATT&CK tactic, per day (UTC). "
+            "Widen the time range to see more days.",
         ),
         16,
         8,
+    )
+    p.add(
+        matrix(
+            "Tactic heatmap: by predicted actor class",
+            "SELECT t.tactic AS tactic,"
+            " uniqExactIf(t.lsid, ac.cls = 'scanner') AS scanner,"
+            " uniqExactIf(t.lsid, ac.cls = 'scripted_bot') AS scripted_bot,"
+            " uniqExactIf(t.lsid, ac.cls = 'human') AS human,"
+            " uniqExactIf(t.lsid, ac.cls NOT IN ('', 'scanner', 'scripted_bot', 'human'))"
+            " AS other_class,"
+            " uniqExactIf(t.lsid, ac.cls = '') AS not_classified"
+            f" FROM ({tags('$__timeFilter(ts)')}) AS t"
+            f" LEFT JOIN ({predicted_class('1')}) AS ac ON ac.lsid = t.lsid"
+            " GROUP BY tactic ORDER BY tactic",
+            row="tactic",
+            desc="Sessions in which the tagger found each tactic, by the class the actor "
+            "classifier predicted for the session. Both are model output (mirage.labels, "
+            "mirage.actor_class), not the lab's ground truth.",
+        ),
+        24,
+        9,
     )
     p.add(
         bars(
@@ -1059,10 +1531,63 @@ def alerts() -> Page:
 PAGES = [overview, sessions, session, actors, tokens, artifacts, policy, lab, alerts]
 
 
+# ------------------------------------------------------------------------------ self-check
+
+# Pages that show what the models said about real sessions. They may never read lab ground
+# truth (docs/07-phase-2-completion.md, rule 1), and must read both models' output.
+PREDICTION_PAGES = {"mirage-sessions", "mirage-session"}
+# Tables whose rows are replaced by a newer version: a read without FINAL can count a row twice.
+REPLACED = (
+    "session_summary|session_map|labels|actor_class|alerts|actor_alerts|eval_metrics"
+    "|sim_runs|sim_steps|sim_sessions"
+)
+# The variables tests/integration/test_dashboards.py knows how to fill in.
+TEST_VARIABLES = {"session", "actor", "protocol", "src"}
+
+
+def check(page: Page) -> None:
+    """Refuse to write a page the integration test could not exercise or that breaks a rule
+    the audit set. The test runs every target of every top-level panel; this keeps a panel
+    from hiding where it does not look, and catches by reading what it would catch by running."""
+
+    def fail(panel: dict[str, Any], why: str) -> None:
+        raise SystemExit(f"{page.uid} / {panel.get('title') or panel['type']}: {why}")
+
+    declared = {v["name"] for v in page.variables}
+    for panel in page.panels:
+        if "panels" in panel:
+            fail(panel, "nested panels (a row) are not seen by the dashboard test")
+        targets = panel.get("targets", [])
+        if panel["type"] != "text" and not targets:
+            fail(panel, "a panel without a query")
+        for t in targets:
+            sql = t.get("rawSql", "")
+            if not sql.strip() or not t.get("refId"):
+                fail(panel, "a target needs rawSql and a refId")
+            used = set(re.findall(r"\$\{(\w+)\}", sql))
+            if not used <= declared & TEST_VARIABLES:
+                fail(
+                    panel,
+                    f"variables {sorted(used - (declared & TEST_VARIABLES))} are not "
+                    "declared on the page, or the dashboard test cannot fill them in",
+                )
+            if page.uid in PREDICTION_PAGES and "sim_" in sql:
+                fail(panel, "a sim_* table (lab ground truth) on a page of predictions")
+            for m in re.finditer(rf"\bmirage\.({REPLACED})\b(?! (AS \w+ )?FINAL\b)", sql):
+                fail(panel, f"mirage.{m.group(1)} is read without FINAL")
+    if page.uid in PREDICTION_PAGES:
+        everything = " ".join(t["rawSql"] for p in page.panels for t in p.get("targets", []))
+        for needed in ("mirage.labels", "mirage.actor_class"):
+            if needed not in everything:
+                raise SystemExit(f"{page.uid}: shows nothing from {needed}")
+
+
 def main() -> None:
     OUT.mkdir(parents=True, exist_ok=True)
-    for make in PAGES:
-        page = make()
+    pages = [make() for make in PAGES]
+    for page in pages:
+        check(page)
+    for page in pages:
         path = OUT / f"{page.uid}.json"
         path.write_text(json.dumps(page.json(), indent=1, ensure_ascii=False) + "\n")
         print(f"wrote {path.relative_to(OUT.parents[2])} ({len(page.panels)} panels)")

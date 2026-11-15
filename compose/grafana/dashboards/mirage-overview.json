@@ -559,7 +559,7 @@
      {
       "matcher": {
        "id": "byRegexp",
-       "options": "^(ts|start_ts|stored_at|first_seen|last_seen|last|last_used)$"
+       "options": "^(ts|start_ts|end_ts|stored_at|first_seen|last_seen|last|last_used|published_at)$"
       },
       "properties": [
        {
@@ -595,7 +595,7 @@
      {
       "matcher": {
        "id": "byRegexp",
-       "options": "^(source|protocol|outcome|type|action|reason|mime)$"
+       "options": "^(source|protocol|outcome|type|action|reason|mime|kind|tactic|split|mode|gate)$"
       },
       "properties": [
        {
@@ -607,7 +607,7 @@
      {
       "matcher": {
        "id": "byRegexp",
-       "options": "^(class|src_ip|sensor|rule_id|location|used_in)$"
+       "options": "^(class|src_ip|sensor|rule_id|location|used_in|predicted_class|actor_class|decided_by|technique)$"
       },
       "properties": [
        {
@@ -619,7 +619,7 @@
      {
       "matcher": {
        "id": "byRegexp",
-       "options": "^(seq|inputs|decisions|fallbacks|tokens|artifacts|logged_in|strength|times|size|n_sessions|sessions|attempts|succeeded|exposures|uses|logins|sources|honeytokens|auth_attempts|duration_s|latency_us|status)$"
+       "options": "^(seq|inputs|decisions|fallbacks|tokens|artifacts|logged_in|strength|times|size|n_sessions|sessions|attempts|succeeded|exposures|uses|logins|sources|honeytokens|auth_attempts|duration_s|latency_us|status|confidence|class_confidence|agreement|scenarios|steps|matched|procedures|techniques_seen|value|ci_low|ci_high|baseline|delta)$"
       },
       "properties": [
        {
@@ -728,7 +728,7 @@
      {
       "matcher": {
        "id": "byRegexp",
-       "options": "^(ts|start_ts|stored_at|first_seen|last_seen|last|last_used)$"
+       "options": "^(ts|start_ts|end_ts|stored_at|first_seen|last_seen|last|last_used|published_at)$"
       },
       "properties": [
        {
@@ -764,7 +764,7 @@
      {
       "matcher": {
        "id": "byRegexp",
-       "options": "^(source|protocol|outcome|type|action|reason|mime)$"
+       "options": "^(source|protocol|outcome|type|action|reason|mime|kind|tactic|split|mode|gate)$"
       },
       "properties": [
        {
@@ -776,7 +776,7 @@
      {
       "matcher": {
        "id": "byRegexp",
-       "options": "^(class|src_ip|sensor|rule_id|location|used_in)$"
+       "options": "^(class|src_ip|sensor|rule_id|location|used_in|predicted_class|actor_class|decided_by|technique)$"
       },
       "properties": [
        {
@@ -788,7 +788,7 @@
      {
       "matcher": {
        "id": "byRegexp",
-       "options": "^(seq|inputs|decisions|fallbacks|tokens|artifacts|logged_in|strength|times|size|n_sessions|sessions|attempts|succeeded|exposures|uses|logins|sources|honeytokens|auth_attempts|duration_s|latency_us|status)$"
+       "options": "^(seq|inputs|decisions|fallbacks|tokens|artifacts|logged_in|strength|times|size|n_sessions|sessions|attempts|succeeded|exposures|uses|logins|sources|honeytokens|auth_attempts|duration_s|latency_us|status|confidence|class_confidence|agreement|scenarios|steps|matched|procedures|techniques_seen|value|ci_low|ci_high|baseline|delta)$"
       },
       "properties": [
        {

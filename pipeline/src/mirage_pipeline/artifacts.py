@@ -6,6 +6,10 @@ bytes. It never runs, unpacks or parses an artifact beyond that. ``mirage.artifa
 joins these rows with the events that mention each hash: first and last seen, and sessions.
 
 ``ARTIFACT_DIRS`` lists the directories as ``source=path`` pairs separated by commas.
+
+It also reads Cowrie's finished TTY logs (``TTY_DIR``) and writes their keystroke statistics to
+``mirage.tty_stats`` (phase 2 spec, 2.0). A TTY log is the decoy's own recording of a session,
+not an attacker's file; it is parsed as data by ``ttystats`` and never replayed.
 """
 
 from __future__ import annotations
@@ -24,6 +28,7 @@ from typing import Any
 
 import puremagic
 
+from mirage_pipeline import ttystats
 from mirage_pipeline.normaliser import ClickHouse, Settings, _retry
 from mirage_pipeline.rows import _ch_ts
 
@@ -32,6 +37,7 @@ HEALTH = Path("/tmp/mirage-artifacts.alive")  # noqa: S108 container-private
 SHA256_NAME = re.compile(r"[0-9a-f]{64}")
 HEAD = 8192
 DEFAULT_DIRS = "cowrie=/cowrie-var/lib/cowrie/downloads,http=/http-artifacts"
+DEFAULT_TTY_DIR = "/cowrie-var/lib/cowrie/tty"
 
 
 def parse_dirs(spec: str) -> list[tuple[str, Path]]:
@@ -104,6 +110,34 @@ def scan(dirs: list[tuple[str, Path]], known: set[tuple[str, str]]) -> list[dict
     return rows
 
 
+def scan_tty(root: Path | None, known: set[str]) -> list[dict[str, Any]]:
+    """Keystroke statistics for every finished TTY log not yet indexed. Cowrie renames a log to
+    its SHA-256 when the channel closes, so a file with any other name is still being written."""
+    rows: list[dict[str, Any]] = []
+    if root is None or not root.is_dir():
+        return rows
+    for p in sorted(root.iterdir()):
+        if p.name in known or not SHA256_NAME.fullmatch(p.name):
+            continue
+        if p.is_symlink() or not p.is_file():
+            continue
+        try:
+            with p.open("rb") as f:
+                blob = f.read(ttystats.MAX_LOG_BYTES + 1)
+        except OSError as exc:
+            log.warning("cannot read %s: %s", p, exc)
+            continue
+        rows.append(
+            {
+                "sha256": p.name,
+                **ttystats.stats(blob).row(),
+                "indexed_at": _ch_ts(datetime.now(UTC)),
+            }
+        )
+        known.add(p.name)
+    return rows
+
+
 async def run(stop: asyncio.Event) -> None:
     s = Settings.from_env()
     dirs = parse_dirs(os.environ.get("ARTIFACT_DIRS", DEFAULT_DIRS))
@@ -117,13 +151,25 @@ async def run(stop: asyncio.Event) -> None:
             lambda: ch.select("SELECT source, sha256 FROM mirage.artifact_files FINAL"),
         )
     }
+    tty_dir = Path(os.environ.get("TTY_DIR", DEFAULT_TTY_DIR))
+    known_tty = {
+        r["sha256"]
+        for r in await _retry(
+            "ClickHouse tables", lambda: ch.select("SELECT sha256 FROM mirage.tty_stats FINAL")
+        )
+    }
     log.info("indexing %s (%d already indexed)", dirs, len(known))
+    log.info("reading TTY logs in %s (%d already read)", tty_dir, len(known_tty))
     while not stop.is_set():
         HEALTH.touch()
         rows = await asyncio.to_thread(scan, dirs, known)
         if rows:
             await ch.insert(rows, "mirage.artifact_files")
             log.info("indexed %d artifacts", len(rows))
+        tty_rows = await asyncio.to_thread(scan_tty, tty_dir, known_tty)
+        if tty_rows:
+            await ch.insert(tty_rows, "mirage.tty_stats")
+            log.info("read %d TTY logs", len(tty_rows))
         with contextlib.suppress(TimeoutError):
             await asyncio.wait_for(stop.wait(), timeout=interval)
     await ch.close()

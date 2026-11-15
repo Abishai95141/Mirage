@@ -1,7 +1,7 @@
 {
  "uid": "mirage-alerts",
  "title": "MIRAGE · Alerts",
- "description": "Sessions worth an analyst's attention: a honeytoken reached, an artifact captured, or Persistence or Impact seen. The tactic heatmap shows what techniques the tagger found.",
+ "description": "Sessions and actors worth an analyst's attention: a honeytoken reached, an artifact captured, or Persistence or Impact seen. The tactic heatmaps show what the tagger found, by day and by predicted actor class.",
  "tags": [
   "mirage"
  ],
@@ -237,8 +237,8 @@
   },
   {
    "type": "table",
-   "title": "Recent alerts",
-   "description": "One row per session that triggered; newest first.",
+   "title": "Actor alerts",
+   "description": "One row per actor: every session, address and predicted class the links group under it, so an attack that moves between addresses is one alert. session_id opens the actor's first session; actor_id opens the actor.",
    "targets": [
     {
      "refId": "A",
@@ -248,7 +248,7 @@
      },
      "editorType": "sql",
      "format": 1,
-     "rawSql": "SELECT end_ts, session_id, src_ip, protocol, arrayStringConcat(reasons, ', ') AS reasons, arrayStringConcat(techniques, ', ') AS techniques, inputs FROM mirage.alerts FINAL WHERE $__timeFilter(end_ts) ORDER BY end_ts DESC LIMIT 200"
+     "rawSql": "SELECT end_ts, actor_id, length(session_ids) AS sessions, arrayStringConcat(src_ips, ', ') AS src_ips, arrayStringConcat(protocols, ', ') AS protocols, arrayStringConcat(actor_classes, ', ') AS actor_classes, arrayStringConcat(reasons, ', ') AS reasons, arrayStringConcat(tactics, ', ') AS tactics, arrayStringConcat(techniques, ', ') AS techniques, arrayStringConcat(tokens, ', ') AS honeytokens, length(artifacts) AS n_artifacts, inputs, session_ids[1] AS session_id, arrayStringConcat(session_ids, ', ') AS all_sessions, start_ts FROM (SELECT * FROM mirage.actor_alerts FINAL WHERE notEmpty(reasons) AND $__timeFilter(end_ts)) ORDER BY end_ts DESC LIMIT 200"
     }
    ],
    "fieldConfig": {
@@ -262,7 +262,7 @@
      {
       "matcher": {
        "id": "byRegexp",
-       "options": "^(ts|start_ts|stored_at|first_seen|last_seen|last|last_used)$"
+       "options": "^(ts|start_ts|end_ts|stored_at|first_seen|last_seen|last|last_used|published_at)$"
       },
       "properties": [
        {
@@ -298,7 +298,7 @@
      {
       "matcher": {
        "id": "byRegexp",
-       "options": "^(source|protocol|outcome|type|action|reason|mime)$"
+       "options": "^(source|protocol|outcome|type|action|reason|mime|kind|tactic|split|mode|gate)$"
       },
       "properties": [
        {
@@ -310,7 +310,7 @@
      {
       "matcher": {
        "id": "byRegexp",
-       "options": "^(class|src_ip|sensor|rule_id|location|used_in)$"
+       "options": "^(class|src_ip|sensor|rule_id|location|used_in|predicted_class|actor_class|decided_by|technique)$"
       },
       "properties": [
        {
@@ -322,7 +322,158 @@
      {
       "matcher": {
        "id": "byRegexp",
-       "options": "^(seq|inputs|decisions|fallbacks|tokens|artifacts|logged_in|strength|times|size|n_sessions|sessions|attempts|succeeded|exposures|uses|logins|sources|honeytokens|auth_attempts|duration_s|latency_us|status)$"
+       "options": "^(seq|inputs|decisions|fallbacks|tokens|artifacts|logged_in|strength|times|size|n_sessions|sessions|attempts|succeeded|exposures|uses|logins|sources|honeytokens|auth_attempts|duration_s|latency_us|status|confidence|class_confidence|agreement|scenarios|steps|matched|procedures|techniques_seen|value|ci_low|ci_high|baseline|delta)$"
+      },
+      "properties": [
+       {
+        "id": "custom.width",
+        "value": 95
+       }
+      ]
+     },
+     {
+      "matcher": {
+       "id": "byName",
+       "options": "session_id"
+      },
+      "properties": [
+       {
+        "id": "links",
+        "value": [
+         {
+          "title": "Open session",
+          "url": "/d/mirage-session/mirage-session?var-session=${__value.raw}&${__url_time_range}"
+         }
+        ]
+       }
+      ]
+     },
+     {
+      "matcher": {
+       "id": "byName",
+       "options": "actor_id"
+      },
+      "properties": [
+       {
+        "id": "links",
+        "value": [
+         {
+          "title": "Open actor",
+          "url": "/d/mirage-actors/mirage-actors?var-actor=${__value.raw}&${__url_time_range}"
+         }
+        ]
+       }
+      ]
+     }
+    ]
+   },
+   "options": {
+    "showHeader": true,
+    "cellHeight": "sm",
+    "footer": {
+     "show": false
+    }
+   },
+   "id": 5,
+   "gridPos": {
+    "x": 0,
+    "y": 4,
+    "w": 24,
+    "h": 8
+   },
+   "datasource": {
+    "type": "grafana-clickhouse-datasource",
+    "uid": "clickhouse"
+   }
+  },
+  {
+   "type": "table",
+   "title": "Recent alerts",
+   "description": "One row per session that triggered; newest first.",
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "grafana-clickhouse-datasource",
+      "uid": "clickhouse"
+     },
+     "editorType": "sql",
+     "format": 1,
+     "rawSql": "SELECT end_ts, session_id, src_ip, protocol, arrayStringConcat(reasons, ', ') AS reasons, arrayStringConcat(techniques, ', ') AS techniques, inputs FROM mirage.alerts FINAL WHERE $__timeFilter(end_ts) ORDER BY end_ts DESC LIMIT 200"
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "custom": {
+      "filterable": true,
+      "minWidth": 90
+     }
+    },
+    "overrides": [
+     {
+      "matcher": {
+       "id": "byRegexp",
+       "options": "^(ts|start_ts|end_ts|stored_at|first_seen|last_seen|last|last_used|published_at)$"
+      },
+      "properties": [
+       {
+        "id": "custom.width",
+        "value": 185
+       }
+      ]
+     },
+     {
+      "matcher": {
+       "id": "byRegexp",
+       "options": "^(session_id|actor_id|a|b|exposed_in|token_id|request_id)$"
+      },
+      "properties": [
+       {
+        "id": "custom.width",
+        "value": 215
+       }
+      ]
+     },
+     {
+      "matcher": {
+       "id": "byRegexp",
+       "options": "^(sha256)$"
+      },
+      "properties": [
+       {
+        "id": "custom.width",
+        "value": 270
+       }
+      ]
+     },
+     {
+      "matcher": {
+       "id": "byRegexp",
+       "options": "^(source|protocol|outcome|type|action|reason|mime|kind|tactic|split|mode|gate)$"
+      },
+      "properties": [
+       {
+        "id": "custom.width",
+        "value": 115
+       }
+      ]
+     },
+     {
+      "matcher": {
+       "id": "byRegexp",
+       "options": "^(class|src_ip|sensor|rule_id|location|used_in|predicted_class|actor_class|decided_by|technique)$"
+      },
+      "properties": [
+       {
+        "id": "custom.width",
+        "value": 150
+       }
+      ]
+     },
+     {
+      "matcher": {
+       "id": "byRegexp",
+       "options": "^(seq|inputs|decisions|fallbacks|tokens|artifacts|logged_in|strength|times|size|n_sessions|sessions|attempts|succeeded|exposures|uses|logins|sources|honeytokens|auth_attempts|duration_s|latency_us|status|confidence|class_confidence|agreement|scenarios|steps|matched|procedures|techniques_seen|value|ci_low|ci_high|baseline|delta)$"
       },
       "properties": [
        {
@@ -357,10 +508,10 @@
      "show": false
     }
    },
-   "id": 5,
+   "id": 6,
    "gridPos": {
     "x": 0,
-    "y": 4,
+    "y": 12,
     "w": 24,
     "h": 8
    },
@@ -402,10 +553,10 @@
      ]
     }
    },
-   "id": 6,
+   "id": 7,
    "gridPos": {
     "x": 0,
-    "y": 12,
+    "y": 20,
     "w": 8,
     "h": 8
    },
@@ -415,9 +566,9 @@
    }
   },
   {
-   "type": "timeseries",
-   "title": "Tactics over time",
-   "description": "The heatmap of attacker progression: labelled inputs per tactic over time.",
+   "type": "heatmap",
+   "title": "Tactic heatmap: by day",
+   "description": "Sessions in which the tagger found each ATT&CK tactic, per day (UTC). Widen the time range to see more days.",
    "targets": [
     {
      "refId": "A",
@@ -427,35 +578,218 @@
      },
      "editorType": "sql",
      "format": 0,
-     "rawSql": "SELECT $__timeInterval(ts) AS time, tactic, count() AS labels FROM mirage.labels FINAL WHERE technique != '' AND $__timeFilter(ts) GROUP BY time, tactic ORDER BY time"
+     "rawSql": "SELECT time, tactic, sessions FROM (SELECT toStartOfDay(t.day_ts) AS time, t.tactic AS tactic, uniqExact(t.lsid) AS sessions FROM (SELECT if(m.session_id != '', m.session_id, l.session_id) AS lsid, l.tactic AS tactic, l.ts AS day_ts FROM (SELECT session_id, tactic, ts FROM mirage.labels FINAL WHERE technique != '' AND $__timeFilter(ts)) AS l LEFT JOIN (SELECT conn_id, session_id FROM mirage.session_map FINAL) AS m ON m.conn_id = l.session_id) AS t GROUP BY time, tactic ORDER BY tactic, time WITH FILL FROM toStartOfDay($__fromTime) - INTERVAL 1 DAY TO $__toTime STEP INTERVAL 1 DAY) ORDER BY time, tactic"
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {},
+    "overrides": [
+     {
+      "matcher": {
+       "id": "byType",
+       "options": "number"
+      },
+      "properties": [
+       {
+        "id": "displayName",
+        "value": "${__field.labels.tactic}"
+       }
+      ]
+     }
+    ]
+   },
+   "options": {
+    "calculate": false,
+    "cellGap": 2,
+    "color": {
+     "mode": "scheme",
+     "scheme": "Oranges",
+     "fill": "dark-orange",
+     "scale": "exponential",
+     "exponent": 0.5,
+     "steps": 64,
+     "reverse": false
+    },
+    "yAxis": {
+     "axisPlacement": "left",
+     "reverse": false
+    },
+    "rowsFrame": {
+     "layout": "auto"
+    },
+    "cellValues": {
+     "unit": "short"
+    },
+    "filterValues": {
+     "le": 1e-09
+    },
+    "showValue": "auto",
+    "legend": {
+     "show": true
+    },
+    "tooltip": {
+     "mode": "single",
+     "yHistogram": false,
+     "showColorScale": true
+    },
+    "exemplars": {
+     "color": "rgba(255,0,255,0.7)"
+    }
+   },
+   "id": 8,
+   "gridPos": {
+    "x": 8,
+    "y": 20,
+    "w": 16,
+    "h": 8
+   },
+   "datasource": {
+    "type": "grafana-clickhouse-datasource",
+    "uid": "clickhouse"
+   }
+  },
+  {
+   "type": "table",
+   "title": "Tactic heatmap: by predicted actor class",
+   "description": "Sessions in which the tagger found each tactic, by the class the actor classifier predicted for the session. Both are model output (mirage.labels, mirage.actor_class), not the lab's ground truth.",
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "grafana-clickhouse-datasource",
+      "uid": "clickhouse"
+     },
+     "editorType": "sql",
+     "format": 1,
+     "rawSql": "SELECT t.tactic AS tactic, uniqExactIf(t.lsid, ac.cls = 'scanner') AS scanner, uniqExactIf(t.lsid, ac.cls = 'scripted_bot') AS scripted_bot, uniqExactIf(t.lsid, ac.cls = 'human') AS human, uniqExactIf(t.lsid, ac.cls NOT IN ('', 'scanner', 'scripted_bot', 'human')) AS other_class, uniqExactIf(t.lsid, ac.cls = '') AS not_classified FROM (SELECT DISTINCT if(m.session_id != '', m.session_id, l.session_id) AS lsid, l.tactic AS tactic, l.technique AS technique FROM (SELECT session_id, tactic, technique FROM mirage.labels FINAL WHERE technique != '' AND $__timeFilter(ts)) AS l LEFT JOIN (SELECT conn_id, session_id FROM mirage.session_map FINAL) AS m ON m.conn_id = l.session_id) AS t LEFT JOIN (SELECT if(cm.session_id != '', cm.session_id, a.session_id) AS lsid, argMax(a.actor_class, a.ts) AS cls, argMax(a.confidence, a.ts) AS cls_confidence, argMax(a.decided_by, a.ts) AS cls_decided_by FROM (SELECT session_id, actor_class, confidence, decided_by, ts FROM mirage.actor_class FINAL WHERE 1) AS a LEFT JOIN (SELECT conn_id, session_id FROM mirage.session_map FINAL) AS cm ON cm.conn_id = a.session_id GROUP BY lsid) AS ac ON ac.lsid = t.lsid GROUP BY tactic ORDER BY tactic"
     }
    ],
    "fieldConfig": {
     "defaults": {
-     "unit": "short",
      "custom": {
-      "drawStyle": "bars",
-      "fillOpacity": 70,
-      "stacking": {
-       "mode": "normal"
-      },
-      "lineWidth": 1
-     }
+      "filterable": false,
+      "minWidth": 90,
+      "align": "center",
+      "cellOptions": {
+       "type": "color-background",
+       "mode": "basic"
+      }
+     },
+     "color": {
+      "mode": "continuous-YlRd"
+     },
+     "min": 0
     },
-    "overrides": []
+    "overrides": [
+     {
+      "matcher": {
+       "id": "byRegexp",
+       "options": "^(ts|start_ts|end_ts|stored_at|first_seen|last_seen|last|last_used|published_at)$"
+      },
+      "properties": [
+       {
+        "id": "custom.width",
+        "value": 185
+       }
+      ]
+     },
+     {
+      "matcher": {
+       "id": "byRegexp",
+       "options": "^(session_id|actor_id|a|b|exposed_in|token_id|request_id)$"
+      },
+      "properties": [
+       {
+        "id": "custom.width",
+        "value": 215
+       }
+      ]
+     },
+     {
+      "matcher": {
+       "id": "byRegexp",
+       "options": "^(sha256)$"
+      },
+      "properties": [
+       {
+        "id": "custom.width",
+        "value": 270
+       }
+      ]
+     },
+     {
+      "matcher": {
+       "id": "byRegexp",
+       "options": "^(source|protocol|outcome|type|action|reason|mime|kind|tactic|split|mode|gate)$"
+      },
+      "properties": [
+       {
+        "id": "custom.width",
+        "value": 115
+       }
+      ]
+     },
+     {
+      "matcher": {
+       "id": "byRegexp",
+       "options": "^(class|src_ip|sensor|rule_id|location|used_in|predicted_class|actor_class|decided_by|technique)$"
+      },
+      "properties": [
+       {
+        "id": "custom.width",
+        "value": 150
+       }
+      ]
+     },
+     {
+      "matcher": {
+       "id": "byRegexp",
+       "options": "^(seq|inputs|decisions|fallbacks|tokens|artifacts|logged_in|strength|times|size|n_sessions|sessions|attempts|succeeded|exposures|uses|logins|sources|honeytokens|auth_attempts|duration_s|latency_us|status|confidence|class_confidence|agreement|scenarios|steps|matched|procedures|techniques_seen|value|ci_low|ci_high|baseline|delta)$"
+      },
+      "properties": [
+       {
+        "id": "custom.width",
+        "value": 95
+       }
+      ]
+     },
+     {
+      "matcher": {
+       "id": "byName",
+       "options": "tactic"
+      },
+      "properties": [
+       {
+        "id": "custom.cellOptions",
+        "value": {
+         "type": "auto"
+        }
+       },
+       {
+        "id": "custom.align",
+        "value": "left"
+       },
+       {
+        "id": "custom.width",
+        "value": 160
+       }
+      ]
+     }
+    ]
    },
    "options": {
-    "legend": {
-     "displayMode": "list",
-     "placement": "bottom"
+    "showHeader": true,
+    "cellHeight": "sm",
+    "footer": {
+     "show": false
     }
    },
-   "id": 7,
+   "id": 9,
    "gridPos": {
-    "x": 8,
-    "y": 12,
-    "w": 16,
-    "h": 8
+    "x": 0,
+    "y": 28,
+    "w": 24,
+    "h": 9
    },
    "datasource": {
     "type": "grafana-clickhouse-datasource",
@@ -485,10 +819,10 @@
      "showLegend": false
     }
    },
-   "id": 8,
+   "id": 10,
    "gridPos": {
     "x": 0,
-    "y": 20,
+    "y": 37,
     "w": 24,
     "h": 8
    },

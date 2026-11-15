@@ -30,7 +30,7 @@ rules:
     tactic: TA0007
     protocol: ssh
     confidence: 0.7
-    any_of: ['\bls\s', '\bfind\s']
+    any_of: ['\bls(\s|$)', '\bfind(\s|$)']
   - id: disc-accounts
     technique: T1087.001
     tactic: TA0007

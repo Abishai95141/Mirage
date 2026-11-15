@@ -34,9 +34,15 @@ def proxy_v2(src_ip: str, src_port: int, dst_ip: str, dst_port: int) -> bytes:
     return SIGNATURE + bytes([0x21, 0x11]) + struct.pack("!H", len(body)) + body
 
 
+class AddressesExhausted(RuntimeError):
+    """The range for this mode has been handed out once over."""
+
+
 class AddressPool:
     """Hands out simulated addresses in order, from a counter kept on the runner's volume, so
-    two runs never give two actors the same address."""
+    two runs never give two actors the same address. An address is never handed out twice
+    (spec section 2): the decoys keep state per source, and a reused address would start an
+    actor inside another actor's history. When the range is used up, the pool says so."""
 
     def __init__(self, state_file: Path, mode: str) -> None:
         self.state_file, self.net = state_file, RANGES[mode]
@@ -48,10 +54,17 @@ class AddressPool:
             fcntl.flock(f, fcntl.LOCK_EX)
             f.seek(0)
             start = int(f.read().strip() or 0)
+            if start + count > usable:
+                # The counter stays where it is: a refused request takes nothing.
+                raise AddressesExhausted(
+                    f"{count} address(es) wanted, {max(usable - start, 0)} of {usable} left in "
+                    f"{self.net}; addresses are never reused (spec section 2). The counter in "
+                    f"{self.state_file} may only be reset together with the decoys' state."
+                )
             f.seek(0)
             f.truncate()
             f.write(str(start + count))
-        return [str(self.net.network_address + 1 + (start + i) % usable) for i in range(count)]
+        return [str(self.net.network_address + 1 + start + i) for i in range(count)]
 
 
 @dataclass
@@ -72,9 +85,15 @@ class Dialer:
     def __init__(self, target_ip: str, src_ip: str, rng: random.Random) -> None:
         self.target_ip, self.src_ip = target_ip, src_ip
         self._next_port = rng.randint(PORT_LO, PORT_HI - 2000)
+        self._issued = 0  # source ports handed out, whether or not the connection opened
         self.opened: list[Conn] = []
 
     def connect(self, dst_port: int, timeout: float = 10.0) -> Conn:
+        if self._issued > PORT_HI - PORT_LO:
+            # The next port would be one this address has used: the join is exact on the
+            # pair, so a second connection with it could not be told from the first.
+            raise RuntimeError(f"{self.src_ip} has used every source port once")
+        self._issued += 1
         port = self._next_port
         self._next_port = port + 1 if port < PORT_HI else PORT_LO
         sock = socket.create_connection((self.target_ip, dst_port), timeout=timeout)

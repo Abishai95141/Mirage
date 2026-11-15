@@ -283,6 +283,39 @@ def run_actor(tmp_path, doc=BASE, **driver_attrs) -> tuple[list[dict], list[str]
     return records, made[0].sent
 
 
+def drive(tmp_path, factory, doc: str = BASE, prepare=None, **settings):
+    """One actor through ``doc`` with ``factory`` as its SSH driver. Returns the records it
+    wrote, the actor, and the exception it ended with, if any. ``prepare`` gets the actor
+    before it runs."""
+    truth = TruthWriter(tmp_path / "gt.json")
+    (tmp_path / "cowrie").mkdir(exist_ok=True)
+    (tmp_path / "cowrie/userdb.txt").write_text("root:x:secret-pw\n")
+    actor = ActorRun(
+        scenario(doc),
+        0,
+        "198.18.0.9",
+        "r1",
+        CATALOGUE,
+        Settings(
+            target_ip="172.26.0.2", out_dir=tmp_path, profile_dir=tmp_path, time_scale=0, **settings
+        ),
+        truth,
+    )
+    actor.driver_factory = factory
+    if prepare is not None:
+        prepare(actor)
+    raised = None
+    try:
+        actor.run()
+    except Exception as exc:
+        raised = exc
+    truth.close()
+    records = [json.loads(line) for line in (tmp_path / "gt.json").read_text().splitlines()]
+    for r in records:
+        parse_record(r)  # every record is valid schema, whatever went wrong
+    return records, actor, raised
+
+
 def steps_of(records) -> dict[str, tuple[str, str]]:
     return {r["step_id"]: (r["status"], r["outcome"]) for r in records if r["kind"] == "step"}
 

@@ -151,9 +151,13 @@ services:
       POLICY_EXPLORE: ${POLICY_EXPLORE:-}
       # The tagger's rules, read in-process for the last-tactic context feature (spec Q12).
       POLICY_TECHNIQUE_RULES: /rules
+      # A trained shadow policy, read once at start. Absent or unreadable, the service says so
+      # in its log and shadows with epsilon-greedy under an explicit fallback name.
+      POLICY_SHADOW_MODEL: ${POLICY_SHADOW_MODEL:-/models/policy/shadow.json}
     volumes:
       - policy-log:/var/log/mirage-policy
       - ../intel/rules:/rules:ro
+      - ../build/models:/models:ro
     mem_limit: 128m
     pids_limit: 64
 
@@ -206,6 +210,9 @@ services:
       - ../build/profile:/profile:ro
       - ../lab/catalogue:/lab/catalogue:ro
       - ../lab/scenarios:/lab/scenarios:ro
+      # The frozen split: the runner refuses a scenario that mixes splits, and refuses to run
+      # at all without this file.
+      - ../eval/split.yaml:/lab/split.yaml:ro
       - lab-out:/var/lib/mirage-lab
     depends_on: [lab-edge]
     mem_limit: 256m
@@ -323,6 +330,9 @@ services:
       CLICKHOUSE_USER: ${CLICKHOUSE_USER}
       CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD}
       TECHNIQUE_RULES: /rules
+      # The tagger experiment dropped the rules as an input-level layer (eval/choices.yaml):
+      # the tagger-model worker labels inputs. Session rules and alerts still run here.
+      TAGGER_INPUT_RULES: ${TAGGER_INPUT_RULES:-off}
     volumes:
       - ../intel/rules:/rules:ro
     healthcheck:
@@ -333,6 +343,77 @@ services:
     depends_on:
       normaliser: {condition: service_started}
     mem_limit: 256m
+
+  # Actor classifier (phase 2 spec 2.3): a predicted class for every session, recomputed as the
+  # session grows. Reads pipeline tables only; never a lab ground-truth table.
+  classifier-worker:
+    build:
+      context: ..
+      dockerfile: intel/Dockerfile
+    image: mirage/intel:dev
+    <<: *hardening
+    command: ["mirage-classifier-worker"]
+    networks: [core]
+    read_only: true
+    tmpfs: ["/tmp"]
+    environment:
+      CLICKHOUSE_URL: http://clickhouse:8123
+      CLICKHOUSE_USER: ${CLICKHOUSE_USER}
+      CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD}
+      CLASSIFIER_MODEL: /models/actor_classifier
+    volumes:
+      - ../build/models:/models:ro
+    healthcheck:
+      test: ["CMD", "python", "-c", "from mirage_intel.classify_worker import healthcheck; healthcheck()"]
+      interval: 15s
+      timeout: 5s
+      retries: 6
+    depends_on:
+      clickhouse: {condition: service_healthy}
+      sessioniser: {condition: service_started}
+    mem_limit: 512m
+
+  # The learned tagger, live (phase 2 spec 2.4): reads gated inputs from ClickHouse and writes
+  # one label per input to mirage.labels. Its image carries PyTorch (CPU) and is built only
+  # when asked: `make ml-image`. The embedding model's weights are read from the host's cache,
+  # read-only, with the model hub switched to offline, so nothing is fetched at run time.
+  tagger-model:
+    profiles: ["ml"]
+    build:
+      context: ..
+      dockerfile: intel/Dockerfile.ml
+    image: mirage/intel-ml:dev
+    <<: *hardening
+    command: ["mirage-tagger-model-worker"]
+    networks: [core]
+    read_only: true
+    tmpfs: ["/tmp"]
+    environment:
+      CLICKHOUSE_URL: http://clickhouse:8123
+      CLICKHOUSE_USER: ${CLICKHOUSE_USER}
+      CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD}
+      TAGGER_MODEL: /models/tagger
+      HOME: /tmp
+      HF_HOME: /hf
+      HF_HUB_OFFLINE: "1"
+      TRANSFORMERS_OFFLINE: "1"
+      HF_HUB_DISABLE_TELEMETRY: "1"
+      TOKENIZERS_PARALLELISM: "false"
+    volumes:
+      - ../build/models:/models:ro
+      - ${HF_CACHE:-~/.cache/huggingface}:/hf:ro
+    healthcheck:
+      test: ["CMD", "python", "-c", "from mirage_intel.tag_worker import healthcheck; healthcheck()"]
+      interval: 30s
+      timeout: 5s
+      retries: 6
+      start_period: 120s
+    depends_on:
+      clickhouse: {condition: service_healthy}
+    mem_limit: 3g
+    # A ceiling on its CPU: embedding is the one heavy job on the host, and it must never
+    # starve the policy service the decoys are waiting on (they fall back to allow).
+    cpus: 4.0
 
   # Label join (phase 2 spec section 3): ground truth from the lab -> labels on events.
   sim-join:

@@ -29,26 +29,26 @@ procedures:
     protocol: ssh
     template: rm -rf /tmp/{{file}}.sh; rm -rf /tmp/{{file2}}.sh
   - id: clear-auth-log
-    technique: T1070.002
-    tactic: TA0005
+    technique: T1685.006
+    tactic: TA0112
     source: own
     protocol: ssh
     template: cat /dev/null > /var/log/auth.log
   - id: clear-lastlog
-    technique: T1070.002
-    tactic: TA0005
+    technique: T1685.006
+    tactic: TA0112
     source: own
     protocol: ssh
     template: cat /dev/null > /var/log/lastlog
   - id: clear-history
-    technique: T1070.002
-    tactic: TA0005
+    technique: T1685.006
+    tactic: TA0112
     source: own
     protocol: ssh
     template: cat /dev/null > ~/.bash_history
   - id: clear-journal-vacuum
-    technique: T1070.002
-    tactic: TA0005
+    technique: T1685.006
+    tactic: TA0112
     source: own
     protocol: ssh
     template: journalctl --vacuum-size=1M

@@ -16,7 +16,7 @@ from datetime import UTC, datetime
 
 import paramiko
 
-from mirage_lab.drivers.base import AuthPhase, LoginResult, Result
+from mirage_lab.drivers.base import AuthPhase, LoginResult, Result, failure
 from mirage_lab.net import Conn, Dialer
 from mirage_lab.timing import Timing
 from mirage_schema.groundtruth import input_hash
@@ -76,6 +76,26 @@ class Fingerprint:
             setattr(opts, name, tuple(values))
 
 
+def open_transport(dialer: Dialer, fingerprint: Fingerprint) -> tuple[Conn, paramiko.Transport]:
+    """A connection through the lab edge with the SSH handshake done. If the handshake fails
+    the connection is closed and stamped before the error is raised, so a session record can
+    still describe it."""
+    conn = dialer.connect(PORT)
+    transport = None
+    try:
+        transport = paramiko.Transport(conn.sock)
+        fingerprint.apply(transport)
+        transport.start_client(timeout=15)
+    except Exception:
+        with contextlib.suppress(Exception):
+            if transport is not None:
+                transport.close()
+            conn.sock.close()
+        conn.closed = now()
+        raise
+    return conn, transport
+
+
 class SSHDriver:
     def __init__(
         self,
@@ -91,15 +111,12 @@ class SSHDriver:
         self.conn: Conn | None = None
         self.transport: paramiko.Transport | None = None
         self.shell: paramiko.Channel | None = None
+        self._handed = False  # whether the step in flight has been handed to the decoy
 
     # ------------------------------------------------------------------ connection and login
 
     def _open(self) -> tuple[Conn, paramiko.Transport]:
-        conn = self.dialer.connect(PORT)
-        transport = paramiko.Transport(conn.sock)
-        self.fingerprint.apply(transport)
-        transport.start_client(timeout=15)
-        return conn, transport
+        return open_transport(self.dialer, self.fingerprint)
 
     def login(self, guesses: int, per_connection: int = 3) -> LoginResult:
         """``guesses`` wrong passwords, a few per connection as real tools do, then the right
@@ -111,7 +128,9 @@ class SSHDriver:
         while todo:
             try:
                 conn, transport = self._open()
-            except (OSError, paramiko.SSHException):
+            except (OSError, paramiko.SSHException, EOFError) as exc:
+                # EOFError too: paramiko reports a server that hangs up mid-handshake that way.
+                result.error = failure(exc)
                 return result
             started, attempts, success = now(), 0, False
             for _ in range(per_connection):
@@ -144,13 +163,24 @@ class SSHDriver:
     def run(self, line: str) -> Result:
         if not self.alive():
             return Result(sent=False, alive=False, conn=self.conn)
+        # Stamped before anything can fail, so every result has its start. A result with an end
+        # and no start once cost a session its ground truth (gap register R1).
+        started, self._handed = now(), False
         try:
             if self.channel == "exec":
                 return self._exec(line)
             return self._shell(line)
-        except (paramiko.SSHException, OSError, EOFError):
+        except (paramiko.SSHException, OSError, EOFError) as exc:
+            # The connection failed under the step. The decoy has the input only if the step
+            # got as far as handing it over; if not, the join has nothing to look for.
             return Result(
-                sent=True, alive=self.alive(), conn=self.conn, sha256=input_hash(line), ended=now()
+                sent=self._handed,
+                alive=self.alive(),
+                conn=self.conn,
+                started=started,
+                ended=now(),
+                sha256=input_hash(line),
+                error=failure(exc),
             )
 
     def _exec(self, line: str) -> Result:
@@ -160,6 +190,7 @@ class SSHDriver:
         chan.settimeout(20)
         chan.set_combine_stderr(True)  # fold stderr into recv; else exec output and expect miss it
         chan.exec_command(line)
+        self._handed = True  # the server accepted the request, so the decoy has the line
         chunks = []
         with contextlib.suppress(TimeoutError):
             while data := chan.recv(65536):
@@ -224,6 +255,7 @@ class SSHDriver:
                 time.sleep(pause)
             chan.sendall(text.encode())
         chan.sendall(b"\n")
+        self._handed = True  # a line is the decoy's once its newline has gone
         text, open_, saw_prompt = self._read_to_prompt(30)
         if open_ and not saw_prompt:
             # An interactive command is prompting. Abort it (Ctrl-C) so it does not consume the
@@ -253,6 +285,18 @@ class SSHDriver:
         try:
             sftp = paramiko.SFTPClient.from_transport(self.transport)
             assert sftp is not None
+        except (paramiko.SSHException, OSError, EOFError) as exc:
+            # No SFTP channel, so nothing was uploaded and the join has nothing to look for.
+            return Result(
+                sent=False,
+                alive=self.alive(),
+                conn=self.conn,
+                started=started,
+                ended=now(),
+                sha256=input_hash(data),
+                error=failure(exc),
+            )
+        try:
             sftp.putfo(io.BytesIO(data), path)
             sftp.close()
             ok = True

@@ -1,0 +1,14 @@
+{
+ "name": "gate2",
+ "frozen_at": "2026-11-14T22:35:29Z",
+ "files": {
+  "decisions.manifest.json": "822d3cb9cb7ae142f789189d1e6038f0e5c9880afd4bad2ba15efc7b5874d975",
+  "decisions.parquet": "d851c0b15ab74944b37199985aadfd39826052d18e2522559a67bd8f6affa561",
+  "embeddings.json": "9d206ae41771a178fad8903341b1d2b0997608184de8834d5089f914ed227a3c",
+  "embeddings.npy": "a19225e25f6ae7a406aa4d56efcfcb312e993a6cf659c06a44780ccabe615d40",
+  "sessions.manifest.json": "4fa22dfc5c40e2df91b02d772b8c4a1f1ad280f83fb545b391bbd1ca7e924e1c",
+  "sessions.parquet": "9f987148884bf558f4900bd357c1f9da2b8e781f9f051c2c9a7944dd8ecd10dd",
+  "steps.parquet": "531daa4e1dba038142474389d45c963667e010c913ab65e5272e2d71f0e792db",
+  "tagger.index.json": "caecdaaab1a70adca85d23897f11e8294897a2ba4a5d2bdfbbdc3c0056f934d3"
+ }
+}

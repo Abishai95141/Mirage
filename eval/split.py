@@ -255,14 +255,82 @@ def _load() -> tuple[Catalogue, list[Scenario]]:
     return cat, scn
 
 
+def extend(
+    split: Split, catalogue: Catalogue, scenarios: list[Scenario]
+) -> tuple[Split, list[str]]:
+    """Re-derive the scenario assignments from the frozen procedure assignments, leaving every
+    procedure where it is. This is how a new scenario joins a frozen split: `build` would run
+    the assignment again over a changed scenario graph and could move procedures between
+    train and test. Returns the split and the problems that stop it being written."""
+    _, scen_procs = _components(catalogue, scenarios)
+    problems, of_scenario = [], {}
+    for sc_id, procs in sorted(scen_procs.items()):
+        unknown = sorted(p for p in procs if p not in split.of_procedure)
+        if unknown:
+            problems.append(f"scenario {sc_id} uses procedures with no split: {unknown}")
+            continue
+        splits = {split.of_procedure[p] for p in procs}
+        if len(splits) > 1:
+            problems.append(f"scenario {sc_id} mixes splits {sorted(splits)}")
+        elif splits:
+            of_scenario[sc_id] = splits.pop()
+    # The catalogue may change under a frozen split in one way only: a procedure's label or
+    # text is corrected. Its ID set must stay the same; a new or removed procedure would need
+    # an assignment, and that is `build --force`, a new freeze. With the same IDs the split
+    # is re-pinned to the catalogue as it is now, and the content check below still has to
+    # pass on the corrected text.
+    if set(catalogue.procedures) != set(split.of_procedure):
+        added = sorted(set(catalogue.procedures) - set(split.of_procedure))
+        gone = sorted(set(split.of_procedure) - set(catalogue.procedures))
+        problems.append(f"the catalogue's procedures changed (added {added}, removed {gone})")
+    techniques = {s: set() for s in SPLITS}
+    for pid, where in split.of_procedure.items():
+        proc = catalogue.procedures.get(pid)
+        if proc is not None and proc.technique:
+            techniques[where].add(proc.technique)
+    every = set().union(*techniques.values())
+    manifest = {
+        **split.manifest,
+        "scenarios_by_split": {s: sum(1 for v in of_scenario.values() if v == s) for s in SPLITS},
+        "techniques_total": len(every),
+        "techniques_covered": len(techniques["train"] & techniques["test"]),
+    }
+    extended = Split(split.of_procedure, of_scenario, catalogue.sha256, manifest)
+    if not problems:
+        problems += check(extended, catalogue, scenarios).problems
+    return extended, problems
+
+
 def main(argv: list[str] | None = None) -> None:
     ap = argparse.ArgumentParser(prog="eval.split")
     sub = ap.add_subparsers(dest="cmd", required=True)
-    sub.add_parser("build", help="freeze eval/split.yaml from the catalogue and scenarios")
+    p_build = sub.add_parser(
+        "build", help="freeze eval/split.yaml from the catalogue and scenarios"
+    )
+    p_build.add_argument(
+        "--force", action="store_true", help="replace a frozen split (moves procedures)"
+    )
+    sub.add_parser("extend", help="assign new scenarios without moving any procedure")
     sub.add_parser("check", help="verify the frozen split (IDs and scores only)")
     args = ap.parse_args(argv)
     cat, scn = _load()
+    if args.cmd == "extend":
+        split, problems = extend(Split.load(), cat, scn)
+        for p in problems:
+            print("PROBLEM", p)
+        if problems:
+            sys.exit(1)
+        split.write()
+        print(f"wrote {SPLIT_FILE.relative_to(ROOT)}")
+        print(" ", split.manifest)
+        return
     if args.cmd == "build":
+        if SPLIT_FILE.exists() and not args.force:
+            print(
+                f"{SPLIT_FILE.relative_to(ROOT)} is frozen. `extend` adds scenarios without "
+                "moving procedures; `build --force` re-runs the assignment and may move them."
+            )
+            sys.exit(1)
         split = build(cat, scn)
         result = check(split, cat, scn)
         if not result.ok:

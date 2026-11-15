@@ -16,6 +16,8 @@
 !decoys/db/src/**
 !lab/pyproject.toml
 !lab/src/**
+!intel/pyproject.toml
+!intel/src/**
 !decoys/ssh/patches/**
 !decoys/ssh/remove.txt
 !decoys/ssh/build_fs.py

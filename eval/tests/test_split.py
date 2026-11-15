@@ -122,3 +122,60 @@ def test_build_refuses_nothing_but_reports_coverage():
     assert result.techniques_total == 1
     # one technique, spread across splits by hash, so it is coverable
     assert result.coverage in (0, 1)
+
+
+def test_extend_adds_scenarios_without_moving_a_procedure():
+    # A new scenario joins the frozen split by its procedures; `build` would re-run the
+    # assignment over the changed scenario graph and could move procedures between splits.
+    from eval import split as sp
+
+    cat, scn = sp._load()
+    frozen = sp.Split.load()
+    extended, problems = sp.extend(frozen, cat, scn)
+    assert problems == []
+    assert extended.of_procedure == frozen.of_procedure
+    assert extended.of_scenario == frozen.of_scenario  # the checked-in file is already extended
+    assert set(extended.of_scenario) == {s.id for s in scn}
+
+
+def test_extend_refuses_a_scenario_that_mixes_splits():
+    from eval import split as sp
+    from mirage_lab.models import Scenario
+
+    cat, scn = sp._load()
+    frozen = sp.Split.load()
+    train = next(
+        p
+        for p, s in frozen.of_procedure.items()
+        if s == "train" and cat.procedures[p].protocol == "redis"
+    )
+    test = next(
+        p
+        for p, s in frozen.of_procedure.items()
+        if s == "test" and cat.procedures[p].protocol == "redis"
+    )
+    mixed = Scenario.model_validate(
+        {
+            "id": "mixed-splits",
+            "actor": {"class": "scripted_bot", "timing": "bot-fast"},
+            "sessions": [
+                {
+                    "protocol": "redis",
+                    "steps": [{"id": "s1", "procedure": train}, {"id": "s2", "procedure": test}],
+                }
+            ],
+        }
+    )
+    _, problems = sp.extend(frozen, cat, [*scn, mixed])
+    assert any("mixed-splits mixes splits" in p for p in problems)
+
+
+def test_build_will_not_overwrite_a_frozen_split(capsys):
+    import pytest
+
+    from eval import split as sp
+
+    with pytest.raises(SystemExit) as exc:
+        sp.main(["build"])
+    assert exc.value.code == 1
+    assert "is frozen" in capsys.readouterr().out

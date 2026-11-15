@@ -1,8 +1,10 @@
 name: ci
 
+# Phase branches run the same jobs as main: before this, the lab tests had never run in CI
+# because the work lived on a branch CI did not watch (completion plan, F5).
 on:
   push:
-    branches: [main]
+    branches: [main, "phase-*"]
   pull_request:
 
 permissions:
@@ -16,14 +18,22 @@ jobs:
       - uses: astral-sh/setup-uv@v5
         with:
           python-version: "3.12"
-      - run: uv sync --frozen || uv sync
+      # --frozen and nothing else: a lock file that no longer matches must fail, not be
+      # quietly re-resolved.
+      - run: uv sync --frozen
       - run: uv run ruff check .
       - run: uv run ruff format --check .
       - run: uv run pytest
+      # What the lab and the models are built on: the split is intact, every technique ID is
+      # in the pinned ATT&CK version, and the generated scenarios match their generator.
+      - run: uv run python -m eval.split check
+      - run: uv run python -m mirage_intel.attack check
+      - run: uv run python -m mirage_lab.generate --check
 
   ml:
-    # The intel models (dataset export, classifier, bandit estimators). Their libraries are
-    # heavy, so they are deselected from the fast unit job and run here on synthetic data.
+    # The intel models (dataset export, classifier, tagger, bandit estimators, the harness).
+    # Their libraries are heavy, so they are deselected from the fast unit job and run here on
+    # synthetic data.
     runs-on: ubuntu-24.04
     needs: lint-unit
     steps:
@@ -31,12 +41,14 @@ jobs:
       - uses: astral-sh/setup-uv@v5
         with:
           python-version: "3.12"
-      - run: uv sync --frozen || uv sync
+      - run: uv sync --frozen
       - run: uv run pytest -m ml
 
   eval-regression:
-    # Fails a PR that drops a tracked model metric below its committed baseline. Dormant until
-    # a frozen dataset is committed under eval/datasets/gate2 (see docs/handoffs/phase-2-finish.md).
+    # Gate 2 test 10. Recomputes every tracked metric on the frozen dataset and fails if one
+    # falls below its committed baseline's interval, if a gate is no longer met, or if the
+    # dataset or the baseline is missing. It needs no model and no store: the dataset carries
+    # the tagger's index and the embedding vectors.
     runs-on: ubuntu-24.04
     needs: lint-unit
     steps:
@@ -44,34 +56,49 @@ jobs:
       - uses: astral-sh/setup-uv@v5
         with:
           python-version: "3.12"
-      - run: uv sync --frozen || uv sync
-      - name: regression check (skips until the frozen dataset exists)
-        run: |
-          if [ -f eval/datasets/gate2/sessions.parquet ]; then
-            uv run python -m mirage_intel.harness check --data eval/datasets/gate2
-          else
-            echo "no frozen dataset committed yet; skipping the regression gate"
-          fi
+      - run: uv sync --frozen
+      - run: make eval-regression
 
   integration:
-    # Gates 0 and 1, containment, the default-tell checks and the phase 2 lab (runner
-    # isolation, a scenario run, label-join health), against the real compose stack.
+    # Gates 0 and 1, containment, the default-tell checks and the phase 2 lab: runner
+    # isolation, join health and the two demos, read from the tagger's, the classifier's and
+    # the alert worker's own output. A missing stack fails here; it does not skip.
     runs-on: ubuntu-24.04
     needs: lint-unit
+    env:
+      MIRAGE_REQUIRE_STACK: "1"
+      HF_HUB_DISABLE_TELEMETRY: "1"
+      TOKENIZERS_PARALLELISM: "false"
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v5
         with:
           python-version: "3.12"
-      - run: uv sync --frozen || uv sync
+      - run: uv sync --frozen
       # The SSH decoy's image build copies the reference root; the extracted facts it would
       # produce are committed (decoys/profiles/reference/debian-12.json), so CI only builds it.
-      - run: make env && make reference-image
+      # The runner is a lab host: it renders the public lab seed, as the frozen dataset did.
+      - run: make env && make lab-seed && make reference-image
+      # The models the workers load, trained from the frozen dataset, before anything starts.
+      - run: make models DATA=eval/datasets/gate2
       - run: make up
       - run: make lab-up
+      # The learned tagger runs from the research environment here, not from its image: the
+      # same code and weights, without building a second copy of PyTorch into Docker.
+      - uses: actions/cache@v4
+        with:
+          path: ~/.cache/huggingface
+          key: hf-secureshellbert-v1
+      - name: start the learned tagger
+        run: |
+          nohup make tagger-model-host > tagger-model.log 2>&1 &
+          for i in $(seq 1 90); do grep -q "tagger model .* loaded" tagger-model.log && break; sleep 2; done
+          grep "tagger model .* loaded" tagger-model.log
       - run: make itest
       - if: failure()
-        run: docker compose --env-file .env -f compose/docker-compose.yml --profile lab logs --tail=200
+        run: |
+          tail -n 50 tagger-model.log || true
+          docker compose --env-file .env -f compose/docker-compose.yml --profile lab logs --tail=200
       - if: always()
         run: make nuke
 

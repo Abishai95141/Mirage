@@ -17,7 +17,7 @@ import contextlib
 import socket
 from datetime import UTC, datetime
 
-from mirage_lab.drivers.base import AuthPhase, LoginResult, Result
+from mirage_lab.drivers.base import AuthPhase, LoginResult, Result, failure
 from mirage_lab.net import Conn, Dialer
 from mirage_lab.timing import Timing
 from mirage_schema.groundtruth import input_hash
@@ -99,8 +99,9 @@ class HTTPDriver:
         started = now()
         try:
             conn = self.dialer.connect(HTTP_PORT)
-        except OSError:
-            return Result(sent=False, alive=True)
+        except OSError as exc:
+            # Tried, and no connection: nothing was sent, and the session record says why.
+            return Result(sent=False, alive=True, started=started, ended=now(), error=failure(exc))
         self.conn = conn
         head = (
             f"{method} {target} HTTP/1.1\r\nHost: localhost\r\n"
@@ -162,8 +163,8 @@ class RedisDriver:
     def login(self, guesses: int) -> LoginResult:
         try:
             self.conn = self.dialer.connect(REDIS_PORT)
-        except OSError:
-            return LoginResult(ok=False)
+        except OSError as exc:
+            return LoginResult(ok=False, error=failure(exc))
         self.reader = _Reader(self.conn.sock)
         self._alive = True
         return LoginResult(ok=True)
@@ -180,10 +181,10 @@ class RedisDriver:
         try:
             self.conn.sock.sendall(_resp(tokens))
             reply = self._reply(self.reader)
-        except OSError:
+        except OSError as exc:
             self._alive = False
             return Result(sent=True, alive=False, conn=self.conn, started=started, ended=now(),
-                          sha256=input_hash(canonical))  # fmt: skip
+                          sha256=input_hash(canonical), error=failure(exc))  # fmt: skip
         if self.reader.eof:
             self._alive = False
         return Result(
@@ -242,8 +243,8 @@ class MySQLDriver:
         started = now()
         try:
             conn = self.dialer.connect(MYSQL_PORT)
-        except OSError:
-            return LoginResult(ok=False)
+        except OSError as exc:
+            return LoginResult(ok=False, error=failure(exc))
         self.conn = conn
         try:
             db = pymysql.connections.Connection(

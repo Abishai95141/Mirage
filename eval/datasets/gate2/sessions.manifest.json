@@ -1,0 +1,64 @@
+{
+  "runs": [
+    {
+      "run_id": "r20261114212942-973f72",
+      "seed": 1,
+      "code_version": "afa7b64",
+      "attack_version": "20.1",
+      "catalogue_sha256": "c10e8583d31f3ac84f719ab6417a84cfcf5822153fbf1c8028b85f5110490530",
+      "scenarios_sha256": "d5ed4e92f22ff2b87443bb3bce29af560a557b0cb3643534e43b6f93aa6a5ffd",
+      "sessions": 354,
+      "steps": 1944,
+      "matched": 1932,
+      "not_run": 12
+    }
+  ],
+  "problems": [],
+  "catalogue_sha256": "c10e8583d31f3ac84f719ab6417a84cfcf5822153fbf1c8028b85f5110490530",
+  "split_catalogue_sha256": "c10e8583d31f3ac84f719ab6417a84cfcf5822153fbf1c8028b85f5110490530",
+  "split_sha256": "2c085b38ad1fdf771e7a796c4b8d05a855892cfb01bae0a592a35e22553b4427",
+  "lab_seed": true,
+  "attack_version": "20.1",
+  "features_event": [
+    "inputs",
+    "auth_attempts",
+    "auth_success",
+    "failed_before_success",
+    "duration_s",
+    "gap_min_s",
+    "gap_max_s",
+    "gap_mean_s",
+    "gap_median_s",
+    "share_unknown"
+  ],
+  "features_tty": [
+    "tty_input_chunks",
+    "tty_single_byte_share",
+    "tty_chunks_per_line",
+    "tty_backspaces",
+    "tty_paste_bursts",
+    "tty_key_gap_p50_s"
+  ],
+  "n_sessions": 390,
+  "n_steps": 1704,
+  "n_step_events": 33486,
+  "n_procedures": 201,
+  "by_split": {
+    "train": 276,
+    "dev": 54,
+    "test": 60
+  },
+  "by_class": {
+    "scripted_bot": 305,
+    "human": 61,
+    "scanner": 24
+  },
+  "by_label": {
+    "scripted_bot": 258,
+    "human": 54,
+    "scanner": 78
+  },
+  "n_groups": 50,
+  "rows_sha256": "01a48e24ee3f48b95155484e2868023222cf1d5674b41a36cc6ad868c5b4d40b",
+  "steps_sha256": "4bf998d1dd3fdb6ad6f2c450d69914bfc1ece94adf47eee43195fb61dac52273"
+}

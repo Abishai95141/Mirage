@@ -116,3 +116,27 @@ def test_redis_multiple_spaces_collapse_like_the_decoys_argv():
     r = driver.run("SET   k   v")
     assert sock.sent == _resp(["SET", "k", "v"])
     assert r.sha256 == input_hash("SET k v")
+
+
+def test_a_connection_that_fails_is_reported_not_swallowed():
+    # The runner writes what broke on the session's record (gap register R1); for that the
+    # driver has to say, and to say that nothing was sent.
+    class Refusing(FakeDialer):
+        def connect(self, dst_port: int, timeout: float = 10.0) -> Conn:
+            raise ConnectionRefusedError(61, "Connection refused")
+
+    refusing = Refusing(FakeSocket())
+    r = HTTPDriver(refusing, TIMING, "curl/8.5.0").run("GET /")
+    assert r.sent is False and r.error.startswith("ConnectionRefusedError")
+    assert r.started <= r.ended
+    assert RedisDriver(refusing, TIMING).login(0).error.startswith("ConnectionRefusedError")
+
+    class Dropping(FakeSocket):
+        def sendall(self, data: bytes) -> None:
+            raise BrokenPipeError(32, "Broken pipe")
+
+    driver = RedisDriver(FakeDialer(Dropping()), TIMING)
+    assert driver.login(0).ok
+    r = driver.run("PING")
+    assert r.sent and not r.alive and r.error.startswith("BrokenPipeError")
+    assert r.started <= r.ended

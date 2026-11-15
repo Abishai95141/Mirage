@@ -43,6 +43,10 @@ class Logs:
     target_prob: np.ndarray  # P(logged action | context) under the policy being evaluated
     q_logged: np.ndarray | None = None  # reward model for the logged action (DR)
     q_target: np.ndarray | None = None  # E over the target policy of the reward model (DR)
+    # The session each decision belongs to. Decisions of one session share its fate (one
+    # terminate ends them all), so an interval that resamples decisions is too narrow; with
+    # this set, every interval resamples whole sessions.
+    cluster: np.ndarray | None = None
 
     def __post_init__(self) -> None:
         n = len(self.reward)
@@ -62,11 +66,24 @@ def effective_sample_size(w: np.ndarray) -> float:
 
 
 def _bootstrap(
-    point: callable, n: int, rng: np.random.Generator, draws: int
+    point: callable,
+    n: int,
+    rng: np.random.Generator,
+    draws: int,
+    cluster: np.ndarray | None = None,
 ) -> tuple[float, float]:
+    members = None
+    if cluster is not None:
+        order = np.argsort(cluster, kind="stable")
+        _, starts = np.unique(cluster[order], return_index=True)
+        members = np.split(order, starts[1:])
     vals = []
     for _ in range(draws):
-        idx = rng.integers(0, n, n)
+        if members is None:
+            idx = rng.integers(0, n, n)
+        else:
+            picks = rng.integers(0, len(members), len(members))
+            idx = np.concatenate([members[i] for i in picks])
         vals.append(point(idx))
     lo, hi = np.percentile(vals, [2.5, 97.5])
     return float(lo), float(hi)
@@ -76,7 +93,9 @@ def ips(logs: Logs, draws: int = 1000, seed: int = 0) -> Estimate:
     w, r = logs.weights(), logs.reward
     rng = np.random.default_rng(seed)
     value = float(np.mean(w * r))
-    lo, hi = _bootstrap(lambda idx: float(np.mean(w[idx] * r[idx])), len(r), rng, draws)
+    lo, hi = _bootstrap(
+        lambda idx: float(np.mean(w[idx] * r[idx])), len(r), rng, draws, logs.cluster
+    )
     return Estimate(value, lo, hi, effective_sample_size(w))
 
 
@@ -89,7 +108,7 @@ def snips(logs: Logs, draws: int = 1000, seed: int = 0) -> Estimate:
         return float(np.sum(wi * r[idx]) / (np.sum(wi) + EPS))
 
     value = point(np.arange(len(r)))
-    lo, hi = _bootstrap(point, len(r), rng, draws)
+    lo, hi = _bootstrap(point, len(r), rng, draws, logs.cluster)
     return Estimate(value, lo, hi, effective_sample_size(w))
 
 
@@ -104,13 +123,15 @@ def dr(logs: Logs, draws: int = 1000, seed: int = 0) -> Estimate:
         return float(np.mean(q_target[idx] + w[idx] * (r[idx] - q_logged[idx])))
 
     value = point(np.arange(len(r)))
-    lo, hi = _bootstrap(point, len(r), rng, draws)
+    lo, hi = _bootstrap(point, len(r), rng, draws, logs.cluster)
     return Estimate(value, lo, hi, effective_sample_size(w))
 
 
-def on_policy_mean(reward: np.ndarray, draws: int = 1000, seed: int = 0) -> Estimate:
+def on_policy_mean(
+    reward: np.ndarray, draws: int = 1000, seed: int = 0, cluster: np.ndarray | None = None
+) -> Estimate:
     """The behaviour policy's own value: the plain mean reward, for comparison."""
     rng = np.random.default_rng(seed)
     value = float(np.mean(reward))
-    lo, hi = _bootstrap(lambda idx: float(np.mean(reward[idx])), len(reward), rng, draws)
+    lo, hi = _bootstrap(lambda idx: float(np.mean(reward[idx])), len(reward), rng, draws, cluster)
     return Estimate(value, lo, hi, float(len(reward)))

@@ -9,6 +9,9 @@ The same compiled engine serves two callers: the offline tagger (``tagger.py``),
 captured inputs, and the policy service, which needs the last tactic seen as a decision feature
 and must compute it in-process without a network call (spec Q12). So the engine depends on
 nothing but the rules file and the standard library.
+
+Every input is normalised before a pattern sees it (:func:`normalise`): runs of whitespace
+become one space and the ends are stripped. Rules are written against that form.
 """
 
 from __future__ import annotations
@@ -23,6 +26,21 @@ import yaml
 from mirage_schema.groundtruth import TACTIC_ID, TECHNIQUE_ID
 
 PROTOCOLS = ("ssh", "http", "redis", "mysql", "any")
+
+# How an input is prepared for matching. Part of the engine's version, so labels written
+# under different matching carry different ``model_version`` values.
+MATCHING = "ws1"
+_WHITESPACE = re.compile(r"\s+")
+
+
+def normalise(text: str) -> str:
+    """The form every rule is matched against (spec 2.4, "regexes on a normalised input").
+
+    Runs of whitespace (spaces, tabs, newlines) collapse to one space, and leading and
+    trailing whitespace goes. Nothing more: case is the patterns' business (they compile with
+    IGNORECASE), and quoting, paths and arguments stay as typed, so a rule sees what was sent
+    and ``a  b`` cannot slip past a pattern written for ``a b``. Idempotent."""
+    return _WHITESPACE.sub(" ", text).strip()
 
 
 @dataclass(frozen=True)
@@ -44,6 +62,7 @@ class Rule:
     all_of: list[re.Pattern[str]] = field(default_factory=list)
 
     def matches(self, protocol: str, text: str) -> bool:
+        """Whether this rule fires on ``text``, which the caller has normalised."""
         if self.protocol != "any" and self.protocol != protocol:
             return False
         if self.any_of and not any(p.search(text) for p in self.any_of):
@@ -96,7 +115,7 @@ class Engine:
         rules: list[Rule] = []
         session_rules: list[SessionRule] = []
         seen: set[str] = set()
-        digest = hashlib.sha256()
+        digest = hashlib.sha256(MATCHING.encode())
         for path in sorted(directory.glob("*.yaml")):
             raw = path.read_bytes()
             digest.update(path.name.encode() + b"\0" + raw)
@@ -141,7 +160,9 @@ class Engine:
         )
 
     def tag_input(self, protocol: str, text: str) -> list[Hit]:
-        """Every rule that fires on one input, strongest confidence first."""
+        """Every rule that fires on one input, strongest confidence first. The input is
+        normalised here, once, so every caller (tagger, policy service) matches alike."""
+        text = normalise(text)
         hits = [
             Hit(r.technique, r.tactic, r.confidence, r.id)
             for r in self.rules

@@ -1,7 +1,7 @@
 {
  "uid": "mirage-lab",
  "title": "MIRAGE · Lab",
- "description": "The simulation lab: scenario runs, how cleanly the ground truth joined, and the actors and protocols exercised.",
+ "description": "The simulation lab: scenario runs, how cleanly the ground truth joined, the actors and protocols exercised, what was captured for each side of the frozen split, and the latest evaluation metrics beside their baselines.",
  "tags": [
   "mirage"
  ],
@@ -262,7 +262,7 @@
      {
       "matcher": {
        "id": "byRegexp",
-       "options": "^(ts|start_ts|stored_at|first_seen|last_seen|last|last_used)$"
+       "options": "^(ts|start_ts|end_ts|stored_at|first_seen|last_seen|last|last_used|published_at)$"
       },
       "properties": [
        {
@@ -298,7 +298,7 @@
      {
       "matcher": {
        "id": "byRegexp",
-       "options": "^(source|protocol|outcome|type|action|reason|mime)$"
+       "options": "^(source|protocol|outcome|type|action|reason|mime|kind|tactic|split|mode|gate)$"
       },
       "properties": [
        {
@@ -310,7 +310,7 @@
      {
       "matcher": {
        "id": "byRegexp",
-       "options": "^(class|src_ip|sensor|rule_id|location|used_in)$"
+       "options": "^(class|src_ip|sensor|rule_id|location|used_in|predicted_class|actor_class|decided_by|technique)$"
       },
       "properties": [
        {
@@ -322,7 +322,7 @@
      {
       "matcher": {
        "id": "byRegexp",
-       "options": "^(seq|inputs|decisions|fallbacks|tokens|artifacts|logged_in|strength|times|size|n_sessions|sessions|attempts|succeeded|exposures|uses|logins|sources|honeytokens|auth_attempts|duration_s|latency_us|status)$"
+       "options": "^(seq|inputs|decisions|fallbacks|tokens|artifacts|logged_in|strength|times|size|n_sessions|sessions|attempts|succeeded|exposures|uses|logins|sources|honeytokens|auth_attempts|duration_s|latency_us|status|confidence|class_confidence|agreement|scenarios|steps|matched|procedures|techniques_seen|value|ci_low|ci_high|baseline|delta)$"
       },
       "properties": [
        {
@@ -494,7 +494,7 @@
      {
       "matcher": {
        "id": "byRegexp",
-       "options": "^(ts|start_ts|stored_at|first_seen|last_seen|last|last_used)$"
+       "options": "^(ts|start_ts|end_ts|stored_at|first_seen|last_seen|last|last_used|published_at)$"
       },
       "properties": [
        {
@@ -530,7 +530,7 @@
      {
       "matcher": {
        "id": "byRegexp",
-       "options": "^(source|protocol|outcome|type|action|reason|mime)$"
+       "options": "^(source|protocol|outcome|type|action|reason|mime|kind|tactic|split|mode|gate)$"
       },
       "properties": [
        {
@@ -542,7 +542,7 @@
      {
       "matcher": {
        "id": "byRegexp",
-       "options": "^(class|src_ip|sensor|rule_id|location|used_in)$"
+       "options": "^(class|src_ip|sensor|rule_id|location|used_in|predicted_class|actor_class|decided_by|technique)$"
       },
       "properties": [
        {
@@ -554,7 +554,7 @@
      {
       "matcher": {
        "id": "byRegexp",
-       "options": "^(seq|inputs|decisions|fallbacks|tokens|artifacts|logged_in|strength|times|size|n_sessions|sessions|attempts|succeeded|exposures|uses|logins|sources|honeytokens|auth_attempts|duration_s|latency_us|status)$"
+       "options": "^(seq|inputs|decisions|fallbacks|tokens|artifacts|logged_in|strength|times|size|n_sessions|sessions|attempts|succeeded|exposures|uses|logins|sources|honeytokens|auth_attempts|duration_s|latency_us|status|confidence|class_confidence|agreement|scenarios|steps|matched|procedures|techniques_seen|value|ci_low|ci_high|baseline|delta)$"
       },
       "properties": [
        {
@@ -578,6 +578,542 @@
     "y": 20,
     "w": 24,
     "h": 8
+   },
+   "datasource": {
+    "type": "grafana-clickhouse-datasource",
+    "uid": "clickhouse"
+   }
+  },
+  {
+   "type": "table",
+   "title": "Split sizes",
+   "description": "Scenarios, simulated sessions and steps captured for each side of the frozen split (eval/split.yaml), from the final runs in the time range. 'unassigned' is a scenario the split does not list.",
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "grafana-clickhouse-datasource",
+      "uid": "clickhouse"
+     },
+     "editorType": "sql",
+     "format": 1,
+     "rawSql": "SELECT transform(scenario_id, ['bot-brute-ssh', 'bot-cover-tracks', 'bot-escalate', 'bot-hunt-secrets', 'bot-impact-destruct', 'bot-impact-miner', 'bot-impair-defence', 'bot-lateral-ssh', 'bot-mysql-collect', 'bot-mysql-destruct', 'bot-mysql-recon', 'bot-persist-access', 'bot-persist-cron', 'bot-persist-rc', 'bot-persist-services', 'bot-port-sweep', 'bot-probe-accounts', 'bot-probe-files', 'bot-probe-network', 'bot-probe-processes', 'bot-probe-system', 'bot-redis-recon', 'bot-redis-takeover', 'bot-stage-and-run', 'cover-dev-http-01', 'cover-dev-redis-01', 'cover-dev-ssh-01', 'cover-dev-ssh-02', 'cover-dev-ssh-03', 'cover-test-http-01', 'cover-test-mysql-01', 'cover-test-redis-01', 'cover-test-ssh-01', 'cover-test-ssh-02', 'cover-test-ssh-03', 'cover-train-http-01', 'cover-train-redis-01', 'cover-train-ssh-01', 'cover-train-ssh-02', 'cover-train-ssh-03', 'demo-1-ssh-brute-miner', 'demo-2-web-cred-mysql', 'human-cover-tracks', 'human-hunt-secrets', 'human-impact-miner', 'human-persist-access', 'human-persist-cron', 'human-probe-files', 'human-shell-recon', 'human-stage-and-run', 'scanner-web-app', 'scanner-web-creds', 'smoke-exec-react', 'smoke-http-scan', 'smoke-human-look', 'smoke-mysql-read', 'smoke-redis-poke', 'smoke-shell-recon'], ['train', 'train', 'dev', 'train', 'test', 'train', 'test', 'train', 'train', 'train', 'train', 'train', 'train', 'dev', 'test', 'train', 'train', 'train', 'dev', 'dev', 'train', 'train', 'test', 'train', 'dev', 'dev', 'dev', 'dev', 'dev', 'test', 'test', 'test', 'test', 'test', 'test', 'train', 'train', 'train', 'train', 'train', 'train', 'train', 'train', 'train', 'train', 'train', 'train', 'train', 'train', 'train', 'train', 'train', 'train', 'train', 'train', 'train', 'train', 'train'], 'unassigned') AS split, uniqExact(scenario_id) AS scenarios, uniqExact(run_id, session_ref) AS sessions, count() AS steps, countIf(state = 'matched') AS matched, uniqExact(procedure_id) AS procedures, uniqExactIf(technique_id, technique_id != '') AS techniques_seen FROM mirage.sim_steps FINAL WHERE run_id IN (SELECT run_id FROM mirage.sim_runs FINAL WHERE final = 1 AND $__timeFilter(ended_ts)) GROUP BY split ORDER BY indexOf(['train', 'dev', 'test'], split) = 0, indexOf(['train', 'dev', 'test'], split)"
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "custom": {
+      "filterable": true,
+      "minWidth": 90
+     }
+    },
+    "overrides": [
+     {
+      "matcher": {
+       "id": "byRegexp",
+       "options": "^(ts|start_ts|end_ts|stored_at|first_seen|last_seen|last|last_used|published_at)$"
+      },
+      "properties": [
+       {
+        "id": "custom.width",
+        "value": 185
+       }
+      ]
+     },
+     {
+      "matcher": {
+       "id": "byRegexp",
+       "options": "^(session_id|actor_id|a|b|exposed_in|token_id|request_id)$"
+      },
+      "properties": [
+       {
+        "id": "custom.width",
+        "value": 215
+       }
+      ]
+     },
+     {
+      "matcher": {
+       "id": "byRegexp",
+       "options": "^(sha256)$"
+      },
+      "properties": [
+       {
+        "id": "custom.width",
+        "value": 270
+       }
+      ]
+     },
+     {
+      "matcher": {
+       "id": "byRegexp",
+       "options": "^(source|protocol|outcome|type|action|reason|mime|kind|tactic|split|mode|gate)$"
+      },
+      "properties": [
+       {
+        "id": "custom.width",
+        "value": 115
+       }
+      ]
+     },
+     {
+      "matcher": {
+       "id": "byRegexp",
+       "options": "^(class|src_ip|sensor|rule_id|location|used_in|predicted_class|actor_class|decided_by|technique)$"
+      },
+      "properties": [
+       {
+        "id": "custom.width",
+        "value": 150
+       }
+      ]
+     },
+     {
+      "matcher": {
+       "id": "byRegexp",
+       "options": "^(seq|inputs|decisions|fallbacks|tokens|artifacts|logged_in|strength|times|size|n_sessions|sessions|attempts|succeeded|exposures|uses|logins|sources|honeytokens|auth_attempts|duration_s|latency_us|status|confidence|class_confidence|agreement|scenarios|steps|matched|procedures|techniques_seen|value|ci_low|ci_high|baseline|delta)$"
+      },
+      "properties": [
+       {
+        "id": "custom.width",
+        "value": 95
+       }
+      ]
+     }
+    ]
+   },
+   "options": {
+    "showHeader": true,
+    "cellHeight": "sm",
+    "footer": {
+     "show": false
+    }
+   },
+   "id": 10,
+   "gridPos": {
+    "x": 0,
+    "y": 28,
+    "w": 14,
+    "h": 6
+   },
+   "datasource": {
+    "type": "grafana-clickhouse-datasource",
+    "uid": "clickhouse"
+   }
+  },
+  {
+   "type": "table",
+   "title": "Sessions by split and actor class",
+   "description": "The scenarios' own actor classes (ground truth), per side of the split.",
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "grafana-clickhouse-datasource",
+      "uid": "clickhouse"
+     },
+     "editorType": "sql",
+     "format": 1,
+     "rawSql": "SELECT transform(scenario_id, ['bot-brute-ssh', 'bot-cover-tracks', 'bot-escalate', 'bot-hunt-secrets', 'bot-impact-destruct', 'bot-impact-miner', 'bot-impair-defence', 'bot-lateral-ssh', 'bot-mysql-collect', 'bot-mysql-destruct', 'bot-mysql-recon', 'bot-persist-access', 'bot-persist-cron', 'bot-persist-rc', 'bot-persist-services', 'bot-port-sweep', 'bot-probe-accounts', 'bot-probe-files', 'bot-probe-network', 'bot-probe-processes', 'bot-probe-system', 'bot-redis-recon', 'bot-redis-takeover', 'bot-stage-and-run', 'cover-dev-http-01', 'cover-dev-redis-01', 'cover-dev-ssh-01', 'cover-dev-ssh-02', 'cover-dev-ssh-03', 'cover-test-http-01', 'cover-test-mysql-01', 'cover-test-redis-01', 'cover-test-ssh-01', 'cover-test-ssh-02', 'cover-test-ssh-03', 'cover-train-http-01', 'cover-train-redis-01', 'cover-train-ssh-01', 'cover-train-ssh-02', 'cover-train-ssh-03', 'demo-1-ssh-brute-miner', 'demo-2-web-cred-mysql', 'human-cover-tracks', 'human-hunt-secrets', 'human-impact-miner', 'human-persist-access', 'human-persist-cron', 'human-probe-files', 'human-shell-recon', 'human-stage-and-run', 'scanner-web-app', 'scanner-web-creds', 'smoke-exec-react', 'smoke-http-scan', 'smoke-human-look', 'smoke-mysql-read', 'smoke-redis-poke', 'smoke-shell-recon'], ['train', 'train', 'dev', 'train', 'test', 'train', 'test', 'train', 'train', 'train', 'train', 'train', 'train', 'dev', 'test', 'train', 'train', 'train', 'dev', 'dev', 'train', 'train', 'test', 'train', 'dev', 'dev', 'dev', 'dev', 'dev', 'test', 'test', 'test', 'test', 'test', 'test', 'train', 'train', 'train', 'train', 'train', 'train', 'train', 'train', 'train', 'train', 'train', 'train', 'train', 'train', 'train', 'train', 'train', 'train', 'train', 'train', 'train', 'train', 'train'], 'unassigned') AS split, uniqExactIf((run_id, session_ref), actor_class = 'scanner') AS scanner, uniqExactIf((run_id, session_ref), actor_class = 'scripted_bot') AS scripted_bot, uniqExactIf((run_id, session_ref), actor_class = 'human') AS human, uniqExact(run_id, session_ref) AS sessions FROM mirage.sim_sessions FINAL WHERE run_id IN (SELECT run_id FROM mirage.sim_runs FINAL WHERE final = 1 AND $__timeFilter(ended_ts)) GROUP BY split ORDER BY indexOf(['train', 'dev', 'test'], split) = 0, indexOf(['train', 'dev', 'test'], split)"
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "custom": {
+      "filterable": true,
+      "minWidth": 90
+     }
+    },
+    "overrides": [
+     {
+      "matcher": {
+       "id": "byRegexp",
+       "options": "^(ts|start_ts|end_ts|stored_at|first_seen|last_seen|last|last_used|published_at)$"
+      },
+      "properties": [
+       {
+        "id": "custom.width",
+        "value": 185
+       }
+      ]
+     },
+     {
+      "matcher": {
+       "id": "byRegexp",
+       "options": "^(session_id|actor_id|a|b|exposed_in|token_id|request_id)$"
+      },
+      "properties": [
+       {
+        "id": "custom.width",
+        "value": 215
+       }
+      ]
+     },
+     {
+      "matcher": {
+       "id": "byRegexp",
+       "options": "^(sha256)$"
+      },
+      "properties": [
+       {
+        "id": "custom.width",
+        "value": 270
+       }
+      ]
+     },
+     {
+      "matcher": {
+       "id": "byRegexp",
+       "options": "^(source|protocol|outcome|type|action|reason|mime|kind|tactic|split|mode|gate)$"
+      },
+      "properties": [
+       {
+        "id": "custom.width",
+        "value": 115
+       }
+      ]
+     },
+     {
+      "matcher": {
+       "id": "byRegexp",
+       "options": "^(class|src_ip|sensor|rule_id|location|used_in|predicted_class|actor_class|decided_by|technique)$"
+      },
+      "properties": [
+       {
+        "id": "custom.width",
+        "value": 150
+       }
+      ]
+     },
+     {
+      "matcher": {
+       "id": "byRegexp",
+       "options": "^(seq|inputs|decisions|fallbacks|tokens|artifacts|logged_in|strength|times|size|n_sessions|sessions|attempts|succeeded|exposures|uses|logins|sources|honeytokens|auth_attempts|duration_s|latency_us|status|confidence|class_confidence|agreement|scenarios|steps|matched|procedures|techniques_seen|value|ci_low|ci_high|baseline|delta)$"
+      },
+      "properties": [
+       {
+        "id": "custom.width",
+        "value": 95
+       }
+      ]
+     }
+    ]
+   },
+   "options": {
+    "showHeader": true,
+    "cellHeight": "sm",
+    "footer": {
+     "show": false
+    }
+   },
+   "id": 11,
+   "gridPos": {
+    "x": 14,
+    "y": 28,
+    "w": 10,
+    "h": 6
+   },
+   "datasource": {
+    "type": "grafana-clickhouse-datasource",
+    "uid": "clickhouse"
+   }
+  },
+  {
+   "type": "stat",
+   "title": "Gates met",
+   "description": "Gate metrics of the latest evaluation that meet their threshold.",
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "grafana-clickhouse-datasource",
+      "uid": "clickhouse"
+     },
+     "editorType": "sql",
+     "format": 1,
+     "rawSql": "SELECT countIf(gate = 1) FROM mirage.eval_metrics FINAL"
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "none",
+     "color": {
+      "mode": "fixed",
+      "fixedColor": "green"
+     },
+     "noValue": "0"
+    },
+    "overrides": []
+   },
+   "options": {
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ],
+     "fields": "/.*/",
+     "values": false
+    },
+    "colorMode": "value",
+    "graphMode": "none",
+    "textMode": "value"
+   },
+   "id": 12,
+   "gridPos": {
+    "x": 0,
+    "y": 34,
+    "w": 4,
+    "h": 4
+   },
+   "datasource": {
+    "type": "grafana-clickhouse-datasource",
+    "uid": "clickhouse"
+   }
+  },
+  {
+   "type": "stat",
+   "title": "Gates not met",
+   "description": "Gate metrics of the latest evaluation that miss their threshold.",
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "grafana-clickhouse-datasource",
+      "uid": "clickhouse"
+     },
+     "editorType": "sql",
+     "format": 1,
+     "rawSql": "SELECT countIf(gate = 0) FROM mirage.eval_metrics FINAL"
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "none",
+     "color": {
+      "mode": "fixed",
+      "fixedColor": "red"
+     },
+     "noValue": "0"
+    },
+    "overrides": []
+   },
+   "options": {
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ],
+     "fields": "/.*/",
+     "values": false
+    },
+    "colorMode": "value",
+    "graphMode": "none",
+    "textMode": "value"
+   },
+   "id": 13,
+   "gridPos": {
+    "x": 4,
+    "y": 34,
+    "w": 4,
+    "h": 4
+   },
+   "datasource": {
+    "type": "grafana-clickhouse-datasource",
+    "uid": "clickhouse"
+   }
+  },
+  {
+   "type": "stat",
+   "title": "Last evaluation",
+   "description": "When the evaluation harness last published.",
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "grafana-clickhouse-datasource",
+      "uid": "clickhouse"
+     },
+     "editorType": "sql",
+     "format": 1,
+     "rawSql": "SELECT toUnixTimestamp64Milli(published_at) FROM mirage.eval_metrics FINAL ORDER BY published_at DESC LIMIT 1"
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "dateTimeAsIso",
+     "color": {
+      "mode": "fixed",
+      "fixedColor": "text"
+     },
+     "noValue": "–"
+    },
+    "overrides": []
+   },
+   "options": {
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ],
+     "fields": "/.*/",
+     "values": false
+    },
+    "colorMode": "value",
+    "graphMode": "none",
+    "textMode": "value"
+   },
+   "id": 14,
+   "gridPos": {
+    "x": 8,
+    "y": 34,
+    "w": 16,
+    "h": 4
+   },
+   "datasource": {
+    "type": "grafana-clickhouse-datasource",
+    "uid": "clickhouse"
+   }
+  },
+  {
+   "type": "table",
+   "title": "Latest evaluation metrics and baselines",
+   "description": "Each metric beside the baseline it is compared with; ci_low and ci_high are its bootstrap interval, delta is value minus baseline. The gate column is empty for a metric that is reported but is not a gate. Not limited by the time range.",
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "grafana-clickhouse-datasource",
+      "uid": "clickhouse"
+     },
+     "editorType": "sql",
+     "format": 1,
+     "rawSql": "SELECT m.dataset AS dataset, m.metric AS metric, round(m.value, 4) AS value, round(m.ci_low, 4) AS ci_low, round(m.ci_high, 4) AS ci_high, round(m.baseline, 4) AS baseline, round(m.value - m.baseline, 4) AS delta, multiIf(m.gate = 1, 'met', m.gate = 0, 'NOT MET', '') AS gate, m.detail AS detail, m.published_at AS published_at FROM mirage.eval_metrics AS m FINAL ORDER BY dataset, metric"
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "custom": {
+      "filterable": true,
+      "minWidth": 90
+     }
+    },
+    "overrides": [
+     {
+      "matcher": {
+       "id": "byRegexp",
+       "options": "^(ts|start_ts|end_ts|stored_at|first_seen|last_seen|last|last_used|published_at)$"
+      },
+      "properties": [
+       {
+        "id": "custom.width",
+        "value": 185
+       }
+      ]
+     },
+     {
+      "matcher": {
+       "id": "byRegexp",
+       "options": "^(session_id|actor_id|a|b|exposed_in|token_id|request_id)$"
+      },
+      "properties": [
+       {
+        "id": "custom.width",
+        "value": 215
+       }
+      ]
+     },
+     {
+      "matcher": {
+       "id": "byRegexp",
+       "options": "^(sha256)$"
+      },
+      "properties": [
+       {
+        "id": "custom.width",
+        "value": 270
+       }
+      ]
+     },
+     {
+      "matcher": {
+       "id": "byRegexp",
+       "options": "^(source|protocol|outcome|type|action|reason|mime|kind|tactic|split|mode|gate)$"
+      },
+      "properties": [
+       {
+        "id": "custom.width",
+        "value": 115
+       }
+      ]
+     },
+     {
+      "matcher": {
+       "id": "byRegexp",
+       "options": "^(class|src_ip|sensor|rule_id|location|used_in|predicted_class|actor_class|decided_by|technique)$"
+      },
+      "properties": [
+       {
+        "id": "custom.width",
+        "value": 150
+       }
+      ]
+     },
+     {
+      "matcher": {
+       "id": "byRegexp",
+       "options": "^(seq|inputs|decisions|fallbacks|tokens|artifacts|logged_in|strength|times|size|n_sessions|sessions|attempts|succeeded|exposures|uses|logins|sources|honeytokens|auth_attempts|duration_s|latency_us|status|confidence|class_confidence|agreement|scenarios|steps|matched|procedures|techniques_seen|value|ci_low|ci_high|baseline|delta)$"
+      },
+      "properties": [
+       {
+        "id": "custom.width",
+        "value": 95
+       }
+      ]
+     },
+     {
+      "matcher": {
+       "id": "byName",
+       "options": "gate"
+      },
+      "properties": [
+       {
+        "id": "mappings",
+        "value": [
+         {
+          "type": "value",
+          "options": {
+           "met": {
+            "color": "green",
+            "index": 0
+           },
+           "NOT MET": {
+            "color": "red",
+            "index": 1
+           }
+          }
+         }
+        ]
+       },
+       {
+        "id": "custom.cellOptions",
+        "value": {
+         "type": "color-text"
+        }
+       }
+      ]
+     }
+    ]
+   },
+   "options": {
+    "showHeader": true,
+    "cellHeight": "sm",
+    "footer": {
+     "show": false
+    }
+   },
+   "id": 15,
+   "gridPos": {
+    "x": 0,
+    "y": 38,
+    "w": 24,
+    "h": 10
    },
    "datasource": {
     "type": "grafana-clickhouse-datasource",

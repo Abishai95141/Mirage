@@ -1,5 +1,5 @@
 '# ': Frozen by `python -m eval.split build`. Edit via that, not by hand.
-catalogue_sha256: 516a657ada89cb86489ba3250b6edc5d1df40470da60509836b1a9c937944e16
+catalogue_sha256: c10e8583d31f3ac84f719ab6417a84cfcf5822153fbf1c8028b85f5110490530
 manifest:
   procedures: 205
   by_split:
@@ -7,9 +7,9 @@ manifest:
     dev: 41
     test: 41
   scenarios_by_split:
-    train: 34
-    dev: 4
-    test: 4
+    train: 39
+    dev: 9
+    test: 10
   techniques_total: 41
   techniques_covered: 23
 procedures:
@@ -237,6 +237,7 @@ scenarios:
   bot-persist-cron: train
   bot-persist-rc: dev
   bot-persist-services: test
+  bot-port-sweep: train
   bot-probe-accounts: train
   bot-probe-files: train
   bot-probe-network: dev
@@ -245,6 +246,22 @@ scenarios:
   bot-redis-recon: train
   bot-redis-takeover: test
   bot-stage-and-run: train
+  cover-dev-http-01: dev
+  cover-dev-redis-01: dev
+  cover-dev-ssh-01: dev
+  cover-dev-ssh-02: dev
+  cover-dev-ssh-03: dev
+  cover-test-http-01: test
+  cover-test-mysql-01: test
+  cover-test-redis-01: test
+  cover-test-ssh-01: test
+  cover-test-ssh-02: test
+  cover-test-ssh-03: test
+  cover-train-http-01: train
+  cover-train-redis-01: train
+  cover-train-ssh-01: train
+  cover-train-ssh-02: train
+  cover-train-ssh-03: train
   demo-1-ssh-brute-miner: train
   demo-2-web-cred-mysql: train
   human-cover-tracks: train
@@ -255,7 +272,6 @@ scenarios:
   human-probe-files: train
   human-shell-recon: train
   human-stage-and-run: train
-  scanner-port-sweep: train
   scanner-web-app: train
   scanner-web-creds: train
   smoke-exec-react: train

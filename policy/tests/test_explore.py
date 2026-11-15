@@ -43,7 +43,7 @@ def req(seq=1, session="s1", ip=EXPLORE_IP, **over) -> DecideRequest:
 
 def test_terminate_is_masked_on_the_first_input():
     assert Action.TERMINATE not in allowed_actions(req(seq=1))
-    assert Action.TERMINATE not in allowed_actions(req(seq=None))
+    assert Action.TERMINATE not in allowed_actions(req(seq=None))  # nothing seen yet: first
     assert Action.TERMINATE in allowed_actions(req(seq=2))
     assert set(allowed_actions(req(seq=5))) == set(Action)
 
@@ -148,8 +148,15 @@ def test_rules_decide_outside_the_explore_range_and_the_bandit_shadows(tmp_path,
     assert post(c, 1, "s1", CAPTURE_IP).json()["action"] == "allow"
     (r,) = records(log)
     assert r["explore"] is False
-    assert r["acting"] == {"name": "rules", "action": "allow", "propensity": 1.0}
-    assert r["shadow"]["probs"]["allow"] > 0 and r["shadow"]["name"].startswith("epsilon-greedy")
+    assert r["acting"] == {
+        "name": "rules",
+        "version": r["rules_version"],
+        "action": "allow",
+        "propensity": 1.0,
+    }
+    # No trained model is loaded, and the record says so instead of naming one.
+    assert r["shadow"]["name"] == "shadow-fallback(epsilon-greedy)"
+    assert r["shadow"]["version"].startswith("epsilon-greedy") and r["shadow"]["probs"]["allow"] > 0
     assert r["context"]["last_tactic"] is None  # the stage before this input; nothing yet
     assert "terminate" not in r["allowed"]  # first input
 
@@ -184,7 +191,8 @@ def test_an_explored_fake_error_is_a_valid_decision(tmp_path, monkeypatch):
     assert {"allow", "delay", "fake_success", "fake_error", "terminate"} & seen
     for r in records(log):
         if r["action"] == "fake_error":
-            assert r.get("exit_code") == 1
+            # "uname -a" has no entry of its own, so it gets the shell's default fake error
+            assert (r["output"], r["exit_code"]) == ("Segmentation fault\n", 139)
         if r["action"] == "delay":
             assert r["delay_ms"] == 250
 

@@ -14,7 +14,7 @@ import re
 import httpx
 import pytest
 
-from .conftest import ROOT, docker
+from .conftest import ROOT, docker, unavailable
 
 pytestmark = pytest.mark.integration
 
@@ -28,7 +28,7 @@ def grafana(env):
     try:
         client.get("/api/health").raise_for_status()
     except httpx.HTTPError:
-        pytest.skip("Grafana not reachable; run make up")
+        unavailable("Grafana not reachable; run make up")
     return client
 
 
@@ -39,7 +39,7 @@ def variables(clickhouse) -> dict[str, str]:
         "ORDER BY length(tokens) DESC, length(connections) DESC, end_ts DESC LIMIT 1"
     )
     if not rows:
-        pytest.skip("no sessions yet; run the Gate 1 tests first")
+        unavailable("no sessions yet; run the Gate 1 tests first")
     r = rows[0]
     return {"session": r["session_id"], "actor": r["actor_id"], "protocol": "all", "src": ""}
 
@@ -76,6 +76,18 @@ def test_every_panel_query_runs(grafana, variables, uid):
             )
             checked += 1
     assert checked, uid
+
+
+@pytest.mark.parametrize("uid", ["mirage-sessions", "mirage-session"])
+def test_session_pages_show_model_output_never_lab_ground_truth(uid):
+    # Reads the generated JSON only, so it needs no stack. Tags come from the tagger
+    # (mirage.labels) and the actor class from the classifier (mirage.actor_class); a sim_*
+    # table holds what the scenario said about itself, which is what those are compared with.
+    dash = json.loads((ROOT / "compose/grafana/dashboards" / f"{uid}.json").read_text())
+    sql = [t["rawSql"] for panel in dash["panels"] for t in panel.get("targets", [])]
+    assert any("mirage.labels FINAL" in q for q in sql), uid
+    assert any("mirage.actor_class FINAL" in q for q in sql), uid
+    assert not [q for q in sql if "sim_" in q], uid
 
 
 def test_session_page_shows_the_sessions_timeline(grafana, variables):

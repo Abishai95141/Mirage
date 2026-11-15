@@ -29,8 +29,6 @@ procedures:
     template: echo '/tmp/{{file}}' > /etc/cron.daily/{{file2}}
     ref: ART T1053.003 test 2 Cron - Add script to all cron subfolders (b7d42afa-9086-4c8a-b7b0-8ea3faa6ebb0)
   - id: cron-list-jobs
-    technique: T1053.003
-    tactic: TA0007
     source: corpus
     protocol: ssh
     template: crontab -l
