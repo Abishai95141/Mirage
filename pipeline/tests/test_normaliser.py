@@ -1,6 +1,10 @@
 import json
+import re
+from pathlib import Path
 
-from mirage_pipeline.normaliser import normalise_batch
+import yaml
+
+from mirage_pipeline.normaliser import STREAMS, normalise_batch
 from mirage_pipeline.rows import to_row
 from mirage_schema import MirageEvent
 
@@ -46,3 +50,21 @@ def test_row_is_flat_and_clickhouse_ready():
     assert json.loads(row["raw"])["eventid"] == "cowrie.command.input"
     assert row["policy"] == "" and json.loads(row["labels"]) == []
     assert all(isinstance(v, str | int) for v in row.values())
+
+
+def test_stream_caps_fit_the_broker_budget():
+    """Every stream reserves its max_bytes against JetStream's file-store limit, and a stream
+    that does not fit is refused when the pipeline starts. The limit is fixed in
+    compose/nats/nats.conf. A stream added or enlarged without raising it would stop every
+    worker with "insufficient storage resources available", which is how CI found this."""
+    compose = Path(__file__).parents[2] / "compose"
+    conf = (compose / "nats" / "nats.conf").read_text()
+    limit = re.search(r"^\s*max_file_store:\s*(\d+)GB\s*$", conf, re.MULTILINE)
+    assert limit, "max_file_store must be set, in whole GB"
+    assert all(s.max_bytes and s.max_bytes > 0 for s in STREAMS), "every stream needs a cap"
+    assert sum(s.max_bytes for s in STREAMS) <= int(limit.group(1)) * 1024**3
+
+    # The file only counts if the server is started from it.
+    nats = yaml.safe_load((compose / "docker-compose.yml").read_text())["services"]["nats"]
+    assert nats["command"] == ["-c", "/etc/nats/nats.conf"]
+    assert "./nats/nats.conf:/etc/nats/nats.conf:ro" in nats["volumes"]

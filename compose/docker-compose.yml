@@ -221,10 +221,14 @@ services:
   nats:
     image: nats:2.15.2
     <<: *hardening
-    command: ["--jetstream", "--store_dir", "/data", "--http_port", "8222"]
+    # JetStream's storage limit is fixed in the config file, so it does not depend on how
+    # much disk happens to be free when the server starts (see the file).
+    command: ["-c", "/etc/nats/nats.conf"]
     networks: [core]
     ports: ["127.0.0.1:${NATS_PORT:-4222}:4222", "127.0.0.1:${NATS_MONITOR_PORT:-8222}:8222"]
-    volumes: [nats-data:/data]
+    volumes:
+      - ./nats/nats.conf:/etc/nats/nats.conf:ro
+      - nats-data:/data
     mem_limit: 256m
 
   vector:

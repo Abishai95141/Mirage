@@ -1,6 +1,6 @@
 # Phase 3 specification · Adaptation and the LLM responder
 
-Status: draft for review · 14 November 2026. Nothing in this phase is built; section 12 lists what it starts from.
+Status: draft for review · 14 November 2026, revised 15 November 2026 after Gate 2 passed (what changed: R2, R15, R21, the new R23, 3.0, 3.3, 3.7, and sections 7 and 9 to 12). Nothing in this phase is built; section 12 lists what it starts from.
 Parent: [build plan, phase 3](01-build-plan.md#phase-3--adaptation-and-the-llm-responder-56-weeks) · Companion docs: [architecture](02-architecture.md) · [AI/ML design](03-ai-ml-design.md) · [phase 1 spec](04-phase-1-spec.md) · [phase 2 spec](05-phase-2-spec.md) · [spike results](../spikes/README.md)
 
 Phase 3 makes the decoys answer more like the host they claim to be, and lets a learned policy choose how they answer. It adds four things:
@@ -28,7 +28,7 @@ Each is a default; say so if you disagree.
 | # | Gap | Decision |
 | --- | --- | --- |
 | R1 | Demo 3 is defined nowhere in the repository. The build plan names it, and the technical report's version uses parts that arrive in phase 4. | Defined here for what phases 0 to 3 contain (section 4, 3.8). It has two parts: 3a runs on the laptop and in CI, 3b needs the Linux host. |
-| R2 | Gate 3 mixes work that needs a Linux host with a GPU (the sandbox, Caldera, the live model's real numbers) with work that does not. No host exists yet. | The gate has a core part (tests 1 to 11) and a host part (tests 12 to 14). Phase 4 depends on nothing in the host part, so it may start when the core passes. `escalate` stays masked everywhere until the host part passes. |
+| R2 | Gate 3 mixes work that needs a Linux host with a GPU (the sandbox, Caldera, the live model's real numbers) with work that does not. A lab host exists since 14 November 2026 (Ubuntu 24.04, an 8 GB GPU, KVM), but its GPU container runtime and its sandbox runtime need root steps that have not been run (3.0). | The gate has a core part (tests 1 to 11) and a host part (tests 12 to 14). Phase 4 depends on nothing in the host part, so it may start when the core passes. `escalate` stays masked everywhere until the host part passes. |
 | R3 | The architecture draws the policy service calling the responder. The policy service answers in milliseconds and calls nothing (phase 2, Q12); the model takes seconds. | The policy returns a new action, `respond`. The decoy then calls the responder itself, with its own longer deadline, and streams the reply. The gate stays fast, and both hops fail open (section 3). |
 | R4 | "Pre-rendered" was specified as Cowrie text commands. A text command ignores its arguments, cannot return a non-zero exit code, and answers instantly. | A render library in the profile: entries keyed by normalised argv, each with stdout, stderr, an exit code and a response time taken from the reference host. A small fork patch serves it inside the decoy, so it still works with the policy service and the responder both down. |
 | R5 | Which commands to pre-render. A list made by reading the test scenarios would score well and generalise to nothing. | The inventory comes from data that is not the test set: the most frequent failed commands in the Zenodo seed sample and in dev-split lab runs, ranked by volume. Coverage is reported as a share of that volume (section 5). |
@@ -41,13 +41,14 @@ Each is a default; say so if you disagree.
 | R12 | Phase 2's explore logs contain five actions and say nothing about the three new ones. | A new exploration campaign with the full action set, logged under a new policy version. The estimators gain a support check and refuse a target policy that puts weight where the log has none (3.3). |
 | R13 | "Bandit goes live in the lab." The capture range must stay unexplored for labels and demos, and the explore range must keep the behaviour policy for data. | The explore range is split. 198.19.0.0/17 keeps the exploring behaviour policy. 198.19.128.0/17 is the `act` range, where the learned policy acts. The rules act on every address outside the lab ranges for the whole phase. |
 | R14 | `plant_token` (deferred by phase 2, Q11) needs a token mid-session, but the pipeline's matcher only knows tokens the profile generator minted. | The generator mints a reserve of unplanted tokens for each deployment. `plant_token` plants one from the reserve as a state operation. Nothing is minted at decision time. |
-| R15 | The bandit's context should include the actor class, but the policy service calls nothing. | The event-level classifier from 2.3 is loaded read-only as a model file in the policy process and scored on the features the service already tracks per session. The latency test of Gate 1 must still pass. |
+| R15 | The bandit's context should include the actor class, but the policy service calls nothing. | The event-level classifier from 2.3 is loaded read-only as a model file in the policy process and scored on the features the service already tracks per session. It is a random forest saved as plain JSON and predicted by the project's own code (`classifier.Forest`), which moves to `mirage_schema` so the policy service and the offline code share one implementation, as the bandit's arithmetic already does. The latency test of Gate 1 must still pass. |
 | R16 | D12: Cowrie's algorithm list identifies it from one passive packet, and no configuration fixes that (S3). | A time-boxed spike, S4, puts a real OpenSSH in front and hands its sessions to Cowrie (3.4). Adopt the front end if every check of the spike passes; otherwise the gap stays listed. Patching Twisted Conch is rejected: it means implementing five algorithm families in a library we do not own, and again at each OpenSSH release. |
 | R17 | How a session reaches the sandbox part-way through. Handing the raw terminal to a real shell drops the gate and the capture model. | Command proxy first: after `escalate`, Cowrie keeps the terminal and sends each line to a persistent shell in the sandbox, so every line still gets a decision and a command event. Handing over the raw terminal, which full-screen programs need, is a later step and a listed gap (3.5). |
 | R18 | gVisor needs no KVM and runs in CI, but a program inside can tell: the kernel version, `/proc` and the boot log are gVisor's own. | The broker takes the OCI runtime as configuration. gVisor is the default and what CI tests. A microVM runtime is used where the host has KVM. Userland tells are covered by installing the render library's outputs in the sandbox image; kernel-level self-identification under gVisor is a known gap (section 8). |
 | R19 | Host eBPF sensors (D15) cannot see inside gVisor or a microVM. | Sandbox telemetry comes from three places that do not depend on the runtime: the command proxy (every line and its output), the filesystem difference at session end (new files hashed into the artifact store), and the sinkhole's log. Process tracing from the runtime's own monitoring is added where it exists; Caldera's labels need it (3.6). |
 | R20 | The simulated attacker's success checks decide the headline number. | Every check must hold on a real Debian host. Each depth scenario is first run against the reference container, and a step whose check fails there is a broken step, not a hard one (section 5). |
-| R21 | The encoder for tagger v1 would be fine-tuned on about 120 training procedures. | Tagger v1 has two candidates: a linear model on character n-grams, and the encoder. Either is promoted only if it beats the phase 2 tagger on the held-out split. Not winning is a valid result and is reported (3.7). |
+| R21 | The encoder for tagger v1 would be fine-tuned on about 120 training procedures. Phase 2 already measured a linear model on character n-grams: 0.360 on dev against the chosen retrieval tagger's 0.405. | Tagger v1's candidate is a fine-tuned encoder, with the linear model kept as the cheap comparison. It is promoted only if it beats the phase 2 tagger (0.212 on the held-out split). Not winning is a valid result and is reported (3.7). |
+| R23 | The learned policy of 3.3 was specified by carrying phase 2's design forward: a contextual bandit, ε-greedy logging, Vowpal Wabbit, three estimators. Phase 2 found no learner that beats the rules, and nothing in this repository surveys what is known about reinforcement learning for deception. | A written survey comes first (3.3, "Research before design"): published work, open-source code and the concepts that decide the design. Every default in 3.3 is then kept or changed with a stated reason, and the survey decides whether a sequential formulation moves into scope (section 9). |
 | R22 | The build plan's responder is not tied to a protocol. Scanners are about 90% of traffic and most of it is HTTP path sweeps. | Generation is SSH-only for Gate 3. The HTTP decoy gets the response cache deferred from phase 1, filled offline for commonly probed paths; no live model answers HTTP. Redis and MySQL stay deterministic. |
 
 ## 2. Topology
@@ -123,8 +124,12 @@ The policy never returns an action the request did not list in `supports`, so th
 
 ### 3.0 Prerequisites
 
-- **Gate 2.** Passed, and `phase-2` merged. Today it is open on three things: Docker being up, the technique rules (handed off), and the live runs in [the phase 2 runbook](handoffs/phase-2-finish.md). The reward and the bandit's context both read the technique rules, so 3.3 cannot start without them.
-- **Phase 2 leftovers that phase 3 uses.** Keystroke statistics (2.0), needed before the actor class may gate `escalate`. The Vowpal Wabbit training path (2.5). Retrieval and LogPrécis (2.4, layers 2 and 3) are part of the incumbent that tagger v1 has to beat; if they are still unbuilt, the incumbent is the rules alone and the report says so.
+- **Gate 2.** Passed on 15 November 2026 on the lab host ([phase 2 spec, section 12](05-phase-2-spec.md)); `phase-2` is to be merged before phase 3 branches from it.
+- **What phase 2 left for this phase.** Keystroke statistics, the three learner families and the retrieval tagger are built. Three results change what follows:
+  - No learned policy beats the rules (doubly robust difference −0.164, interval −0.509 to +0.107), so 3.3 starts from a negative result, not from a working learner.
+  - The tagger gets 0.212 on commands it has not seen, and the reward computed from its labels inherits that. The lab's ground-truth reward stays the one used for selection.
+  - The policy service's `last_tactic` still comes from the starter rules, which know only harmless discovery commands and fire on about one input in seven. The learned tagger cannot be called from the policy service (it calls nothing, and the embedding takes longer than the gate's budget). 3.3 has to say what the context reads instead.
+- **Root steps on the lab host.** Containers there cannot use the GPU until the NVIDIA container toolkit is installed, and there is no sandbox runtime until gVisor is. Both are installed by `tools/lab-host/install-runtimes.sh`, which a person runs with `sudo`. The first is needed at step 5 of section 7, the second at step 9.
 - **Depth scenarios and demo 3.** Written from a handoff brief (`docs/handoffs/phase-3-depth-scenarios.md`, written at step 1 of section 7) by the same separate tool as the phase 2 catalogue. Frozen, and split into dev and test, before any responder work (section 5).
 - **Baseline.** The arms that exist today (stock Cowrie, the phase 2 stack, the reference host) are measured on the depth scenarios and the result is committed. That is the "before" number.
 - **Fork.** Check upstream Cowrie before adding patches. The pin is v3.1.6 and the build plan says to rebase monthly.
@@ -214,6 +219,12 @@ Acceptance:
 
 ### 3.3 Bandit goes live in the lab
 
+- **Research before design** (R23). Nothing below is built until a survey is written to `docs/research/deception-rl.md` and this section has been revised from it. Until then every item below is a default carried over from phase 2.
+  - *Published work:* reinforcement learning and bandits for honeypots and cyber deception, from the adaptive SSH honeypots (Heliza, RASSH and its successors, Dowling and others) to current work on learned deception policies and LLM-driven decoys; game-theoretic models of deception; attacker models, since the attacker adapts and a bandit assumes it does not.
+  - *Method:* off-policy evaluation beyond the three estimators used here (per-decision and sequence estimators, fitted Q evaluation, high-confidence bounds), safe policy improvement, conservative offline RL, and exploration that logs exact probabilities (Thompson sampling, LinUCB, SquareCB) against ε-greedy.
+  - *Open-source code:* what exists, under what licence, and whether it runs: bandit and off-policy libraries (Vowpal Wabbit, Open Bandit Pipeline, d3rlpy, SCOPE-RL), cyber environments (CybORG, CyberBattleSim, NASim), and any published honeypot RL code. These names are starting points to check, not the list.
+  - *Questions it must answer:* bandit or sequential, and on what evidence; what the reward should pay for, and which rewards in the literature are shallow proxies (session length, command count); how much exploration data a policy over eight actions needs for the off-policy gate below to be decidable; what the context should read in place of the rules-based `last_tactic` (3.0).
+  - *Output:* for each source, its claim, its evidence, and what is reusable; a table that keeps or changes each default below with the reason; and a shortlist of learners and estimators. The shortlist is first run on phase 2's frozen explore decisions (`eval/datasets/gate2/decisions.parquet`), train and dev only. Its test sessions have been read once and are not used for selection.
 - **Rules v2** (R11). Rules gain conditions on the context: inputs so far, last tactic, `tier`, actor class. A v2 rule set joins `policy/src/mirage_policy/rulesets/`. Phase 2's allow-all set stays as an arm of section 5.
 - **Context additions:** `tier`; the actor class and its confidence (R15); the responder budget left, in buckets; whether a token has been planted in this session. Availability of the responder and the sandbox arrives in `supports`.
 - **Mask additions**
@@ -228,7 +239,8 @@ Acceptance:
 
 - **Reward v2** (`intel/reward.py`; v1 stays computable for comparison). Phase 2's terms, plus −0.002 per generated output token and −1 per escalation (defaults). In the lab it is also computed from ground truth, and the difference reported, as before.
 - **Exploration campaign** (R12). In 198.19.0.0/17 the behaviour policy is rules v2 with ε = 0.3 over the allowed actions. At least 600 sessions and 6,000 decisions (a default: double phase 2's, because the action set is larger). The calibration checks of Gate 2 test 8 are run again on these logs.
-- **Training.** Vowpal Wabbit, offline, on the explore sessions of train-split scenarios. The model file is loaded read-only. No online updates in this phase.
+- **Join health under exploration.** In phase 2's explore run eleven steps did not join cleanly, and each turned out to be an explored action at work: a `fake_error` on the statement a MySQL driver sends while connecting made the runner report a failed login the decoy had accepted, and a `terminate` closed a Redis connection before the next command was sent. The join learns both cases from the applied decisions: a step that follows a `terminate` on its connection is `not_delivered`, and a step whose own decisions include an altering action is `altered`. Both are counted and reported apart. Any other `no_event` or `mismatch` in the explore or act range fails the campaign, as it does in the capture range.
+- **Training.** Offline, on the explore sessions of train-split scenarios. The learner is whatever the survey's shortlist and the dev sessions pick; the default is phase 2's set (a table, a weighted linear model, Vowpal Wabbit), none of which beat the rules there. The model file is loaded read-only. No online updates in this phase.
 - **Off-policy gate**, on the explore sessions of held-out scenarios. All three must hold before the learned policy acts anywhere:
   1. The support check passes: the target puts no weight on an action the log gave zero probability in that context.
   2. The effective sample size is at least 200 (a default).
@@ -308,10 +320,10 @@ The same tests are meant to run in CI under gVisor, which needs no KVM. Step 7 o
 
 ### 3.7 Tagger v1
 
-- **Incumbent.** The phase 2 tagger as it stands at Gate 2.
-- **Candidates** (R21). A logistic regression on character n-grams of the normalised input, one-vs-rest over the techniques that have training procedures. And a small encoder (110 to 150 million parameters, from the candidates in the AI/ML design, licence checked at download), fine-tuned for the same label set.
-- **Data.** The `steps` table's train split, plus Caldera's train-side steps once 3.6 exists. Dev sets the abstention threshold and stops training. Test is read only by the harness.
-- **As a system.** Rules first, the candidate where the rules abstain. That combination is what gets compared with the incumbent.
+- **Incumbent.** The phase 2 tagger as it stands at Gate 2: nearest neighbour over the training procedures and Atomic Red Team's Linux tests, embedded with SecureShellBert. Held-out technique micro-F1 0.212 (0.067 to 0.346); the figure it was selected on was 0.405.
+- **Candidates** (R21). A small encoder (110 to 150 million parameters, from the candidates in the AI/ML design, licence checked at download), fine-tuned for the techniques that have training procedures. The linear model on character n-grams that phase 2 measured (0.360 on dev) is rerun as the cheap comparison. Phase 2's experiment found that more labelled procedures helped more than any change of model, so the data line below matters more than the candidate.
+- **Data.** The `steps` table's train split and the Atomic Red Team text, plus Caldera's train-side steps once 3.6 exists. Dev sets the abstention threshold and stops training. Test is read only by the harness, and it has now been read once for the incumbent: a candidate chosen by looking at it is not a held-out result.
+- **As a system.** The candidate alone against the incumbent alone. Phase 2 measured the starter rules in front of the model and they made it worse, so they are not a layer; that comparison is rerun only if offensive rules are added.
 - **Reported.** The table of 2.4 (micro- and macro-F1, exact and with sub-techniques folded, abstention, by source, unseen techniques apart), with intervals. The encoder is trained from five seeds and the mean and spread are given, because fine-tuning on this little data is unstable.
 - **Promotion.** A candidate replaces the incumbent only if the system's held-out micro-F1 is higher by more than the interval and per-session tactic precision does not fall. Otherwise the incumbent stays and the report says by how much the candidate lost.
 - **Serving.** A promoted model runs in the tagger worker. The policy service's in-process rules do not change (phase 2, Q12).
@@ -398,12 +410,13 @@ Notes:
 
 | Step | Work | Why here |
 | --- | --- | --- |
-| 1 | 3.0: Gate 2 closed; the handoff brief; depth scenarios and demo 3 written, checked on arm R and frozen; arms A, B and R on `lab-edge`; the baseline committed | The "before" number and the frozen test must exist before anything is tuned |
+| 1 | 3.0: `phase-2` merged; the handoff brief; depth scenarios and demo 3 written, checked on arm R and frozen; arms A, B and R on `lab-edge`; the baseline committed | The "before" number and the frozen test must exist before anything is tuned |
+| 1b | The survey of 3.3 (R23), and its shortlist run on phase 2's frozen decisions | It needs nothing from this phase, and it has to be finished before step 6 is designed. It may change the campaign's size, the reward and the scope. |
 | 2 | The fidelity check; the inventory; hardware classes; the render library and its fork patch (3.2a) | The largest gain for the least risk, and it needs no live model (S2's first conclusion) |
 | 3 | The probe groups that need no responder: transport, emulator fidelity, response time, fleet; the known-gaps file; spike S4 (3.4) | The emulator audit feeds the library and the fork fixes. D12 closes early, so 3.4b is scheduled or dropped. |
 | 4 | Contract v2; the journal, the applier and the `respond` client in the fork; the state manager; the responder on `replay`; rules v2 (3.1, 3.2b) | The service and its safety tests are built against recordings before a live model is in the path |
 | 5 | The live backend and `llm-dev`; the bench and the model comparison; recordings, cache and promotion (3.2c); the responder-consistency probes | Needs step 4's service |
-| 6 | Reserve tokens and `plant_token`; context and mask additions; reward v2; the campaign; training; the off-policy gate; the act range (3.3) | `respond` must exist before it can be explored. Needs the technique rules. |
+| 6 | Reserve tokens and `plant_token`; context and mask additions; reward v2; the campaign; training; the off-policy gate; the act range (3.3) | `respond` must exist before it can be explored. Needs step 1b. |
 | 7 | Tagger v1 (3.7) | Independent of the responder; any time after Gate 2's frozen dataset |
 | 8 | Demo 3a; the depth comparison; tests 1 to 11 | |
 | 9 | Host: confirm gVisor on CI runners; broker, sinkhole, image and command proxy (3.5); Caldera (3.6); demo 3b; host numbers; tests 12 to 14 | Needs the Linux host. The parts of 3.5 that CI can test may start at step 4. |
@@ -428,7 +441,7 @@ The build plan's five to six weeks assumed three or four people. Steps 1 to 8 ar
 
 ## 9. Out of scope
 
-Live generation for HTTP, Redis or MySQL (R22); PostgreSQL; fine-tuning the responder's model; sending attacker input to any model outside the machine; a learned policy acting on non-lab traffic; online updates to the bandit; a sequential (Q-learning) policy and the Gymnasium replay environment of the AI/ML design, which wait until a sequential formulation is tried; handing the raw terminal to the sandbox; Windows sandboxes; running captured files anywhere but the session that produced them; prompt-injection classifiers and LLM-agent detection (phase 4); campaign correlation (phase 4); internet exposure, which still waits for the build plan's checklist and a named person.
+Live generation for HTTP, Redis or MySQL (R22); PostgreSQL; fine-tuning the responder's model; sending attacker input to any model outside the machine; a learned policy acting on non-lab traffic; online updates to the bandit; a sequential (Q-learning) policy and the Gymnasium replay environment of the AI/ML design, unless the survey of 3.3 gives evidence that a sequential formulation is needed, in which case this line and Gate 3 test 9 are revised before anything is built (R23); handing the raw terminal to the sandbox; Windows sandboxes; running captured files anywhere but the session that produced them; prompt-injection classifiers and LLM-agent detection (phase 4); campaign correlation (phase 4); internet exposure, which still waits for the build plan's checklist and a named person.
 
 ## 10. Downloads and new dependencies
 
@@ -436,23 +449,26 @@ Nothing here is fetched until approved.
 
 | Item | Size | Licence | Needed for |
 | --- | --- | --- | --- |
-| Qwen3.5-9B, Q4_K_M | 5.68 GB, already in `data/models/` (S2) | Apache-2.0 | 3.2 |
+| Qwen3.5-9B, Q4_K_M | 5.68 GB. On the laptop's disk (S2); not on the lab host, which has to fetch it for the `llama` backend | Apache-2.0 | 3.2 |
+| NVIDIA container toolkit | Small (apt packages) | Apache-2.0 | 3.2 on the lab host; installed by `tools/lab-host/install-runtimes.sh`, with `sudo` |
 | `llama-server` (llama.cpp) | Installed natively for S2; a GPU container image on the host | MIT | 3.2 |
 | A model of about 4B parameters, GGUF, 4-bit | about 2.5 to 3 GB | To be confirmed at download; permissive only | 3.2c |
-| An encoder for tagger v1 | about 0.5 GB | To be confirmed at download; permissive only | 3.7 |
-| torch, transformers | In phase 2's list, not yet fetched | BSD, Apache-2.0 | 3.7 |
-| gVisor (`runsc`) | about 50 MB (estimate) | Apache-2.0 | 3.5, Linux only |
+| An encoder for tagger v1 | about 0.5 GB, unless one of the four embedding models phase 2 fetched to the lab host is used | To be confirmed at download; permissive only | 3.7 |
+| torch, transformers | Fetched in phase 2: a research environment on the lab host, with a CUDA build beside it (`make gpu-env`) | BSD, Apache-2.0 | 3.7 |
+| gVisor (`runsc`) | about 50 MB (estimate) | Apache-2.0 | 3.5, Linux only; installed by the same script |
+| Whatever the survey of 3.3 shortlists (off-policy or offline-RL libraries) | Not known yet | Permissive only | 3.3 |
 | A microVM runtime (Kata Containers) | Optional | Apache-2.0 | 3.5, where the host has KVM |
 | apache/caldera 5.3.0, full image | Several GB (estimate); about 8 GB of memory to run | Apache-2.0 | 3.6 |
 | `openssh-server` from Debian 12 | Already in the reference image | BSD-style | Spike S4 |
 
-The policy image gains LightGBM, to score the classifier in-process (R15). On the laptop the stack and the model do not fit comfortably together ([architecture §9](02-architecture.md#9-memory-budget-on-the-16-gb-laptop)): live development there uses one model slot and no other heavy job, and Caldera never runs on it.
+The policy image gains no library for the classifier: the forest is plain JSON, scored by shared code (R15). On the laptop the stack and the model do not fit comfortably together ([architecture §9](02-architecture.md#9-memory-budget-on-the-16-gb-laptop)): live development there uses one model slot and no other heavy job, and Caldera never runs on it.
 
 ## 11. Decisions needed from you
 
 | Decision | Default if you say nothing |
 | --- | --- |
-| A Linux host with a GPU: provider, budget, and the provider's written permission for security research | The core (tests 1 to 11) is built on the laptop and in CI. Tests 12 to 14 stay open, `escalate` stays masked, and the live model's numbers are the laptop's. |
+| The lab host's root steps: run `tools/lab-host/install-runtimes.sh` with `sudo` (the NVIDIA container toolkit and gVisor; it restarts Docker) | Until it is run, the core (tests 1 to 11) is built with the model on the laptop or run natively on the host. Tests 12 to 14 stay open and `escalate` stays masked. The host is a desktop on a home network and stays unexposed; a hosted machine would need its provider's written permission for security research. |
+| The survey of 3.3 may move a sequential policy into scope, change the campaign's size or change the learner (R23) | Its recommendations are brought to you before 3.3 is built; nothing in section 9 changes without that. |
 | D12: run spike S4, and adopt the OpenSSH front end if all seven checks pass | Yes |
 | Generation for SSH only in this phase (R22) | As written |
 | May a hosted model draft render-library entries? Those prompts hold no attacker input. | No. The local model drafts them; it is slow, and offline that does not matter. |
@@ -463,7 +479,7 @@ The policy image gains LightGBM, to score the classifier in-process (R15). On th
 | A new line in the build plan's exposure checklist: `escalate` is masked on an exposed sensor until test 12 has passed on that host and a named person has agreed to attacker code running there | Proposed here; not added to the build plan until you agree |
 | The downloads in section 10 | Asked again, item by item, when each is first needed |
 
-## 12. Starting point (14 November 2026)
+## 12. Starting point (15 November 2026)
 
 Nothing in this spec is built. This is what it starts from.
 
@@ -471,10 +487,13 @@ Nothing in this spec is built. This is what it starts from.
 | --- | --- | --- |
 | Gate hook and contract v1 | Built. Adds 2.4 ms per command and fails open (S1). | `decoys/ssh/patches/`, `policy/` |
 | Filesystem change events | Built in phase 1. The change journal of 3.1 extends them. | `decoys/ssh/patches/0003-…` |
-| Model and server | Qwen3.5-9B on disk. `llama-server` measured natively: 12.5 tokens/s, median 8.6 s per command, about 9 GB (S2). | `data/models/`, `spikes/s2-llm-latency/` |
+| Model and server | Qwen3.5-9B on the laptop's disk, not yet on the lab host. `llama-server` measured natively on the laptop: 12.5 tokens/s, median 8.6 s per command, about 9 GB (S2). | `data/models/`, `spikes/s2-llm-latency/` |
 | Reference host | A Debian 12 image running the four real services, and the facts extracted from it | `decoys/profiles/reference/` |
 | Probes | 32 default-tell checks and S3's transport probes; one known gap (HASSH-server) | `eval/probes/` |
-| Lab | The runner with reactions, the PROXY relay, four protocol drivers, the label join, 205 procedures, 34 scenarios, a frozen split | `lab/`, `eval/split.yaml` |
-| Bandit | Exploring policy, context, mask, the enriched decision log, reward v1, three estimators | `policy/src/mirage_policy/explore.py`, `intel/src/mirage_intel/{reward,ope}.py` |
-| Tagger and classifier | The rule engine shared by the worker and the policy service; the LightGBM classifier; the harness with its regression gate | `schema/src/mirage_schema/techniques.py`, `intel/` |
-| Open from phase 2 | Gate 2 has not been run live (Docker is down). The technique rules are handed off. Retrieval, LogPrécis, keystroke statistics and the Vowpal Wabbit model are not built. | [`handoffs/phase-2-finish.md`](handoffs/phase-2-finish.md) |
+| Lab | The runner with reactions, the PROXY relay, four protocol drivers, the label join, 205 procedures, 58 scenarios (8 human-paced twins and 16 generated for coverage among them), a recorder for a real person's session, a frozen split | `lab/`, `eval/split.yaml` |
+| Lab host | Ubuntu 24.04, an 8 GB GPU, KVM. The whole stack runs there; PyTorch's CUDA build works from a host environment. Containers cannot use the GPU and there is no sandbox runtime until the root steps of 3.0 are run. | `make gpu-env`, `tools/lab-host/` |
+| Frozen dataset and harness | 390 sessions, 1,704 steps and 5,181 logged decisions from one clean collection, with a committed baseline that CI re-scores without a model or a running stack | `eval/datasets/gate2/`, `eval/baselines/gate2.json`, `intel/src/mirage_intel/harness.py` |
+| Bandit | Exploring policy with logged probabilities, context (verb classes included), mask, reward-to-go, three estimators, three learner families, and a shadow policy inside the service. No learner beats the rules: −0.164 (−0.509 to +0.107) on held-out sessions. | `policy/src/mirage_policy/{explore,shadow}.py`, `intel/src/mirage_intel/{reward,ope,policylearn}.py`, [the experiment](experiments/phase-2/bandit.md) |
+| Classifier | The rule "never held access is a scanner", then a random forest saved as JSON: 0.994 on held-out scenario groups, 0.902 without keystrokes. The human class is the typing generator. | `intel/src/mirage_intel/classifier.py`, [the experiment](experiments/phase-2/classifier.md) |
+| Tagger | Nearest neighbour over training procedures and Atomic Red Team, served by a worker: 0.212 on held-out procedures. The starter rules feed only session alerts and the policy's `last_tactic`. | `intel/src/mirage_intel/{tagserve,tag_worker}.py`, [the experiment](experiments/phase-2/tagger.md) |
+| Open from phase 2 | No recording of a real person. The tagger is weak on commands it has not seen. The test split has no explicit negative. Eleven of 5,182 explore-run steps did not join cleanly; all were caused by an explored `fake_error` or `terminate`, which was found by hand because the join cannot yet tell that from a capture fault (3.3). One training procedure is always skipped by its scenario. | [phase 2 spec, section 12](05-phase-2-spec.md) |
