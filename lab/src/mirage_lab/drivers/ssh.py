@@ -108,6 +108,9 @@ class SSHDriver:
     ) -> None:
         self.dialer, self.timing, self.fingerprint = dialer, timing, fingerprint
         self.user, self.password, self.channel = user, password, channel
+        # Passwords the decoy would accept for this user; the runner fills it in from the
+        # profile. They are never sent as wrong guesses.
+        self.accepted: frozenset[str] = frozenset({password})
         self.conn: Conn | None = None
         self.transport: paramiko.Transport | None = None
         self.shell: paramiko.Channel | None = None
@@ -121,8 +124,10 @@ class SSHDriver:
     def login(self, guesses: int, per_connection: int = 3) -> LoginResult:
         """``guesses`` wrong passwords, a few per connection as real tools do, then the right
         one. Every connection used is reported with its window, for the label join."""
-        wrong = [p for p in COMMON_PASSWORDS if p != self.password]
+        wrong = [p for p in COMMON_PASSWORDS if p != self.password and p not in self.accepted]
         self.timing.rng.shuffle(wrong)
+        if not wrong:  # the decoy accepts the whole list: there is no wrong guess to send
+            guesses = 0
         todo = [wrong[i % len(wrong)] for i in range(guesses)] + [self.password]
         result = LoginResult(ok=False)
         while todo:

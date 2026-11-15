@@ -92,7 +92,14 @@ jobs:
       - name: start the learned tagger
         run: |
           nohup make tagger-model-host > tagger-model.log 2>&1 &
-          for i in $(seq 1 90); do grep -q "tagger model .* loaded" tagger-model.log && break; sleep 2; done
+          pid=$!
+          # Up to five minutes: a cold cache downloads the embedding model first. A worker
+          # that has already exited fails the step at once, with its log.
+          for i in $(seq 1 150); do
+            grep -q "tagger model .* loaded" tagger-model.log && break
+            kill -0 "$pid" 2>/dev/null || { echo "the tagger exited before loading"; cat tagger-model.log; exit 1; }
+            sleep 2
+          done
           grep "tagger model .* loaded" tagger-model.log
       - run: make itest
       - if: failure()

@@ -299,6 +299,75 @@ def test_ssh_login_survives_a_server_that_hangs_up_during_the_handshake(monkeypa
     assert dial.opened[0].closed is not None and dial.opened[0].sock.closed
 
 
+def test_a_wrong_guess_is_never_a_password_the_decoy_accepts(monkeypatch):
+    # A profile renders up to three passwords for root. The driver knew one and drew its wrong
+    # guesses from a list that held the others, so some seeds logged in on a "wrong" guess and
+    # the session had fewer failed attempts than its scenario asked for.
+    import random
+
+    import paramiko
+
+    from mirage_lab.drivers import ssh
+    from mirage_lab.timing import make
+
+    also = {"123456", "toor", "raspberry"}  # all in the driver's list of common guesses
+    assert also <= set(ssh.COMMON_PASSWORDS)
+    sent: list[str] = []
+
+    class Sock:
+        def close(self):
+            pass
+
+    class Dial:
+        src_ip, target_ip = "198.18.0.9", "172.26.0.2"
+
+        def __init__(self):
+            self.opened = []
+
+        def connect(self, port):
+            conn = Conn(Sock(), self.src_ip, 40001, self.target_ip, port, datetime.now(UTC))
+            self.opened.append(conn)
+            return conn
+
+    class Decoy:
+        def __init__(self, sock):
+            pass
+
+        def get_security_options(self):
+            return type("O", (), {"kex": (), "ciphers": (), "digests": (), "key_types": ()})()
+
+        def start_client(self, timeout=None):
+            pass
+
+        def auth_password(self, user, password):
+            sent.append(password)
+            if password not in also | {"the-right-one"}:
+                raise paramiko.AuthenticationException
+
+        def close(self):
+            pass
+
+    monkeypatch.setattr(ssh.paramiko, "Transport", Decoy)
+    monkeypatch.setattr(ssh.time, "sleep", lambda s: None)
+
+    def login(seed: int, told: bool):
+        sent.clear()
+        rng = random.Random(seed)
+        driver = SSHDriver(Dial(), make("bot-fast", rng), Fingerprint(rng), "root", "the-right-one")
+        if told:
+            driver.accepted = frozenset(also | {"the-right-one"})
+        result = driver.login(6)
+        return result, list(sent)
+
+    for seed in range(40):
+        result, tried = login(seed, told=True)
+        assert result.ok and tried[-1] == "the-right-one"
+        assert len(tried) == 7 and not set(tried[:-1]) & also
+        assert [p.success for p in result.phases] == [False, False, True]
+    # The check can see the defect: a driver that is not told logs in early for some seed.
+    assert any(len(login(seed, told=False)[1]) < 7 for seed in range(40))
+
+
 @pytest.mark.parametrize("field", ["started", "ended"])
 def test_step_times_fall_back_without_inverting(tmp_path, field):
     class Partial(Scripted):

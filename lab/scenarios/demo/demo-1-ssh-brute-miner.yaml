@@ -13,8 +13,10 @@ sessions:
       - {id: s1, procedure: sysinfo-uname-all, expect: "Linux", on_fail: leave}
       - {id: s2, procedure: owner-w, expect: "USER"}
       - {id: s3, procedure: cron-list-jobs}
-      # Tries to download the miner; without egress this fails, so the bot falls through.
-      - {id: s4, procedure: fetch-wget-url, expect: "saved", on_fail: {goto: s6}}
+      # Tries to download the miner, then a second way; without egress both fail and the bot
+      # falls through. (s4 used to jump to s6 on failure, so s5 ran only if s4 had worked:
+      # never. The catalogue's one procedure that no run reached was s5's.)
+      - {id: s4, procedure: fetch-wget-url, expect: "saved", on_fail: continue}
       - {id: s5, procedure: fetch-tftp-get, expect: "saved", on_fail: continue}
       # Falls back to pushing it over SFTP - this step becomes an indexed artifact.
       - {id: s6, procedure: transfer-sftp-put}

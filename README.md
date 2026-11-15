@@ -62,6 +62,8 @@ make lab-run SCENARIOS=/lab/scenarios/smoke
 | Train the models the workers load | `make models DATA=eval/datasets/gate2` |
 | The learned tagger, live | `make ml-image` then `make tagger-model` (Docker, CPU), or `make tagger-model-host` (add `GPU=1` after `make gpu-env` on a host with an NVIDIA GPU) |
 | The whole phase 2 gate | `make gate2` |
+| Copy this checkout to a lab host, history included, so runs there record the right commit | `tools/lab-host/sync.sh user@host` |
+| A lab host's root steps for phase 3 (GPU in containers, the sandbox runtime) | on the host: `sudo bash tools/lab-host/install-runtimes.sh` |
 | Model experiments | `uv sync --group research`, then the scripts in `intel/src/mirage_intel/experiments/`; results in [docs/experiments/phase-2](docs/experiments/phase-2/) |
 
 Which models run, and why, is in `eval/choices.yaml`. Grafana gains an Alerts page and a Lab page (runs, join health, the harness's metrics and gates).

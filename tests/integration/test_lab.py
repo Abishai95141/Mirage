@@ -423,15 +423,20 @@ def test_demo_1_ssh_brute_to_miner(clickhouse):
         f"SELECT sha256 FROM mirage.artifacts WHERE has(sessions, '{up[0]['session_id']}')",
         lambda rows: bool(rows),
     )
-    # One alert for the actor, raised for what the tagger and the artifact index found.
+    # One alert for the actor, raised for what the tagger and the artifact index found. The
+    # predicted class reaches the alert one sweep after the classifier writes it, so it is
+    # part of what is waited for: asserting it on whichever version had the reasons first
+    # failed about one run in two.
     alert = actor_alert(
         clickhouse,
         actor_of(clickhouse, sessions),
-        lambda a: {"artifact", "persistence", "impact"} <= set(a["reasons"]),
+        lambda a: (
+            {"artifact", "persistence", "impact"} <= set(a["reasons"])
+            and "scripted_bot" in a["actor_classes"]
+        ),
     )
     assert art[0]["sha256"] in alert["artifacts"]
     assert working <= set(alert["session_ids"])
-    assert "scripted_bot" in alert["actor_classes"]
 
 
 def test_demo_2_web_cred_theft_reused_on_mysql(clickhouse):

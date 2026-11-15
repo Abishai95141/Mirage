@@ -88,13 +88,26 @@ class Summary:
     errors: list[str] = field(default_factory=list)
 
 
-def root_password(profile_dir: Path, user: str) -> str:
-    """The password the decoy accepts for ``user``, from the deployment profile."""
-    for line in (profile_dir / "cowrie/userdb.txt").read_text().splitlines():
+def accepted_passwords(profile_dir: Path, user: str) -> list[str]:
+    """Every password the decoy accepts for ``user``, in the profile's order. A profile
+    renders one to three for root, so "the" password is only the first of them."""
+    userdb = profile_dir / "cowrie/userdb.txt"
+    if not userdb.is_file():
+        return []
+    out = []
+    for line in userdb.read_text().splitlines():
         parts = line.split(":", 2)
         if len(parts) == 3 and parts[0] == user and not parts[2].startswith("!"):
-            return parts[2]
-    raise ValueError(f"the profile has no password for {user!r}")
+            out.append(parts[2])
+    return out
+
+
+def root_password(profile_dir: Path, user: str) -> str:
+    """The password the runner logs in with as ``user``, from the deployment profile."""
+    accepted = accepted_passwords(profile_dir, user)
+    if not accepted:
+        raise ValueError(f"the profile has no password for {user!r}")
+    return accepted[0]
 
 
 def db_password(profile_dir: Path, user: str) -> str:
@@ -221,7 +234,7 @@ class ActorRun:
     def _make_driver(self, spec: SessionSpec) -> Any:
         """The client for this session's protocol. All share the SSH driver's interface."""
         if spec.protocol == "ssh":
-            return self.driver_factory(
+            driver = self.driver_factory(
                 self.dialer,
                 self.timing,
                 self.fingerprint,
@@ -229,6 +242,13 @@ class ActorRun:
                 self._password(spec),
                 spec.channel,
             )
+            # The decoy may accept several passwords for one user. None of them may go out
+            # as a "wrong" guess: one sent by chance logs in early, and the session loses
+            # the failed attempts its scenario asked for (found by demo 1, one run in six).
+            driver.accepted = frozenset(
+                accepted_passwords(self.settings.profile_dir, spec.login.user)
+            )
+            return driver
         if spec.protocol == "http":
             return HTTPDriver(self.dialer, self.timing, self.fingerprint.user_agent)
         if spec.protocol == "redis":

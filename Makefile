@@ -54,6 +54,10 @@ LAB := $(COMPOSE) --profile lab
 # honeytokens or names can reach the repository. Never the seed of an exposed sensor.
 LAB_SEED := 20261114
 SCENARIOS ?= /lab/scenarios/smoke
+# What a run records as the code that produced it: the commit, with "-dirty" when the files
+# differ from it. A lab host has to hold this checkout's history for that to be true
+# (tools/lab-host/sync.sh copies it); with no history at all a run records "dev".
+CODE_VERSION = $$(git describe --always --dirty --abbrev=7 2>/dev/null || echo dev)
 
 lab-seed: env ## Pin this host's profile to the public lab seed, then re-render: for lab hosts only
 	@sed -i.bak "s/^MIRAGE_SEED=.*/MIRAGE_SEED=$(LAB_SEED)/" .env && rm -f .env.bak
@@ -68,7 +72,7 @@ lab-up: ## Start the lab edge and the label join (never on an exposed sensor)
 	$(LAB) build -q runner
 
 lab-run: ## Run scenarios in the lab: make lab-run SCENARIOS=/lab/scenarios/smoke ARGS="--repeat 3"
-	$(LAB) run --rm -e MIRAGE_CODE_VERSION=$$(git rev-parse --short HEAD) runner run $(SCENARIOS) $(ARGS)
+	$(LAB) run --rm -e MIRAGE_CODE_VERSION=$(CODE_VERSION) runner run $(SCENARIOS) $(ARGS)
 
 # Compose recreates a service whose configuration differs from the command's environment, so
 # the switch must be set on every compose call of the run: turning it on with `up` and then
@@ -76,11 +80,11 @@ lab-run: ## Run scenarios in the lab: make lab-run SCENARIOS=/lab/scenarios/smok
 lab-explore: ## Bandit explore run (lab explore range only), then exploration off again: make lab-explore SCENARIOS=/lab/scenarios ARGS="--seed 2 --repeat 20"
 	POLICY_EXPLORE=lab $(COMPOSE) up -d --wait policy
 	@sleep 5
-	POLICY_EXPLORE=lab $(LAB) run --rm -e MIRAGE_CODE_VERSION=$$(git rev-parse --short HEAD) runner run $(SCENARIOS) --mode explore $(ARGS); \
+	POLICY_EXPLORE=lab $(LAB) run --rm -e MIRAGE_CODE_VERSION=$(CODE_VERSION) runner run $(SCENARIOS) --mode explore $(ARGS); \
 	  status=$$?; $(COMPOSE) up -d --wait policy; exit $$status
 
 lab-human: ## Record a real person's SSH session through the lab edge (spec Q8); needs a terminal
-	$(LAB) run --rm -e MIRAGE_CODE_VERSION=$$(git rev-parse --short HEAD) runner record $(ARGS)
+	$(LAB) run --rm -e MIRAGE_CODE_VERSION=$(CODE_VERSION) runner record $(ARGS)
 
 lab-down: ## Stop the lab containers; the decoys and the pipeline keep running
 	$(LAB) stop lab-edge sim-join
@@ -99,7 +103,8 @@ TORCH_CUDA ?= cu132
 ifeq ($(GPU),1)
 RESEARCH := $(CURDIR)/.venv-research-gpu/bin/python
 else
-RESEARCH := UV_PROJECT_ENVIRONMENT=$(CURDIR)/.venv-research uv run --group research python
+# `env`, so the assignment also works behind another command (`nice`, below).
+RESEARCH := env UV_PROJECT_ENVIRONMENT=$(CURDIR)/.venv-research uv run --group research python
 endif
 
 dataset: ## Export labelled sessions and steps, and explore decisions: make dataset CAPTURE=RUN_ID EXPLORE=RUN_ID
