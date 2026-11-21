@@ -1,0 +1,2121 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: MIRAGE <noreply@anthropic.com>
+Date: Wed, 18 Nov 2026 01:13:14 +0530
+Subject: [PATCH] MIRAGE: getent, tty and ss
+
+Three programs typed early on a host that has just been entered, none of
+which stock Cowrie has. Each answers from what the session can already
+see another way, so the answers agree:
+
+- getent (glibc 2.36) from the session's own /etc files: passwd, group,
+  shadow and gshadow (root's), hosts and ahosts with the files backend's
+  ways (the IPv6 loopback given as 127.0.0.1 when the files are listed,
+  IPv6 first for a name), services, protocols, networks. A host name no
+  file holds is declined to the gate; run all the same it finds nothing.
+- tty (coreutils 9.1): the terminal when the session has one and nothing
+  is piped in.
+- ss (iproute2 6.1) for internet sockets: what the deployment's process
+  list says listens ([mirage] processes, key sockets), and the session's
+  own connection. The processes named are the ones ps shows, newest
+  first; root sees every holder, anyone else their own. The table is laid
+  out by ss's own rule, piped and on a terminal of any width. Other
+  socket families and per-socket details are declined.
+
+Texts and layouts are held to recordings from the reference host and a
+real Debian 12 guest (test/mirage_ss_reference.json).
+---
+ src/cowrie/commands/__init__.py          |    1 +
+ src/cowrie/commands/mirage_netutils.py   | 1015 ++++++++++++++++++++++
+ src/cowrie/test/mirage_ss_reference.json |  643 ++++++++++++++
+ src/cowrie/test/test_mirage_netutils.py  |  396 +++++++++
+ 4 files changed, 2055 insertions(+)
+ create mode 100644 src/cowrie/commands/mirage_netutils.py
+ create mode 100644 src/cowrie/test/mirage_ss_reference.json
+ create mode 100644 src/cowrie/test/test_mirage_netutils.py
+
+diff --git a/src/cowrie/commands/__init__.py b/src/cowrie/commands/__init__.py
+index a1d79ab..244cfeb 100644
+--- a/src/cowrie/commands/__init__.py
++++ b/src/cowrie/commands/__init__.py
+@@ -74,5 +74,6 @@ command_modules = [
+     "mirage_find",
+     "mirage_moreutils",
+     "mirage_accounts",
++    "mirage_netutils",
+     "mirage_builtins",
+ ]
+diff --git a/src/cowrie/commands/mirage_netutils.py b/src/cowrie/commands/mirage_netutils.py
+new file mode 100644
+index 0000000..7f87c2e
+--- /dev/null
++++ b/src/cowrie/commands/mirage_netutils.py
+@@ -0,0 +1,1015 @@
++# SPDX-License-Identifier: BSD-3-Clause
++# ABOUTME: MIRAGE: getent, tty and ss, which stock Cowrie does not have: the
++# ABOUTME: accounts and names of the session's own files, and what listens here.
++
++"""``getent`` (glibc 2.36), ``tty`` (coreutils 9.1) and ``ss`` (iproute2 6.1) as
++Debian 12 runs them.
++
++All three are among the first things typed on a host that has just been
++entered, and stock Cowrie has none of them. Each answers from what the session
++can already see some other way, so that the answers agree: ``getent`` from the
++files ``cat`` shows, ``ss`` from the processes ``ps`` shows, ``tty`` from
++whether the session has a terminal.
++
++The texts and the table's layout were recorded on the reference host and on a
++real guest (the fixtures of ``test_mirage_netutils``).
++"""
++
++from __future__ import annotations
++
++import getopt
++import ipaddress
++from typing import Any
++
++from cowrie.commands import mirage_ps
++from cowrie.commands.mirage_coreutils import Declining, on_terminal, terminal_width
++from cowrie.core.config import CowrieConfig
++from cowrie.shell.command import HoneyPotCommand
++
++commands: dict[str, Any] = {}
++
++TTY_TRY = "Try 'tty --help' for more information.\n"
++TTY_HELP = """\
++Usage: tty [OPTION]...
++Print the file name of the terminal connected to standard input.
++
++  -s, --silent, --quiet   print nothing, only return an exit status
++      --help        display this help and exit
++      --version     output version information and exit
++
++GNU coreutils online help: <https://www.gnu.org/software/coreutils/>
++Report any translation bugs to <https://translationproject.org/team/>
++Full documentation <https://www.gnu.org/software/coreutils/tty>
++or available locally via: info '(coreutils) tty invocation'
++"""
++TTY_VERSION = """\
++tty (GNU coreutils) 9.1
++Copyright (C) 2022 Free Software Foundation, Inc.
++License GPLv3+: GNU GPL version 3 or later <https://gnu.org/licenses/gpl.html>.
++This is free software: you are free to change and redistribute it.
++There is NO WARRANTY, to the extent permitted by law.
++
++Written by David MacKenzie.
++"""
++GETENT_TRY = "Try `getent --help' or `getent --usage' for more information.\n"
++GETENT_HELP = """\
++Usage: getent [OPTION...] database [key ...]
++Get entries from administrative database.
++
++  -A, --no-addrconfig        do not filter out unsupported IPv4/IPv6 addresses
++                             (with ahosts*)
++  -i, --no-idn               disable IDN encoding
++  -s, --service=CONFIG       Service configuration to be used
++  -?, --help                 Give this help list
++      --usage                Give a short usage message
++  -V, --version              Print program version
++
++Mandatory or optional arguments to long options are also mandatory or optional
++for any corresponding short options.
++
++Supported databases:
++ahosts ahostsv4 ahostsv6 aliases ethers group gshadow hosts initgroups
++netgroup networks passwd protocols rpc services shadow
++
++For bug reporting instructions, please see:
++<http://www.debian.org/Bugs/>.
++"""
++GETENT_USAGE = """\
++Usage: getent [-Ai?V] [-s CONFIG] [--no-addrconfig] [--no-idn]
++            [--service=CONFIG] [--help] [--usage] [--version]
++            database [key ...]
++"""
++GETENT_VERSION = """\
++getent (Debian GLIBC 2.36-9+deb12u14) 2.36
++Copyright (C) 2022 Free Software Foundation, Inc.
++This is free software; see the source for copying conditions.  There is NO
++warranty; not even for MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
++Written by Thorsten Kukuk.
++"""
++SS_USAGE = """\
++Usage: ss [ OPTIONS ]
++       ss [ OPTIONS ] [ FILTER ]
++   -h, --help          this message
++   -V, --version       output version information
++   -n, --numeric       don't resolve service names
++   -r, --resolve       resolve host names
++   -a, --all           display all sockets
++   -l, --listening     display listening sockets
++   -o, --options       show timer information
++   -e, --extended      show detailed socket information
++   -m, --memory        show socket memory usage
++   -p, --processes     show process using socket
++   -T, --threads       show thread using socket
++   -i, --info          show internal TCP information
++       --tipcinfo      show internal tipc socket information
++   -s, --summary       show socket usage summary
++       --tos           show tos and priority information
++       --cgroup        show cgroup information
++   -b, --bpf           show bpf filter socket information
++   -E, --events        continually display sockets as they are destroyed
++   -Z, --context       display task SELinux security contexts
++   -z, --contexts      display task and socket SELinux security contexts
++   -N, --net           switch to the specified network namespace name
++
++   -4, --ipv4          display only IP version 4 sockets
++   -6, --ipv6          display only IP version 6 sockets
++   -0, --packet        display PACKET sockets
++   -t, --tcp           display only TCP sockets
++   -M, --mptcp         display only MPTCP sockets
++   -S, --sctp          display only SCTP sockets
++   -u, --udp           display only UDP sockets
++   -d, --dccp          display only DCCP sockets
++   -w, --raw           display only RAW sockets
++   -x, --unix          display only Unix domain sockets
++       --tipc          display only TIPC sockets
++       --vsock         display only vsock sockets
++       --xdp           display only XDP sockets
++   -f, --family=FAMILY display sockets of type FAMILY
++       FAMILY := {inet|inet6|link|unix|netlink|vsock|tipc|xdp|help}
++
++   -K, --kill          forcibly close sockets, display what was closed
++   -H, --no-header     Suppress header line
++   -O, --oneline       socket's data printed on a single line
++       --inet-sockopt  show various inet socket options
++
++   -A, --query=QUERY, --socket=QUERY
++       QUERY := {all|inet|tcp|mptcp|udp|raw|unix|unix_dgram|unix_stream|unix_seqpacket|packet|packet_raw|packet_dgram|netlink|dccp|sctp|vsock_stream|vsock_dgram|tipc|xdp}[,QUERY]
++
++   -D, --diag=FILE     Dump raw information about TCP sockets to FILE
++   -F, --filter=FILE   read filter information from FILE
++       FILTER := [ state STATE-FILTER ] [ EXPRESSION ]
++       STATE-FILTER := {all|connected|synchronized|bucket|big|TCP-STATES}
++         TCP-STATES := {established|syn-sent|syn-recv|fin-wait-{1,2}|time-wait|closed|close-wait|last-ack|listening|closing}
++          connected := {established|syn-sent|syn-recv|fin-wait-{1,2}|time-wait|close-wait|last-ack|closing}
++       synchronized := {established|syn-recv|fin-wait-{1,2}|time-wait|close-wait|last-ack|closing}
++             bucket := {syn-recv|time-wait}
++                big := {established|syn-sent|fin-wait-{1,2}|closed|close-wait|last-ack|listening|closing}
++"""
++SS_VERSION = "ss utility, iproute2-6.1.0\n"
++
++
++def _file(command: HoneyPotCommand, path: str) -> str | None:
++    """A file of the session's tree as text; None where there is none."""
++    try:
++        return bytes(command.fs.file_contents(path)).decode("utf8", "replace")
++    except Exception:
++        return None
++
++
++def _records(text: str | None) -> list[list[str]]:
++    """The words of each line of a database file, comments and blank lines left out."""
++    out = []
++    for line in (text or "").splitlines():
++        words = line.split("#", 1)[0].split()
++        if words:
++            out.append(words)
++    return out
++
++
++def _complaint(err: getopt.GetoptError) -> str:
++    """What GNU getopt says of an option it does not take."""
++    long = err.msg.startswith("option --")
++    if "requires argument" in err.msg:
++        if long:
++            return f"option '--{err.opt}' requires an argument"
++        return f"option requires an argument -- '{err.opt}'"
++    if long:
++        return f"unrecognized option '--{err.opt}'"
++    return f"invalid option -- '{err.opt}'"
++
++
++def services(command: HoneyPotCommand) -> list[tuple[str, int, str, list[str]]]:
++    """The tree's /etc/services: (name, port, protocol, other names)."""
++    out = []
++    for words in _records(_file(command, "/etc/services")):
++        port, _, proto = (words[1] if len(words) > 1 else "").partition("/")
++        if port.isdigit() and proto:
++            out.append((words[0], int(port), proto, words[2:]))
++    return out
++
++
++# ---------------------------------------------------------------------- tty
++
++
++class Command_tty(HoneyPotCommand):
++    """coreutils 9.1's tty. Standard input is the terminal when the session has
++    one and nothing is piped or redirected into the command."""
++
++    def call(self) -> None:
++        try:
++            opts, operands = getopt.gnu_getopt(
++                self.args, "s", ["silent", "quiet", "help", "version"]
++            )
++        except getopt.GetoptError as err:
++            self.errorWrite(f"tty: {_complaint(err)}\n{TTY_TRY}")
++            self.exit_code = 2
++            return
++        names = [name for name, _ in opts]
++        if "--help" in names:
++            self.write(TTY_HELP)
++            return
++        if "--version" in names:
++            self.write(TTY_VERSION)
++            return
++        if operands:
++            self.errorWrite(f"tty: extra operand '{operands[0]}'\n{TTY_TRY}")
++            self.exit_code = 2
++            return
++        silent = bool(names)
++        if hasattr(self.protocol.user, "windowSize") and self.input_data is None:
++            if not silent:
++                self.write("/dev/pts/0\n")
++            return
++        if not silent:
++            self.write("not a tty\n")
++        self.exit_code = 1
++
++
++# ------------------------------------------------------------------- getent
++
++GETENT_DATABASES = (
++    "ahosts ahostsv4 ahostsv6 aliases ethers group gshadow hosts initgroups "
++    "netgroup networks passwd protocols rpc services shadow"
++).split()
++_NO_ENUMERATION = ("ahosts", "ahostsv4", "ahostsv6", "ethers", "initgroups", "netgroup")
++_GETENT_SHORT = "Ais:?V"
++_GETENT_LONG = ["no-addrconfig", "no-idn", "service=", "help", "usage", "version"]
++# Names every Debian host resolves from its own files.
++_LOCAL_NAMES = {
++    "localhost",
++    "ip6-localhost",
++    "ip6-loopback",
++    "ip6-allnodes",
++    "ip6-allrouters",
++}
++
++
++def _address(text: str) -> ipaddress.IPv4Address | ipaddress.IPv6Address | None:
++    try:
++        return ipaddress.ip_address(text)
++    except ValueError:
++        return None
++
++
++def _number(key: str) -> int | None:
++    """A key that is a whole number, as strtoul reads one; None for a name."""
++    text = key.strip()
++    if text[:1] == "+":
++        text = text[1:]
++    return int(text) if text.isdigit() else None
++
++
++class Command_getent(Declining):
++    """glibc 2.36's getent, from the session's own files: what /etc/passwd,
++    group, shadow, hosts and the rest hold is what it prints.
++
++    A host name that the files do not hold would go to a name server on a real
++    host, and there is none here to ask: the gate is told this is not emulated
++    (the responder may answer), and run all the same it finds nothing, as on a
++    host whose resolver is unreachable."""
++
++    name, program = "getent", "/usr/bin/getent"
++
++    @classmethod
++    def mirage_declines(cls, args: list[str]) -> bool:
++        try:
++            _, rest = getopt.gnu_getopt(args, _GETENT_SHORT, _GETENT_LONG)
++        except getopt.GetoptError:
++            return False
++        if len(rest) < 2:
++            return False
++        if rest[0] == "netgroup":
++            return True
++        if rest[0] not in ("hosts", "ahosts", "ahostsv4", "ahostsv6"):
++            return False
++        own = CowrieConfig.get("honeypot", "hostname", fallback="").lower()
++        local = _LOCAL_NAMES | ({own} if own else set())
++        return any(
++            _address(key) is None and key.lower() not in local for key in rest[1:]
++        )
++
++    def call(self) -> None:
++        try:
++            opts, rest = getopt.gnu_getopt(self.args, _GETENT_SHORT, _GETENT_LONG)
++        except getopt.GetoptError as err:
++            self.errorWrite(f"getent: {_complaint(err)}\n{GETENT_TRY}")
++            self.exit_code = 64
++            return
++        for option, _ in opts:
++            if option in ("-?", "--help"):
++                self.write(GETENT_HELP)
++                return
++            if option == "--usage":
++                self.write(GETENT_USAGE)
++                return
++            if option in ("-V", "--version"):
++                self.write(GETENT_VERSION)
++                return
++        if not rest:
++            self.errorWrite("getent: wrong number of arguments\n")
++            self.write(GETENT_TRY)
++            self.exit_code = 1
++            return
++        database, keys = rest[0], rest[1:]
++        if database not in GETENT_DATABASES:
++            self.errorWrite(f"Unknown database: {database}\n")
++            self.write(GETENT_TRY)
++            self.exit_code = 1
++            return
++        if not keys and database in _NO_ENUMERATION:
++            self.errorWrite(f"Enumeration not supported on {database}\n")
++            self.exit_code = 3
++            return
++        answer = getattr(self, "_" + database, self._nothing)
++        if not keys:
++            self.write("".join(answer(None)))
++            return
++        for key in keys:
++            lines = answer(key)
++            if lines:
++                self.write("".join(lines))
++            else:
++                self.exit_code = 2
++
++    @staticmethod
++    def _nothing(key: str | None) -> list[str]:
++        return []
++
++    # -- accounts
++
++    def _account_lines(self, path: str, fields: int) -> list[list[str]]:
++        text = _file(self, path) or ""
++        rows = [
++            line.split(":") for line in text.splitlines() if line and line[0] != "#"
++        ]
++        return [row for row in rows if len(row) >= fields]
++
++    def _by_name_or_number(
++        self, rows: list[list[str]], key: str | None, number_at: int
++    ) -> list[str]:
++        if key is None:
++            return [":".join(row) + "\n" for row in rows]
++        number = _number(key)
++        for row in rows:
++            hit = row[number_at] == str(number) if number is not None else row[0] == key
++            if hit:
++                return [":".join(row) + "\n"]
++        return []
++
++    def _passwd(self, key: str | None) -> list[str]:
++        return self._by_name_or_number(self._account_lines("/etc/passwd", 7), key, 2)
++
++    def _group(self, key: str | None) -> list[str]:
++        return self._by_name_or_number(self._account_lines("/etc/group", 4), key, 2)
++
++    def _root_only(self, path: str, fields: int, key: str | None) -> list[str]:
++        if int(self.user["uid"]) != 0:
++            return []  # the file is root's to read; anyone else is shown nothing
++        rows = self._account_lines(path, fields)
++        if key is None:
++            return [":".join(row) + "\n" for row in rows]
++        return [":".join(row) + "\n" for row in rows if row[0] == key][:1]
++
++    def _shadow(self, key: str | None) -> list[str]:
++        return self._root_only("/etc/shadow", 9, key)
++
++    def _gshadow(self, key: str | None) -> list[str]:
++        return self._root_only("/etc/gshadow", 4, key)
++
++    def _initgroups(self, key: str | None) -> list[str]:
++        gids = [
++            row[2]
++            for row in self._account_lines("/etc/group", 4)
++            if key in [m for m in row[3].split(",") if m]
++        ]
++        return [f"{key:<21}" + "".join(f" {gid}" for gid in gids) + "\n"]
++
++    # -- hosts
++
++    def _host_lines(self) -> list[tuple[Any, list[str]]]:
++        out = []
++        for words in _records(_file(self, "/etc/hosts")):
++            address = _address(words[0])
++            if address is not None and len(words) > 1:
++                out.append((address, words[1:]))
++        return out
++
++    def _named(self, key: str, version: int) -> list[tuple[Any, list[str]]]:
++        return [
++            (address, names)
++            for address, names in self._host_lines()
++            if address.version == version and key.lower() in [n.lower() for n in names]
++        ]
++
++    def _hosts(self, key: str | None) -> list[str]:
++        entries = self._host_lines()
++        if key is None:
++            # The files are read for IPv4: the IPv6 loopback is given as the IPv4 one, and
++            # every other IPv6 line is passed over.
++            out = []
++            for address, names in entries:
++                if address.version == 6 and not address.is_loopback:
++                    continue
++                shown = "127.0.0.1" if address.version == 6 else str(address)
++                out.append(f"{shown:<15} {' '.join(names)}\n")
++            return out
++        literal = _address(key)
++        if literal is not None:
++            for address, names in entries:
++                if address == literal:
++                    return [f"{address!s:<15} {' '.join(names)}\n"]
++            return []
++        six = self._named(key, 6)
++        if six:
++            return [f"{six[0][0]!s:<15} {' '.join(six[0][1])}\n"]
++        four = self._named(key, 4)
++        names = []
++        for _, some in four:
++            names += [n for n in some if n not in names]
++        return [f"{address!s:<15} {' '.join(names)}\n" for address, _ in four]
++
++    def _addresses(self, key: str | None, family: int | None) -> list[str]:
++        if key is None:
++            return []
++        literal = _address(key)
++        if literal is not None:
++            if family == 4 and literal.version == 6:
++                return []
++            shown = (
++                f"::ffff:{literal}"
++                if family == 6 and literal.version == 4
++                else str(literal)
++            )
++            found, name = [shown], key
++        else:
++            six, four = self._named(key, 6), self._named(key, 4)
++            if not six and not four:
++                return []
++            name = (six or four)[0][1][0]
++            if family == 4:
++                # Read for IPv4 alone, the IPv6 loopback's line counts as 127.0.0.1 again.
++                found = [str(a) for a, _ in four] + [
++                    "127.0.0.1" for a, _ in six if a.is_loopback
++                ]
++            elif family == 6:
++                found = [str(a) for a, _ in six] or [f"::ffff:{a}" for a, _ in four]
++            else:
++                found = [str(a) for a, _ in six] + [str(a) for a, _ in four]
++        out = []
++        for index, address in enumerate(found):
++            out.append(f"{address:<15} STREAM {name if index == 0 else ''}\n")
++            out.append(f"{address:<15} DGRAM  \n")
++            out.append(f"{address:<15} RAW    \n")
++        return out
++
++    def _ahosts(self, key: str | None) -> list[str]:
++        return self._addresses(key, None)
++
++    def _ahostsv4(self, key: str | None) -> list[str]:
++        return self._addresses(key, 4)
++
++    def _ahostsv6(self, key: str | None) -> list[str]:
++        return self._addresses(key, 6)
++
++    # -- the small databases
++
++    def _services(self, key: str | None) -> list[str]:
++        out = []
++        wanted, _, proto = (key or "").partition("/")
++        for name, port, protocol, others in services(self):
++            line = (
++                f"{name:<21} {port}/{protocol}"
++                + "".join(f" {o}" for o in others)
++                + "\n"
++            )
++            if key is None:
++                out.append(line)
++            elif (wanted in (name, str(port), *others)) and proto in ("", protocol):
++                return [line]
++        return out
++
++    def _protocols(self, key: str | None) -> list[str]:
++        out = []
++        for words in _records(_file(self, "/etc/protocols")):
++            if len(words) < 2 or not words[1].isdigit():
++                continue
++            line = (
++                f"{words[0]:<21} {words[1]}"
++                + "".join(f" {o}" for o in words[2:])
++                + "\n"
++            )
++            if key is None:
++                out.append(line)
++            elif key in words:
++                return [line]
++        return out
++
++    def _networks(self, key: str | None) -> list[str]:
++        out = []
++        for words in _records(_file(self, "/etc/networks")):
++            if len(words) < 2:
++                continue
++            line = f"{words[0]:<21} {words[1]}\n"
++            if key is None:
++                out.append(line)
++            elif key == words[0]:
++                return [line]
++        return out
++
++
++# ----------------------------------------------------------------------- ss
++
++_SS_SHORT = "dhaletuwxnro460spTbEf:mMiA:D:F:vVzZN:KHSO"
++_SS_LONG = [
++    "dccp", "help", "all", "listening", "extended", "tcp", "udp", "raw", "unix", "numeric",
++    "resolve", "options", "ipv4", "ipv6", "packet", "summary", "processes", "threads", "bpf",
++    "events", "family=", "memory", "mptcp", "info", "query=", "socket=", "diag=", "filter=",
++    "version", "contexts", "context", "net=", "kill", "no-header", "sctp", "oneline", "tipc",
++    "vsock", "xdp", "tipcinfo", "tos", "cgroup", "inet-sockopt",
++]  # fmt: skip
++_SS_NAMES = {
++    "--help": "-h", "--version": "-V", "-v": "-V", "--numeric": "-n", "--all": "-a",
++    "--listening": "-l", "--processes": "-p", "--tcp": "-t", "--udp": "-u", "--ipv4": "-4",
++    "--ipv6": "-6", "--no-header": "-H", "--summary": "-s", "--family": "-f", "--query": "-A",
++    "--socket": "-A",
++}  # fmt: skip
++# The columns of ss's table (iproute2 6.1, misc/ss.c): how each is aligned and what is
++# written before it once a line has begun. The last holds details, which are not printed here.
++_COLUMNS = (
++    ("Netid", "<", ""),
++    ("State", "<", " "),
++    ("Recv-Q", "<", " "),
++    ("Send-Q", "<", " "),
++    ("Local Address:", ">", " "),
++    ("Port", "<", ""),
++    ("Peer Address:", ">", " "),
++    ("Port", "<", ""),
++    ("Process", "<", ""),
++    ("", "<", ""),
++)
++_NETID, _STATE = 0, 1
++# The kernel's socket states by ss's names, and the words that stand for several. Three are
++# ever seen on this host: a listener, an unconnected datagram socket, an open connection.
++_ALL_STATES = frozenset(
++    "established syn-sent syn-recv fin-wait-1 fin-wait-2 time-wait unconnected close-wait "
++    "last-ack listening closing".split()
++)
++_STATE_WORDS: dict[str, frozenset[str]] = {
++    **{name: frozenset({name}) for name in _ALL_STATES},
++    "all": _ALL_STATES,
++    "connected": _ALL_STATES - {"listening", "unconnected"},
++    "synchronized": _ALL_STATES - {"listening", "unconnected", "syn-sent"},
++    "bucket": frozenset({"syn-recv", "time-wait"}),
++    "big": _ALL_STATES - {"syn-recv", "time-wait"},
++    "close": frozenset({"unconnected"}),
++    "closed": frozenset({"unconnected"}),
++    "syn-rcv": frozenset({"syn-recv"}),
++}
++_STATE_SHOWN = {"LISTEN": "listening", "UNCONN": "unconnected", "ESTAB": "established"}
++_COMPARE = {
++    "=": "eq", "==": "eq", "eq": "eq", "!=": "ne", "ne": "ne", "neq": "ne", ">": "gt",
++    "gt": "gt", "<": "lt", "lt": "lt", ">=": "ge", "ge": "ge", "geq": "ge", "<=": "le",
++    "le": "le", "leq": "le",
++}  # fmt: skip
++
++
++class _NotEmulated(Exception):
++    """A command line ss takes and this does not."""
++
++
++class _Refused(Exception):
++    """A command line ss itself refuses: what it writes, and its exit status."""
++
++    def __init__(self, said: str, code: int) -> None:
++        super().__init__(said)
++        self.said, self.code = said, code
++
++
++def table_widths(longest: list[int], screen: int | None) -> list[int]:
++    """The width of each column, as ss's render_calc_width works it out: the longest cell,
++    and on a terminal the space left over shared out among the columns of each screen line."""
++    widths = [0] * len(longest)
++    first = True
++    for i, length in enumerate(longest):
++        widths[i] = length + (len(_COLUMNS[i][2]) if not first and length else 0)
++        if screen is not None:
++            widths[i] = min(widths[i], screen)
++        if widths[i]:
++            first = False
++    if screen is None:
++        return widths
++    end_of_line, length, on_line = -1, 0, 0
++    c = 0
++    while c < len(widths):
++        if not widths[c]:
++            c += 1
++            continue
++        on_line += 1
++        length += widths[c]
++        last = not any(widths[c + 1 :])
++        if not last and length < screen:
++            c += 1
++            continue
++        if length != screen:
++            if length > screen:  # one column too many for this line: it starts the next
++                length -= widths[c]
++                c -= 1
++                on_line -= 1
++            spare = screen - length
++            each, left = divmod(spare, on_line) if on_line else (0, 0)
++            for i in range(c, end_of_line, -1):
++                if not widths[i]:
++                    continue
++                widths[i] += each
++                if left:
++                    widths[i] += 1
++                    left -= 1
++        end_of_line, length, on_line = c, 0, 0
++        c += 1
++    return widths
++
++
++def table_text(lines: list[list[str]], shown: list[bool], screen: int | None) -> str:
++    """Lines of cells (one for every column) as ss prints them."""
++    longest = [
++        max((len(line[i]) for line in lines), default=0) if shown[i] else 0
++        for i in range(len(_COLUMNS))
++    ]
++    widths = table_widths(longest, screen)
++    out = []
++    for line in lines:
++        begun = False
++        for i, cell in enumerate(line):
++            if not shown[i]:
++                continue
++            _, align, before = _COLUMNS[i]
++            text = before if begun else ""
++            begun = True
++            if widths[i] and align == ">":
++                text += " " * max(0, widths[i] - len(cell) - len(text))
++            text += cell
++            if widths[i] and align == "<":
++                text += " " * max(0, widths[i] - len(text))
++            out.append(text)
++        out.append("\n")
++    return "".join(out)
++
++
++class _Asked:
++    """What an ss command line asks for."""
++
++    def __init__(self, args: list[str]) -> None:
++        try:
++            opts, words = getopt.gnu_getopt(args, _SS_SHORT, _SS_LONG)
++        except getopt.GetoptError as err:
++            said = f"ss: {_complaint(err)}\n{SS_USAGE}"
++            raise _Refused(said, 255) from None
++        self.help = self.version = self.summary = False
++        self.processes = self.numeric = False
++        self.header = True
++        self.dbs: list[str] = []
++        self.family: int | None = None
++        self.states = _STATE_WORDS["connected"]
++        for raw, value in opts:
++            option = _SS_NAMES.get(raw, raw)
++            if option == "-h":
++                self.help = True
++                return
++            if option == "-V":
++                self.version = True
++                return
++            if option == "-n":
++                self.numeric = True
++            elif option == "-a":
++                self.states = _STATE_WORDS["all"]
++            elif option == "-l":
++                self.states = frozenset({"listening", "unconnected"})
++            elif option == "-p":
++                self.processes = True
++            elif option in ("-t", "-u"):
++                self._db("tcp" if option == "-t" else "udp")
++            elif option in ("-4", "-6"):
++                self.family = int(option[1])
++            elif option == "-H":
++                self.header = False
++            elif option == "-s":
++                self.summary = True
++            elif option == "-f" and value in ("inet", "inet6"):
++                self.family = 4 if value == "inet" else 6
++            elif option == "-A" and set(value.split(",")) <= {"tcp", "udp"}:
++                for db in value.split(","):
++                    self._db(db)
++            else:
++                raise _NotEmulated
++        self.test = self._filter(words)
++        if not self.dbs and not self.summary:
++            # Every kind of socket the machine has, the kernel's own among them: only the
++            # internet ones are recorded for a deployment.
++            raise _NotEmulated
++
++    def _db(self, name: str) -> None:
++        if name not in self.dbs:
++            self.dbs.append(name)
++
++    # -- the filter: [ state WORD ]... [ EXPRESSION ]
++
++    def _filter(self, args: list[str]) -> Any:
++        words = [w for arg in args for w in arg.split()]
++        given: frozenset[str] | None = None
++        while len(words) >= 2 and words[0] == "state":
++            some = _STATE_WORDS.get(words[1].lower())
++            if some is None:
++                said = f"ss: wrong state name: {words[1]}\n"
++                raise _Refused(said, 255)
++            given = some if given is None else given | some
++            words = words[2:]
++        if given is not None:
++            self.states = given
++        if not words:
++            return lambda row: True
++        self._words = words
++        test = self._either()
++        if self._words:
++            raise _NotEmulated
++        return test
++
++    def _either(self) -> Any:
++        tests = [self._both()]
++        while self._words and self._words[0] in ("or", "|", "||"):
++            self._words.pop(0)
++            tests.append(self._both())
++        return lambda row: any(t(row) for t in tests)
++
++    def _both(self) -> Any:
++        tests = [self._one()]
++        while self._words and self._words[0] not in ("or", "|", "||", ")"):
++            if self._words[0] in ("and", "&", "&&"):
++                self._words.pop(0)
++            tests.append(self._one())
++        return lambda row: all(t(row) for t in tests)
++
++    def _one(self) -> Any:
++        if not self._words:
++            raise _NotEmulated
++        word = self._words.pop(0)
++        if word in ("not", "!"):
++            inner = self._one()
++            return lambda row: not inner(row)
++        if word == "(":
++            inner = self._either()
++            if not self._words or self._words.pop(0) != ")":
++                raise _NotEmulated
++            return inner
++        if word in ("sport", "dport"):
++            if not self._words:
++                raise _NotEmulated
++            how = _COMPARE.get(self._words[0])
++            if how is not None:
++                self._words.pop(0)
++            if not self._words:
++                raise _NotEmulated
++            port = self._words.pop(0).rpartition(":")[2]
++            if not port.isdigit():
++                raise _NotEmulated
++            return self._port_test(
++                "port" if word == "sport" else "peer_port", how or "eq", int(port)
++            )
++        if word in ("src", "dst"):
++            if not self._words:
++                raise _NotEmulated
++            return self._host_test(word, self._words.pop(0))
++        if word in ("autobound", "dev", "fwmark", "cgroup", "exclude", "state"):
++            raise _NotEmulated
++        return self._host_test("dst", word)
++
++    @staticmethod
++    def _port_test(field: str, how: str, port: int) -> Any:
++        def test(row: dict[str, Any]) -> bool:
++            have = int(row.get(field) or 0)
++            return {
++                "eq": have == port, "ne": have != port, "gt": have > port, "lt": have < port,
++                "ge": have >= port, "le": have <= port,
++            }[how]  # fmt: skip
++
++        return test
++
++    @staticmethod
++    def _host_test(side: str, word: str) -> Any:
++        """``[ADDRESS[/BITS]][:PORT]``, of the local end (src) or the far one (dst)."""
++        host, port = word, ""
++        if word.startswith("["):
++            host, _, rest = word[1:].partition("]")
++            port = rest[1:] if rest.startswith(":") else ""
++        elif word.count(":") == 1:
++            host, _, port = word.partition(":")
++        if port and not port.isdigit():
++            raise _NotEmulated
++        network = None
++        if host not in ("", "*"):
++            try:
++                network = ipaddress.ip_network(host, strict=False)
++            except ValueError:
++                said = (
++                    f'Error: an inet prefix is expected rather than "{host}".\n'
++                    "Cannot parse dst/src address.\n"
++                )
++                raise _Refused(said, 1) from None
++        at, port_at = ("local", "port") if side == "src" else ("peer", "peer_port")
++
++        def test(row: dict[str, Any]) -> bool:
++            if port and int(row.get(port_at) or 0) != int(port):
++                return False
++            if network is None:
++                return True
++            have = _address(str(row[at]).strip("[]").split("%")[0])
++            return (
++                have is not None and have.version == network.version and have in network
++            )
++
++        return test
++
++
++class Command_ss(Declining):
++    """iproute2 6.1's ss for the internet sockets of this deployment: what the
++    profile's services and the machine's own daemons listen on (``[mirage]
++    processes``, the file ``ps`` reads), and this session's own connection.
++
++    The processes it names are the ones ``ps`` shows, by the same numbers. Root
++    is shown every socket's holders; anyone else only their own, as the kernel
++    allows. Forms that list other kinds of socket, or print a socket's details,
++    are not emulated."""
++
++    name, program = "ss", "/usr/bin/ss"
++
++    @classmethod
++    def mirage_declines(cls, args: list[str]) -> bool:
++        if not (mirage_ps.table() or {}).get("sockets"):
++            return True
++        try:
++            _Asked(args)
++        except _NotEmulated:
++            return True
++        except _Refused:
++            return False
++        return False
++
++    def call(self) -> None:
++        sockets = (mirage_ps.table() or {}).get("sockets")
++        try:
++            asked = _Asked(self.args) if sockets else None
++        except _NotEmulated:
++            asked = None
++        except _Refused as refused:
++            self.errorWrite(refused.said)
++            self.exit_code = refused.code
++            return
++        if asked is None:
++            self.not_emulated()
++            return
++        if asked.help:
++            self.write(SS_USAGE)
++            return
++        if asked.version:
++            self.write(SS_VERSION)
++            return
++        rows = self._rows(sockets, asked)
++        if asked.summary:
++            self.write(self._summary(sockets))
++            if not asked.dbs:
++                return
++        self.write(self._table([row for row in rows if asked.test(row)], asked))
++
++    # -- what there is
++
++    def _own(self) -> dict[str, Any]:
++        """This session's connection, held by the sshd that serves it."""
++        me = str(self.user["username"])
++        shell = int(self.protocol.cmdstack[0].pid) if self.protocol.cmdstack else 0
++        serving = (shell or self.protocol.next_pid()) - 2
++        holders = (
++            [(serving, me)] if me == "root" else [(serving, me), (serving - 1, "root")]
++        )
++        peer = str(getattr(self.protocol, "clientIP", "") or "0.0.0.0")
++        v6 = ":" in peer
++        local = str(getattr(self.protocol, "kippoIPv6" if v6 else "kippoIP", "") or "")
++        return {
++            "netid": "tcp",
++            "state": "ESTAB",
++            "recv_q": 0,
++            "send_q": 0,
++            "local": f"[{local or '::1'}]" if v6 else local or "127.0.0.1",
++            "port": 22,
++            "peer": f"[{peer}]" if v6 else peer,
++            "peer_port": int(getattr(self.protocol, "realClientPort", 0) or 0),
++            "comm": "sshd",
++            "fd": 4,
++            "holders": holders,
++            "v6": v6,
++        }
++
++    def _rows(self, sockets: dict[str, Any], asked: _Asked) -> list[dict[str, Any]]:
++        owner = {
++            p["pid"]: p["user"] for p in (mirage_ps.table() or {}).get("processes", [])
++        }
++        own = self._own()
++        out = []
++        for netid in ("udp", "tcp"):
++            if netid not in asked.dbs:
++                continue
++            for v6 in (False, True):
++                if asked.family is not None and (asked.family == 6) is not v6:
++                    continue
++                for s in sockets["listening"]:
++                    if s["netid"] != netid or bool(s["v6"]) is not v6:
++                        continue
++                    if _STATE_SHOWN[s["state"]] in asked.states:
++                        holders = [(pid, owner.get(pid, "root")) for pid in s["pids"]]
++                        out.append({**s, "peer_port": 0, "holders": holders})
++                if netid == "tcp" and own["v6"] is v6 and "established" in asked.states:
++                    out.append(own)
++        return out
++
++    def _port(self, number: int, netid: str, numeric: bool) -> str:
++        if not number:
++            return "*"
++        if not numeric:
++            if not hasattr(self, "_service_names"):
++                self._service_names = {
++                    (port, proto): name for name, port, proto, _ in services(self)
++                }
++            return self._service_names.get((number, netid), str(number))
++        return str(number)
++
++    def _table(self, rows: list[dict[str, Any]], asked: _Asked) -> str:
++        me, root = str(self.user["username"]), int(self.user["uid"]) == 0
++        lines = [[name for name, _, _ in _COLUMNS]] if asked.header else []
++        for row in rows:
++            process = ""
++            if asked.processes:
++                seen = sorted(
++                    (pid for pid, user in row["holders"] if root or user == me),
++                    reverse=True,
++                )
++                if seen:
++                    held = ",".join(
++                        f'("{row["comm"]}",pid={pid},fd={row["fd"]})' for pid in seen
++                    )
++                    process = f" users:({held})"
++            lines.append(
++                [
++                    row["netid"],
++                    row["state"],
++                    f"{row['recv_q']:<6d}",
++                    f"{row['send_q']:<6d}",
++                    f"{row['local']}:",
++                    self._port(row["port"], row["netid"], asked.numeric),
++                    f"{row['peer']}:",
++                    self._port(row["peer_port"], row["netid"], asked.numeric),
++                    process,
++                    "",
++                ]
++            )
++        shown = [True] * len(_COLUMNS)
++        shown[_NETID] = len(asked.dbs) > 1
++        shown[_STATE] = len(asked.states) != 1
++        return table_text(
++            lines, shown, terminal_width(self) if on_terminal(self) else None
++        )
++
++    def _summary(self, sockets: dict[str, Any]) -> str:
++        def count(netid: str, v6: bool) -> int:
++            return sum(
++                1
++                for s in sockets["listening"]
++                if s["netid"] == netid and bool(s["v6"]) is v6
++            )
++
++        own_v6 = bool(self._own()["v6"])
++        raw = list(sockets.get("raw") or [0, 0, 0])
++        udp = [count("udp", False), count("udp", True)]
++        tcp = [count("tcp", False) + (not own_v6), count("tcp", True) + own_v6]
++        inet = [raw[1] + udp[0] + tcp[0], raw[2] + udp[1] + tcp[1]]
++
++        def line(name: str, v4: int, v6: int) -> str:
++            return f"{name}\t  {v4 + v6:<9d} {v4:<9d} {v6:<9d}\n"
++
++        return (
++            f"Total: {int(sockets.get('total', 0)) + 1}\n"
++            f"TCP:   {sum(tcp)} (estab 1, closed 0, orphaned 0, timewait 0)\n"
++            "\n"
++            "Transport Total     IP        IPv6\n"
++            + line("RAW", raw[1], raw[2])
++            + line("UDP", *udp)
++            + line("TCP", *tcp)
++            + line("INET", *inet)
++            + line("FRAG", 0, 0)
++            + "\n"
++        )
++
++
++for _path in ("tty", "/usr/bin/tty", "/bin/tty"):
++    commands[_path] = Command_tty
++for _path in ("getent", "/usr/bin/getent", "/bin/getent"):
++    commands[_path] = Command_getent
++for _path in ("ss", "/usr/bin/ss", "/bin/ss"):
++    commands[_path] = Command_ss
+diff --git a/src/cowrie/test/mirage_ss_reference.json b/src/cowrie/test/mirage_ss_reference.json
+new file mode 100644
+index 0000000..3cdef8c
+--- /dev/null
++++ b/src/cowrie/test/mirage_ss_reference.json
+@@ -0,0 +1,643 @@
++{
++ "about": "ss on the reference host (17-18 November 2026): three recordings, each with the sockets it had",
++ "sets": {
++  "A": [
++   {
++    "netid": "udp",
++    "state": "UNCONN",
++    "recv_q": 0,
++    "send_q": 0,
++    "local": "127.0.0.11",
++    "port": 54783,
++    "peer": "0.0.0.0",
++    "v6": false,
++    "comm": "-",
++    "fd": null,
++    "pids": []
++   },
++   {
++    "netid": "tcp",
++    "state": "LISTEN",
++    "recv_q": 0,
++    "send_q": 80,
++    "local": "0.0.0.0",
++    "port": 3306,
++    "peer": "0.0.0.0",
++    "v6": false,
++    "comm": "-",
++    "fd": null,
++    "pids": []
++   },
++   {
++    "netid": "tcp",
++    "state": "LISTEN",
++    "recv_q": 0,
++    "send_q": 4096,
++    "local": "127.0.0.11",
++    "port": 33795,
++    "peer": "0.0.0.0",
++    "v6": false,
++    "comm": "-",
++    "fd": null,
++    "pids": []
++   },
++   {
++    "netid": "tcp",
++    "state": "LISTEN",
++    "recv_q": 0,
++    "send_q": 511,
++    "local": "0.0.0.0",
++    "port": 80,
++    "peer": "0.0.0.0",
++    "v6": false,
++    "comm": "nginx",
++    "fd": 5,
++    "pids": [
++     32
++    ]
++   },
++   {
++    "netid": "tcp",
++    "state": "LISTEN",
++    "recv_q": 0,
++    "send_q": 128,
++    "local": "0.0.0.0",
++    "port": 22,
++    "peer": "0.0.0.0",
++    "v6": false,
++    "comm": "sshd",
++    "fd": 3,
++    "pids": [
++     30
++    ]
++   },
++   {
++    "netid": "tcp",
++    "state": "LISTEN",
++    "recv_q": 0,
++    "send_q": 511,
++    "local": "0.0.0.0",
++    "port": 6379,
++    "peer": "0.0.0.0",
++    "v6": false,
++    "comm": "-",
++    "fd": null,
++    "pids": []
++   },
++   {
++    "netid": "tcp",
++    "state": "LISTEN",
++    "recv_q": 0,
++    "send_q": 511,
++    "local": "[::]",
++    "port": 80,
++    "peer": "[::]",
++    "v6": true,
++    "comm": "nginx",
++    "fd": 6,
++    "pids": [
++     32
++    ]
++   },
++   {
++    "netid": "tcp",
++    "state": "LISTEN",
++    "recv_q": 0,
++    "send_q": 128,
++    "local": "[::]",
++    "port": 22,
++    "peer": "[::]",
++    "v6": true,
++    "comm": "sshd",
++    "fd": 4,
++    "pids": [
++     30
++    ]
++   }
++  ],
++  "B": [
++   {
++    "netid": "udp",
++    "state": "UNCONN",
++    "recv_q": 0,
++    "send_q": 0,
++    "local": "127.0.0.11",
++    "port": 37022,
++    "peer": "0.0.0.0",
++    "v6": false,
++    "comm": "-",
++    "fd": null,
++    "pids": []
++   },
++   {
++    "netid": "tcp",
++    "state": "LISTEN",
++    "recv_q": 0,
++    "send_q": 511,
++    "local": "0.0.0.0",
++    "port": 6379,
++    "peer": "0.0.0.0",
++    "v6": false,
++    "comm": "-",
++    "fd": null,
++    "pids": []
++   },
++   {
++    "netid": "tcp",
++    "state": "LISTEN",
++    "recv_q": 0,
++    "send_q": 4096,
++    "local": "127.0.0.11",
++    "port": 36719,
++    "peer": "0.0.0.0",
++    "v6": false,
++    "comm": "-",
++    "fd": null,
++    "pids": []
++   },
++   {
++    "netid": "tcp",
++    "state": "LISTEN",
++    "recv_q": 0,
++    "send_q": 80,
++    "local": "0.0.0.0",
++    "port": 3306,
++    "peer": "0.0.0.0",
++    "v6": false,
++    "comm": "-",
++    "fd": null,
++    "pids": []
++   },
++   {
++    "netid": "tcp",
++    "state": "LISTEN",
++    "recv_q": 0,
++    "send_q": 128,
++    "local": "0.0.0.0",
++    "port": 22,
++    "peer": "0.0.0.0",
++    "v6": false,
++    "comm": "sshd",
++    "fd": 3,
++    "pids": [
++     30
++    ]
++   },
++   {
++    "netid": "tcp",
++    "state": "LISTEN",
++    "recv_q": 0,
++    "send_q": 511,
++    "local": "0.0.0.0",
++    "port": 80,
++    "peer": "0.0.0.0",
++    "v6": false,
++    "comm": "nginx",
++    "fd": 5,
++    "pids": [
++     32
++    ]
++   },
++   {
++    "netid": "tcp",
++    "state": "LISTEN",
++    "recv_q": 0,
++    "send_q": 128,
++    "local": "[::]",
++    "port": 22,
++    "peer": "[::]",
++    "v6": true,
++    "comm": "sshd",
++    "fd": 4,
++    "pids": [
++     30
++    ]
++   },
++   {
++    "netid": "tcp",
++    "state": "LISTEN",
++    "recv_q": 0,
++    "send_q": 511,
++    "local": "[::]",
++    "port": 80,
++    "peer": "[::]",
++    "v6": true,
++    "comm": "nginx",
++    "fd": 6,
++    "pids": [
++     32
++    ]
++   }
++  ],
++  "I": [
++   {
++    "netid": "udp",
++    "state": "UNCONN",
++    "recv_q": 0,
++    "send_q": 0,
++    "local": "127.0.0.11",
++    "port": 48915,
++    "peer": "0.0.0.0",
++    "v6": false,
++    "comm": "-",
++    "fd": null,
++    "pids": []
++   },
++   {
++    "netid": "tcp",
++    "state": "LISTEN",
++    "recv_q": 0,
++    "send_q": 511,
++    "local": "0.0.0.0",
++    "port": 6379,
++    "peer": "0.0.0.0",
++    "v6": false,
++    "comm": "-",
++    "fd": null,
++    "pids": []
++   },
++   {
++    "netid": "tcp",
++    "state": "LISTEN",
++    "recv_q": 0,
++    "send_q": 80,
++    "local": "0.0.0.0",
++    "port": 3306,
++    "peer": "0.0.0.0",
++    "v6": false,
++    "comm": "-",
++    "fd": null,
++    "pids": []
++   },
++   {
++    "netid": "tcp",
++    "state": "LISTEN",
++    "recv_q": 0,
++    "send_q": 4096,
++    "local": "127.0.0.11",
++    "port": 40979,
++    "peer": "0.0.0.0",
++    "v6": false,
++    "comm": "-",
++    "fd": null,
++    "pids": []
++   },
++   {
++    "netid": "tcp",
++    "state": "LISTEN",
++    "recv_q": 0,
++    "send_q": 511,
++    "local": "0.0.0.0",
++    "port": 80,
++    "peer": "0.0.0.0",
++    "v6": false,
++    "comm": "nginx",
++    "fd": 5,
++    "pids": [
++     32
++    ]
++   },
++   {
++    "netid": "tcp",
++    "state": "LISTEN",
++    "recv_q": 0,
++    "send_q": 128,
++    "local": "0.0.0.0",
++    "port": 22,
++    "peer": "0.0.0.0",
++    "v6": false,
++    "comm": "sshd",
++    "fd": 3,
++    "pids": [
++     30
++    ]
++   },
++   {
++    "netid": "tcp",
++    "state": "LISTEN",
++    "recv_q": 0,
++    "send_q": 511,
++    "local": "[::]",
++    "port": 80,
++    "peer": "[::]",
++    "v6": true,
++    "comm": "nginx",
++    "fd": 6,
++    "pids": [
++     32
++    ]
++   },
++   {
++    "netid": "tcp",
++    "state": "LISTEN",
++    "recv_q": 0,
++    "send_q": 128,
++    "local": "[::]",
++    "port": 22,
++    "peer": "[::]",
++    "v6": true,
++    "comm": "sshd",
++    "fd": 4,
++    "pids": [
++     30
++    ]
++   }
++  ]
++ },
++ "cases": [
++  {
++   "set": "A",
++   "cmd": "ss -tlnp",
++   "stdout": "State  Recv-Q Send-Q Local Address:Port  Peer Address:PortProcess                       \nLISTEN 0      80           0.0.0.0:3306       0.0.0.0:*                                 \nLISTEN 0      4096      127.0.0.11:33795      0.0.0.0:*                                 \nLISTEN 0      511          0.0.0.0:80         0.0.0.0:*    users:((\"nginx\",pid=32,fd=5))\nLISTEN 0      128          0.0.0.0:22         0.0.0.0:*    users:((\"sshd\",pid=30,fd=3)) \nLISTEN 0      511          0.0.0.0:6379       0.0.0.0:*                                 \nLISTEN 0      511             [::]:80            [::]:*    users:((\"nginx\",pid=32,fd=6))\nLISTEN 0      128             [::]:22            [::]:*    users:((\"sshd\",pid=30,fd=4)) \n",
++   "stderr": "",
++   "width": null
++  },
++  {
++   "set": "A",
++   "cmd": "ss -tln; ss -lnt | head -2; ss -nlt4; ss -tlnH",
++   "stdout": "State  Recv-Q Send-Q Local Address:Port  Peer Address:PortProcess\nLISTEN 0      80           0.0.0.0:3306       0.0.0.0:*          \nLISTEN 0      4096      127.0.0.11:33795      0.0.0.0:*          \nLISTEN 0      511          0.0.0.0:80         0.0.0.0:*          \nLISTEN 0      128          0.0.0.0:22         0.0.0.0:*          \nLISTEN 0      511          0.0.0.0:6379       0.0.0.0:*          \nLISTEN 0      511             [::]:80            [::]:*          \nLISTEN 0      128             [::]:22            [::]:*          \nState  Recv-Q Send-Q Local Address:Port  Peer Address:PortProcess\nLISTEN 0      80           0.0.0.0:3306       0.0.0.0:*          \nState  Recv-Q Send-Q Local Address:Port  Peer Address:PortProcess\nLISTEN 0      80           0.0.0.0:3306       0.0.0.0:*          \nLISTEN 0      4096      127.0.0.11:33795      0.0.0.0:*          \nLISTEN 0      511          0.0.0.0:80         0.0.0.0:*          \nLISTEN 0      128          0.0.0.0:22         0.0.0.0:*          \nLISTEN 0      511          0.0.0.0:6379       0.0.0.0:*          \nLISTEN 0      80        0.0.0.0:3306  0.0.0.0:*\nLISTEN 0      4096   127.0.0.11:33795 0.0.0.0:*\nLISTEN 0      511       0.0.0.0:80    0.0.0.0:*\nLISTEN 0      128       0.0.0.0:22    0.0.0.0:*\nLISTEN 0      511       0.0.0.0:6379  0.0.0.0:*\nLISTEN 0      511          [::]:80       [::]:*\nLISTEN 0      128          [::]:22       [::]:*\n",
++   "stderr": "",
++   "width": null
++  },
++  {
++   "set": "A",
++   "cmd": "ss -tulnp; ss -ulnp; echo $?",
++   "stdout": "Netid State  Recv-Q Send-Q Local Address:Port  Peer Address:PortProcess                       \nudp   UNCONN 0      0         127.0.0.11:54783      0.0.0.0:*                                 \ntcp   LISTEN 0      80           0.0.0.0:3306       0.0.0.0:*                                 \ntcp   LISTEN 0      4096      127.0.0.11:33795      0.0.0.0:*                                 \ntcp   LISTEN 0      511          0.0.0.0:80         0.0.0.0:*    users:((\"nginx\",pid=32,fd=5))\ntcp   LISTEN 0      128          0.0.0.0:22         0.0.0.0:*    users:((\"sshd\",pid=30,fd=3)) \ntcp   LISTEN 0      511          0.0.0.0:6379       0.0.0.0:*                                 \ntcp   LISTEN 0      511             [::]:80            [::]:*    users:((\"nginx\",pid=32,fd=6))\ntcp   LISTEN 0      128             [::]:22            [::]:*    users:((\"sshd\",pid=30,fd=4)) \nState  Recv-Q Send-Q Local Address:Port  Peer Address:PortProcess\nUNCONN 0      0         127.0.0.11:54783      0.0.0.0:*          \n0\n",
++   "stderr": "",
++   "width": null
++  },
++  {
++   "set": "A",
++   "cmd": "ss -ltnp | head -4",
++   "stdout": "State  Recv-Q Send-Q Local Address:Port  Peer Address:PortProcess                       \nLISTEN 0      80           0.0.0.0:3306       0.0.0.0:*                                 \nLISTEN 0      4096      127.0.0.11:33795      0.0.0.0:*                                 \nLISTEN 0      511          0.0.0.0:80         0.0.0.0:*    users:((\"nginx\",pid=32,fd=5))\n",
++   "stderr": "",
++   "width": null
++  },
++  {
++   "set": "A",
++   "cmd": "ss -lntp sport = :22; ss -lnt \"( sport = :80 )\"",
++   "stdout": "State  Recv-Q Send-Q Local Address:Port Peer Address:PortProcess                      \nLISTEN 0      128          0.0.0.0:22        0.0.0.0:*    users:((\"sshd\",pid=30,fd=3))\nLISTEN 0      128             [::]:22           [::]:*    users:((\"sshd\",pid=30,fd=4))\nState  Recv-Q Send-Q Local Address:Port Peer Address:PortProcess\nLISTEN 0      511          0.0.0.0:80        0.0.0.0:*          \nLISTEN 0      511             [::]:80           [::]:*          \n",
++   "stderr": "",
++   "width": null
++  },
++  {
++   "set": "B",
++   "cmd": "ss -lntu sport = :22; ss -lnt sport eq :80; ss -lnt 'sport = :80 or sport = :22'; ss -lnt dport = :22; ss -tan state listening | head -2; ss -lnt src :22; ss -lnt src 0.0.0.0:80; ss -ltn sport :3306; ss -lnt bogus; echo $?",
++   "stdout": "Netid State  Recv-Q Send-Q Local Address:Port Peer Address:PortProcess\ntcp   LISTEN 0      128          0.0.0.0:22        0.0.0.0:*          \ntcp   LISTEN 0      128             [::]:22           [::]:*          \nState  Recv-Q Send-Q Local Address:Port Peer Address:PortProcess\nLISTEN 0      511          0.0.0.0:80        0.0.0.0:*          \nLISTEN 0      511             [::]:80           [::]:*          \nState  Recv-Q Send-Q Local Address:Port Peer Address:PortProcess\nLISTEN 0      128          0.0.0.0:22        0.0.0.0:*          \nLISTEN 0      511          0.0.0.0:80        0.0.0.0:*          \nLISTEN 0      128             [::]:22           [::]:*          \nLISTEN 0      511             [::]:80           [::]:*          \nState Recv-Q Send-Q Local Address:Port Peer Address:PortProcess\nRecv-Q Send-Q Local Address:Port  Peer Address:PortProcess\n0      511          0.0.0.0:6379       0.0.0.0:*          \nState  Recv-Q Send-Q Local Address:Port Peer Address:PortProcess\nLISTEN 0      128          0.0.0.0:22        0.0.0.0:*          \nLISTEN 0      128             [::]:22           [::]:*          \nState  Recv-Q Send-Q Local Address:Port Peer Address:PortProcess\nLISTEN 0      511          0.0.0.0:80        0.0.0.0:*          \nState  Recv-Q Send-Q Local Address:Port Peer Address:PortProcess\nLISTEN 0      80           0.0.0.0:3306      0.0.0.0:*          \nError: an inet prefix is expected rather than \"bogus\".\nCannot parse dst/src address.\n1\n",
++   "stderr": "",
++   "width": null
++  },
++  {
++   "set": "B",
++   "cmd": "ss -Hlnt",
++   "stdout": "LISTEN 0      511       0.0.0.0:6379  0.0.0.0:*\nLISTEN 0      4096   127.0.0.11:36719 0.0.0.0:*\nLISTEN 0      80        0.0.0.0:3306  0.0.0.0:*\nLISTEN 0      128       0.0.0.0:22    0.0.0.0:*\nLISTEN 0      511       0.0.0.0:80    0.0.0.0:*\nLISTEN 0      128          [::]:22       [::]:*\nLISTEN 0      511          [::]:80       [::]:*\n",
++   "stderr": "",
++   "width": null
++  },
++  {
++   "set": "B",
++   "cmd": "ss -t -l -n -p | head -2; ss --tcp --listening --numeric | head -2; ss -lt --numeric --processes | head -2",
++   "stdout": "State  Recv-Q Send-Q Local Address:Port  Peer Address:PortProcess                       \nLISTEN 0      511          0.0.0.0:6379       0.0.0.0:*                                 \nState  Recv-Q Send-Q Local Address:Port  Peer Address:PortProcess\nLISTEN 0      511          0.0.0.0:6379       0.0.0.0:*          \nState  Recv-Q Send-Q Local Address:Port  Peer Address:PortProcess                       \nLISTEN 0      511          0.0.0.0:6379       0.0.0.0:*                                 \n",
++   "stderr": "",
++   "width": null
++  },
++  {
++   "set": "I",
++   "cmd": "ss -tlnp",
++   "stdout": "State                Recv-Q               Send-Q                             Local Address:Port                              Peer Address:Port              Process                                     \nLISTEN               0                    511                                      0.0.0.0:6379                                   0.0.0.0:*                                                             \nLISTEN               0                    80                                       0.0.0.0:3306                                   0.0.0.0:*                                                             \nLISTEN               0                    4096                                  127.0.0.11:40979                                  0.0.0.0:*                                                             \nLISTEN               0                    511                                      0.0.0.0:80                                     0.0.0.0:*                  users:((\"nginx\",pid=32,fd=5))              \nLISTEN               0                    128                                      0.0.0.0:22                                     0.0.0.0:*                  users:((\"sshd\",pid=30,fd=3))               \nLISTEN               0                    511                                         [::]:80                                        [::]:*                  users:((\"nginx\",pid=32,fd=6))              \nLISTEN               0                    128                                         [::]:22                                        [::]:*                  users:((\"sshd\",pid=30,fd=4))               \n",
++   "stderr": "",
++   "width": 200
++  },
++  {
++   "set": "I",
++   "cmd": "ss -Htln",
++   "stdout": "LISTEN                      0                            511                                                   0.0.0.0:6379                                              0.0.0.0:*                      \nLISTEN                      0                            80                                                    0.0.0.0:3306                                              0.0.0.0:*                      \nLISTEN                      0                            4096                                               127.0.0.11:40979                                             0.0.0.0:*                      \nLISTEN                      0                            511                                                   0.0.0.0:80                                                0.0.0.0:*                      \nLISTEN                      0                            128                                                   0.0.0.0:22                                                0.0.0.0:*                      \nLISTEN                      0                            511                                                      [::]:80                                                   [::]:*                      \nLISTEN                      0                            128                                                      [::]:22                                                   [::]:*                      \n",
++   "stderr": "",
++   "width": 200
++  },
++  {
++   "set": "I",
++   "cmd": "ss -tlnp",
++   "stdout": "State     Recv-Q    Send-Q       Local Address:Port        Peer Address:Port    Process                                                                         \nLISTEN    0         511                0.0.0.0:6379             0.0.0.0:*                                                                                       \nLISTEN    0         80                 0.0.0.0:3306             0.0.0.0:*                                                                                       \nLISTEN    0         4096            127.0.0.11:40979            0.0.0.0:*                                                                                       \nLISTEN    0         511                0.0.0.0:80               0.0.0.0:*        users:((\"nginx\",pid=32,fd=5))                                                  \nLISTEN    0         128                0.0.0.0:22               0.0.0.0:*        users:((\"sshd\",pid=30,fd=3))                                                   \nLISTEN    0         511                   [::]:80                  [::]:*        users:((\"nginx\",pid=32,fd=6))                                                  \nLISTEN    0         128                   [::]:22                  [::]:*        users:((\"sshd\",pid=30,fd=4))                                                   \n",
++   "stderr": "",
++   "width": 80
++  },
++  {
++   "set": "I",
++   "cmd": "ss -tln",
++   "stdout": "State   Recv-Q   Send-Q     Local Address:Port      Peer Address:Port  Process  \nLISTEN  0        511              0.0.0.0:6379           0.0.0.0:*              \nLISTEN  0        80               0.0.0.0:3306           0.0.0.0:*              \nLISTEN  0        4096          127.0.0.11:40979          0.0.0.0:*              \nLISTEN  0        511              0.0.0.0:80             0.0.0.0:*              \nLISTEN  0        128              0.0.0.0:22             0.0.0.0:*              \nLISTEN  0        511                 [::]:80                [::]:*              \nLISTEN  0        128                 [::]:22                [::]:*              \n",
++   "stderr": "",
++   "width": 80
++  },
++  {
++   "set": "I",
++   "cmd": "ss -Htln",
++   "stdout": "LISTEN     0          511                 0.0.0.0:6379            0.0.0.0:*     \nLISTEN     0          80                  0.0.0.0:3306            0.0.0.0:*     \nLISTEN     0          4096             127.0.0.11:40979           0.0.0.0:*     \nLISTEN     0          511                 0.0.0.0:80              0.0.0.0:*     \nLISTEN     0          128                 0.0.0.0:22              0.0.0.0:*     \nLISTEN     0          511                    [::]:80                 [::]:*     \nLISTEN     0          128                    [::]:22                 [::]:*     \n",
++   "stderr": "",
++   "width": 80
++  },
++  {
++   "set": "I",
++   "cmd": "ss -tulnp",
++   "stdout": "Netid State  Recv-Q Send-Q   Local Address:Port    Peer Address:Port Process                        \nudp   UNCONN 0      0           127.0.0.11:48915        0.0.0.0:*                                   \ntcp   LISTEN 0      511            0.0.0.0:6379         0.0.0.0:*                                   \ntcp   LISTEN 0      80             0.0.0.0:3306         0.0.0.0:*                                   \ntcp   LISTEN 0      4096        127.0.0.11:40979        0.0.0.0:*                                   \ntcp   LISTEN 0      511            0.0.0.0:80           0.0.0.0:*     users:((\"nginx\",pid=32,fd=5)) \ntcp   LISTEN 0      128            0.0.0.0:22           0.0.0.0:*     users:((\"sshd\",pid=30,fd=3))  \ntcp   LISTEN 0      511               [::]:80              [::]:*     users:((\"nginx\",pid=32,fd=6)) \ntcp   LISTEN 0      128               [::]:22              [::]:*     users:((\"sshd\",pid=30,fd=4))  \n",
++   "stderr": "",
++   "width": 100
++  },
++  {
++   "set": "I",
++   "cmd": "ss -tln",
++   "stdout": "State  Recv-Q Send-Q Local Address:Port   Peer Address:Port Process                                                     \nLISTEN 0      511          0.0.0.0:6379        0.0.0.0:*                                                                \nLISTEN 0      80           0.0.0.0:3306        0.0.0.0:*                                                                \nLISTEN 0      4096      127.0.0.11:40979       0.0.0.0:*                                                                \nLISTEN 0      511          0.0.0.0:80          0.0.0.0:*                                                                \nLISTEN 0      128          0.0.0.0:22          0.0.0.0:*                                                                \nLISTEN 0      511             [::]:80             [::]:*                                                                \nLISTEN 0      128             [::]:22             [::]:*                                                                \n",
++   "stderr": "",
++   "width": 60
++  }
++ ],
++ "guest": {
++  "about": "a real Debian 12 guest (the hardware capture, 18 November 2026)",
++  "sockets": [
++   {
++    "netid": "udp",
++    "state": "UNCONN",
++    "recv_q": 0,
++    "send_q": 0,
++    "local": "127.0.0.54",
++    "port": 53,
++    "peer": "0.0.0.0",
++    "v6": false,
++    "comm": "systemd-resolve",
++    "fd": 20,
++    "pids": [
++     364
++    ]
++   },
++   {
++    "netid": "udp",
++    "state": "UNCONN",
++    "recv_q": 0,
++    "send_q": 0,
++    "local": "127.0.0.53%lo",
++    "port": 53,
++    "peer": "0.0.0.0",
++    "v6": false,
++    "comm": "systemd-resolve",
++    "fd": 18,
++    "pids": [
++     364
++    ]
++   },
++   {
++    "netid": "udp",
++    "state": "UNCONN",
++    "recv_q": 0,
++    "send_q": 0,
++    "local": "10.0.2.15%ens3",
++    "port": 68,
++    "peer": "0.0.0.0",
++    "v6": false,
++    "comm": "systemd-network",
++    "fd": 18,
++    "pids": [
++     252
++    ]
++   },
++   {
++    "netid": "udp",
++    "state": "UNCONN",
++    "recv_q": 0,
++    "send_q": 0,
++    "local": "0.0.0.0",
++    "port": 5355,
++    "peer": "0.0.0.0",
++    "v6": false,
++    "comm": "systemd-resolve",
++    "fd": 11,
++    "pids": [
++     364
++    ]
++   },
++   {
++    "netid": "udp",
++    "state": "UNCONN",
++    "recv_q": 0,
++    "send_q": 0,
++    "local": "[::]",
++    "port": 5355,
++    "peer": "[::]",
++    "v6": true,
++    "comm": "systemd-resolve",
++    "fd": 13,
++    "pids": [
++     364
++    ]
++   },
++   {
++    "netid": "tcp",
++    "state": "LISTEN",
++    "recv_q": 0,
++    "send_q": 4096,
++    "local": "127.0.0.54",
++    "port": 53,
++    "peer": "0.0.0.0",
++    "v6": false,
++    "comm": "systemd-resolve",
++    "fd": 21,
++    "pids": [
++     364
++    ]
++   },
++   {
++    "netid": "tcp",
++    "state": "LISTEN",
++    "recv_q": 0,
++    "send_q": 128,
++    "local": "0.0.0.0",
++    "port": 22,
++    "peer": "0.0.0.0",
++    "v6": false,
++    "comm": "sshd",
++    "fd": 3,
++    "pids": [
++     383
++    ]
++   },
++   {
++    "netid": "tcp",
++    "state": "LISTEN",
++    "recv_q": 0,
++    "send_q": 4096,
++    "local": "0.0.0.0",
++    "port": 5355,
++    "peer": "0.0.0.0",
++    "v6": false,
++    "comm": "systemd-resolve",
++    "fd": 12,
++    "pids": [
++     364
++    ]
++   },
++   {
++    "netid": "tcp",
++    "state": "LISTEN",
++    "recv_q": 0,
++    "send_q": 4096,
++    "local": "127.0.0.53%lo",
++    "port": 53,
++    "peer": "0.0.0.0",
++    "v6": false,
++    "comm": "systemd-resolve",
++    "fd": 19,
++    "pids": [
++     364
++    ]
++   },
++   {
++    "netid": "tcp",
++    "state": "LISTEN",
++    "recv_q": 0,
++    "send_q": 128,
++    "local": "[::]",
++    "port": 22,
++    "peer": "[::]",
++    "v6": true,
++    "comm": "sshd",
++    "fd": 4,
++    "pids": [
++     383
++    ]
++   },
++   {
++    "netid": "tcp",
++    "state": "LISTEN",
++    "recv_q": 0,
++    "send_q": 4096,
++    "local": "[::]",
++    "port": 5355,
++    "peer": "[::]",
++    "v6": true,
++    "comm": "systemd-resolve",
++    "fd": 14,
++    "pids": [
++     364
++    ]
++   }
++  ],
++  "cases": [
++   {
++    "cmd": "ss -tulnp",
++    "stdout": "Netid State  Recv-Q Send-Q  Local Address:Port Peer Address:PortProcess                                   \nudp   UNCONN 0      0          127.0.0.54:53        0.0.0.0:*    users:((\"systemd-resolve\",pid=364,fd=20))\nudp   UNCONN 0      0       127.0.0.53%lo:53        0.0.0.0:*    users:((\"systemd-resolve\",pid=364,fd=18))\nudp   UNCONN 0      0      10.0.2.15%ens3:68        0.0.0.0:*    users:((\"systemd-network\",pid=252,fd=18))\nudp   UNCONN 0      0             0.0.0.0:5355      0.0.0.0:*    users:((\"systemd-resolve\",pid=364,fd=11))\nudp   UNCONN 0      0                [::]:5355         [::]:*    users:((\"systemd-resolve\",pid=364,fd=13))\ntcp   LISTEN 0      4096       127.0.0.54:53        0.0.0.0:*    users:((\"systemd-resolve\",pid=364,fd=21))\ntcp   LISTEN 0      128           0.0.0.0:22        0.0.0.0:*    users:((\"sshd\",pid=383,fd=3))            \ntcp   LISTEN 0      4096          0.0.0.0:5355      0.0.0.0:*    users:((\"systemd-resolve\",pid=364,fd=12))\ntcp   LISTEN 0      4096    127.0.0.53%lo:53        0.0.0.0:*    users:((\"systemd-resolve\",pid=364,fd=19))\ntcp   LISTEN 0      128              [::]:22           [::]:*    users:((\"sshd\",pid=383,fd=4))            \ntcp   LISTEN 0      4096             [::]:5355         [::]:*    users:((\"systemd-resolve\",pid=364,fd=14))\n"
++   },
++   {
++    "cmd": "ss -tuln",
++    "stdout": "Netid State  Recv-Q Send-Q  Local Address:Port Peer Address:PortProcess\nudp   UNCONN 0      0          127.0.0.54:53        0.0.0.0:*          \nudp   UNCONN 0      0       127.0.0.53%lo:53        0.0.0.0:*          \nudp   UNCONN 0      0      10.0.2.15%ens3:68        0.0.0.0:*          \nudp   UNCONN 0      0             0.0.0.0:5355      0.0.0.0:*          \nudp   UNCONN 0      0                [::]:5355         [::]:*          \ntcp   LISTEN 0      4096       127.0.0.54:53        0.0.0.0:*          \ntcp   LISTEN 0      128           0.0.0.0:22        0.0.0.0:*          \ntcp   LISTEN 0      4096          0.0.0.0:5355      0.0.0.0:*          \ntcp   LISTEN 0      4096    127.0.0.53%lo:53        0.0.0.0:*          \ntcp   LISTEN 0      128              [::]:22           [::]:*          \ntcp   LISTEN 0      4096             [::]:5355         [::]:*          \n"
++   },
++   {
++    "cmd": "ss -tlnp",
++    "stdout": "State  Recv-Q Send-Q Local Address:Port Peer Address:PortProcess                                   \nLISTEN 0      4096      127.0.0.54:53        0.0.0.0:*    users:((\"systemd-resolve\",pid=364,fd=21))\nLISTEN 0      128          0.0.0.0:22        0.0.0.0:*    users:((\"sshd\",pid=383,fd=3))            \nLISTEN 0      4096         0.0.0.0:5355      0.0.0.0:*    users:((\"systemd-resolve\",pid=364,fd=12))\nLISTEN 0      4096   127.0.0.53%lo:53        0.0.0.0:*    users:((\"systemd-resolve\",pid=364,fd=19))\nLISTEN 0      128             [::]:22           [::]:*    users:((\"sshd\",pid=383,fd=4))            \nLISTEN 0      4096            [::]:5355         [::]:*    users:((\"systemd-resolve\",pid=364,fd=14))\n"
++   },
++   {
++    "cmd": "ss -Htulnp",
++    "stdout": "udp UNCONN 0      0          127.0.0.54:53   0.0.0.0:* users:((\"systemd-resolve\",pid=364,fd=20))\nudp UNCONN 0      0       127.0.0.53%lo:53   0.0.0.0:* users:((\"systemd-resolve\",pid=364,fd=18))\nudp UNCONN 0      0      10.0.2.15%ens3:68   0.0.0.0:* users:((\"systemd-network\",pid=252,fd=18))\nudp UNCONN 0      0             0.0.0.0:5355 0.0.0.0:* users:((\"systemd-resolve\",pid=364,fd=11))\nudp UNCONN 0      0                [::]:5355    [::]:* users:((\"systemd-resolve\",pid=364,fd=13))\ntcp LISTEN 0      4096       127.0.0.54:53   0.0.0.0:* users:((\"systemd-resolve\",pid=364,fd=21))\ntcp LISTEN 0      128           0.0.0.0:22   0.0.0.0:* users:((\"sshd\",pid=383,fd=3))            \ntcp LISTEN 0      4096          0.0.0.0:5355 0.0.0.0:* users:((\"systemd-resolve\",pid=364,fd=12))\ntcp LISTEN 0      4096    127.0.0.53%lo:53   0.0.0.0:* users:((\"systemd-resolve\",pid=364,fd=19))\ntcp LISTEN 0      128              [::]:22      [::]:* users:((\"sshd\",pid=383,fd=4))            \ntcp LISTEN 0      4096             [::]:5355    [::]:* users:((\"systemd-resolve\",pid=364,fd=14))\n"
++   }
++  ],
++  "summary": "Total: 98\nTCP:   6 (estab 0, closed 0, orphaned 0, timewait 0)\n\nTransport Total     IP        IPv6\nRAW\t  1         0         1        \nUDP\t  5         4         1        \nTCP\t  6         4         2        \nINET\t  12        8         4        \nFRAG\t  0         0         0        \n\n"
++ }
++}
+diff --git a/src/cowrie/test/test_mirage_netutils.py b/src/cowrie/test/test_mirage_netutils.py
+new file mode 100644
+index 0000000..41a05fc
+--- /dev/null
++++ b/src/cowrie/test/test_mirage_netutils.py
+@@ -0,0 +1,396 @@
++# SPDX-License-Identifier: BSD-3-Clause
++# ABOUTME: Tests MIRAGE's getent, tty and ss against what the reference host and
++# ABOUTME: a real guest printed, and that ss names the processes ps shows.
++
++from __future__ import annotations
++
++import copy
++import json
++import re
++from pathlib import Path
++from typing import Any
++
++from cowrie.commands import mirage_netutils, mirage_ps
++from cowrie.test.test_mirage_gate import PROMPT
++from cowrie.test.test_mirage_ps import TABLE, Base
++
++RECORDED = json.loads((Path(__file__).parent / "mirage_ss_reference.json").read_text())
++HOSTS = (
++    "127.0.0.1\\tlocalhost\\n::1\\tlocalhost ip6-localhost ip6-loopback\\n"
++    "fe00::\\tip6-localnet\\nff00::\\tip6-mcastprefix\\nff02::1\\tip6-allnodes\\n"
++    "ff02::2\\tip6-allrouters\\n172.26.0.1\\tweb01\\n"
++)
++
++
++def with_sockets(listening: list[dict[str, Any]], **more: Any) -> dict[str, Any]:
++    doc = copy.deepcopy(TABLE)
++    doc["sockets"] = {"listening": listening, "total": 98, "raw": [1, 0, 1], **more}
++    return doc
++
++
++class NetBase(Base):
++    def text(self, line: str) -> str:
++        return self.run_line(line).decode()[: -len(PROMPT.decode())]
++
++
++class SsRecordedTests(NetBase):
++    """Each recorded command line, with the sockets the host had when it was recorded."""
++
++    def test_piped_output_is_the_reference_host_s_byte_for_byte(self) -> None:
++        self.no_terminal()
++        for case in RECORDED["cases"]:
++            if case["width"]:
++                continue
++            with self.subTest(cmd=case["cmd"], sockets=case["set"]):
++                mirage_ps.reset_for_tests(
++                    with_sockets(RECORDED["sets"][case["set"]]), True
++                )
++                self.assertEqual(
++                    self.text(case["cmd"]), case["stdout"] + case["stderr"]
++                )
++
++    def test_on_a_terminal_the_columns_spread_as_the_reference_host_s_do(self) -> None:
++        for case in RECORDED["cases"]:
++            if not case["width"]:
++                continue
++            with self.subTest(cmd=case["cmd"], width=case["width"]):
++                mirage_ps.reset_for_tests(
++                    with_sockets(RECORDED["sets"][case["set"]]), True
++                )
++                self.proto.user.windowSize = [24, case["width"]]
++                self.assertEqual(self.text(case["cmd"]), case["stdout"])
++
++    def test_a_real_guest_s_sockets_print_as_the_guest_printed_them(self) -> None:
++        self.no_terminal()
++        guest = RECORDED["guest"]
++        mirage_ps.reset_for_tests(with_sockets(guest["sockets"]), True)
++        for case in guest["cases"]:
++            with self.subTest(cmd=case["cmd"]):
++                self.assertEqual(self.text(case["cmd"]), case["stdout"])
++
++
++LISTENING = [
++    {"netid": "udp", "state": "UNCONN", "recv_q": 0, "send_q": 0, "local": "10.2.117.32%ens3",
++     "port": 68, "peer": "0.0.0.0", "v6": False, "comm": "systemd-network", "fd": 18,
++     "pids": [263]},
++    {"netid": "tcp", "state": "LISTEN", "recv_q": 0, "send_q": 80, "local": "0.0.0.0",
++     "port": 3306, "peer": "0.0.0.0", "v6": False, "comm": "mariadbd", "fd": 20, "pids": [393]},
++    {"netid": "tcp", "state": "LISTEN", "recv_q": 0, "send_q": 128, "local": "0.0.0.0",
++     "port": 22, "peer": "0.0.0.0", "v6": False, "comm": "sshd", "fd": 3, "pids": [382]},
++    {"netid": "tcp", "state": "LISTEN", "recv_q": 0, "send_q": 511, "local": "0.0.0.0",
++     "port": 80, "peer": "0.0.0.0", "v6": False, "comm": "nginx", "fd": 5, "pids": [396, 397]},
++    {"netid": "tcp", "state": "LISTEN", "recv_q": 0, "send_q": 128, "local": "[::]",
++     "port": 22, "peer": "[::]", "v6": True, "comm": "sshd", "fd": 4, "pids": [382]},
++]  # fmt: skip
++
++
++class SsSessionTests(NetBase):
++    def setUp(self) -> None:
++        super().setUp()
++        mirage_ps.reset_for_tests(with_sockets(LISTENING), True)
++        self.no_terminal()
++        self.proto.kippoIP = "10.2.117.32"
++        self.proto.clientIP = "203.0.113.9"
++        self.proto.realClientPort = 40022
++
++    def test_the_processes_named_are_the_ones_ps_shows(self) -> None:
++        shown = self.text("ss -tlnp")
++        named = {
++            (m[0], int(m[1])) for m in re.findall(r'\("([^"]+)",pid=(\d+),', shown)
++        }
++        running = {(p["comm"], p["pid"]) for p in TABLE["processes"]}
++        self.assertTrue(named)
++        self.assertLessEqual(named - {("nginx", 396)}, running)
++
++    def test_a_socket_s_holders_are_listed_newest_first(self) -> None:
++        self.assertIn(
++            'users:(("nginx",pid=397,fd=5),("nginx",pid=396,fd=5))',
++            self.text("ss -tlnp"),
++        )
++
++    def test_the_session_s_own_connection_is_there_and_ps_agrees(self) -> None:
++        line = self.text("ss -Htnp")
++        self.assertRegex(
++            line,
++            r'^ESTAB 0 +0 +10\.2\.117\.32:22 +203\.0\.113\.9:40022 +users:\(\("sshd",pid=\d+,fd=4\)\)\n$',
++        )
++        pid = re.search(r"pid=(\d+)", line).group(1)  # type: ignore[union-attr]
++        own = [
++            row for row in self.text("ps -ef").splitlines() if "sshd: root@notty" in row
++        ]
++        self.assertEqual([row.split()[1] for row in own], [pid])
++
++    def test_someone_who_is_not_root_is_shown_only_their_own_processes(self) -> None:
++        shell = self.proto.cmdstack[0]
++        shell.user = {**shell.user, "username": "www-data", "uid": 33}
++        listening = self.text("ss -tlnp")
++        self.assertRegex(
++            listening,
++            r'0\.0\.0\.0:80 +0\.0\.0\.0:\* +users:\(\("nginx",pid=397,fd=5\)\)\n',
++        )
++        self.assertNotIn("mariadbd", listening)
++        self.assertNotIn('"sshd"', listening)
++        # Their connection is held by their own sshd and by root's: they see their own.
++        own = re.findall(r"pid=(\d+)", self.text("ss -Htnp"))
++        self.assertEqual(len(own), 1)
++
++    def test_all_states_put_the_connection_after_the_listeners_of_its_family(
++        self,
++    ) -> None:
++        states = [line.split()[0] for line in self.text("ss -Htan").splitlines()]
++        self.assertEqual(states, ["LISTEN", "LISTEN", "LISTEN", "ESTAB", "LISTEN"])
++
++    def test_one_state_asked_for_by_name_drops_the_state_column(self) -> None:
++        self.assertTrue(
++            self.text("ss -tn state established").startswith("Recv-Q Send-Q ")
++        )
++        self.assertTrue(
++            self.text("ss -tan state listening").startswith("Recv-Q Send-Q ")
++        )
++        self.assertTrue(
++            self.text("ss -tan state connected").startswith("State Recv-Q ")
++        )
++
++    def test_the_summary_counts_the_table_s_sockets_and_the_connection(self) -> None:
++        self.assertEqual(
++            self.text("ss -s"),
++            "Total: 99\n"
++            "TCP:   5 (estab 1, closed 0, orphaned 0, timewait 0)\n"
++            "\n"
++            "Transport Total     IP        IPv6\n"
++            "RAW\t  1         0         1        \n"
++            "UDP\t  1         1         0        \n"
++            "TCP\t  5         4         1        \n"
++            "INET\t  7         5         2        \n"
++            "FRAG\t  0         0         0        \n"
++            "\n",
++        )
++
++    def test_the_summary_has_the_guest_s_form(self) -> None:
++        guest = RECORDED["guest"]["summary"]
++        mine = self.text("ss -s")
++        self.assertEqual(re.sub(r"\d+ *", "N ", mine), re.sub(r"\d+ *", "N ", guest))
++
++    def test_help_version_and_what_ss_refuses(self) -> None:
++        self.assertEqual(self.text("ss -V"), "ss utility, iproute2-6.1.0\n")
++        self.assertTrue(self.text("ss -h; echo $?").endswith("listening|closing}\n0\n"))
++        said = self.text("ss -q; echo $?")
++        self.assertTrue(
++            said.startswith("ss: invalid option -- 'q'\nUsage: ss [ OPTIONS ]\n")
++        )
++        self.assertTrue(said.endswith("\n255\n"))
++        self.assertTrue(
++            self.text("ss --nosuch").startswith("ss: unrecognized option '--nosuch'\n")
++        )
++        self.assertEqual(
++            self.text("ss -tn state nosuch; echo $?"),
++            "ss: wrong state name: nosuch\n255\n",
++        )
++
++    def test_what_is_not_emulated_is_declined_and_says_so_if_run(self) -> None:
++        for args in (
++            ["-x", "-l"],
++            ["-tlne"],
++            ["-ln"],
++            [],
++            ["-tli"],
++            ["-tln", "dev", "eth0"],
++        ):
++            self.assertTrue(mirage_netutils.Command_ss.mirage_declines(args), args)
++        for args in (
++            ["-tlnp"],
++            ["-tuln"],
++            ["-s"],
++            ["-tan", "state", "listening"],
++            ["-q"],
++        ):
++            self.assertFalse(mirage_netutils.Command_ss.mirage_declines(args), args)
++        self.assertEqual(
++            self.text("ss -x; echo $?"),
++            "-bash: /usr/bin/ss: cannot execute binary file: Exec format error\n126\n",
++        )
++
++    def test_without_a_socket_record_ss_is_not_emulated(self) -> None:
++        mirage_ps.reset_for_tests(TABLE, True)
++        self.assertTrue(mirage_netutils.Command_ss.mirage_declines(["-tlnp"]))
++
++
++class TtyTests(NetBase):
++    def test_with_a_terminal(self) -> None:
++        self.assertEqual(self.text("tty; tty -s; echo $?"), "/dev/pts/0\n0\n")
++
++    def test_piped_into_it_is_not_one(self) -> None:
++        self.assertEqual(self.text("echo x | tty; echo $?"), "not a tty\n1\n")
++
++    def test_without_a_terminal_as_the_reference_host(self) -> None:
++        self.no_terminal()
++        self.assertEqual(
++            self.text(
++                "tty; echo $?; tty -s; echo $?; tty --help | head -2; tty extra; echo $?"
++            ),
++            "not a tty\n1\n1\nUsage: tty [OPTION]...\n"
++            "Print the file name of the terminal connected to standard input.\n"
++            "tty: extra operand 'extra'\nTry 'tty --help' for more information.\n2\n",
++        )
++        self.assertEqual(
++            self.text(
++                "tty -x; echo $?; tty --quiet; echo $?; tty --sil; echo $?; tty --nosuch; echo $?"
++            ),
++            "tty: invalid option -- 'x'\nTry 'tty --help' for more information.\n2\n1\n1\n"
++            "tty: unrecognized option '--nosuch'\nTry 'tty --help' for more information.\n2\n",
++        )
++        self.assertTrue(
++            self.text("tty --version").startswith("tty (GNU coreutils) 9.1\n")
++        )
++
++
++class GetentTests(NetBase):
++    def setUp(self) -> None:
++        super().setUp()
++        self.no_terminal()
++        self.run_line(f"printf '{HOSTS}' > /etc/hosts")
++
++    def test_accounts_are_the_file_s_lines(self) -> None:
++        root = self.text("grep '^root:' /etc/passwd")
++        self.assertEqual(self.text("getent passwd root"), root)
++        self.assertEqual(self.text("getent passwd 0 00"), root + root)
++        self.assertEqual(
++            self.text("getent passwd | head -1"), self.text("head -1 /etc/passwd")
++        )
++        self.assertEqual(self.text("getent passwd nosuchuser; echo $?"), "2\n")
++        self.assertEqual(
++            self.text("getent passwd root nosuchuser; echo $?"), root + "2\n"
++        )
++        self.assertEqual(self.text("getent passwd 0x; echo $?"), "2\n")
++        self.assertEqual(
++            self.text("getent group root"), self.text("grep '^root:' /etc/group")
++        )
++        self.assertEqual(self.text("getent group nosuchgroup; echo $?"), "2\n")
++        self.assertEqual(self.text("getent -s files passwd root"), root)
++
++    def test_shadow_is_root_s(self) -> None:
++        line = self.text("grep '^root:' /etc/shadow")
++        self.assertTrue(line.startswith("root:"))
++        self.assertEqual(self.text("getent shadow root"), line)
++
++    def test_hosts_as_the_reference_host_with_the_same_file(self) -> None:
++        self.assertEqual(
++            self.text("getent hosts; echo $?"),
++            "127.0.0.1       localhost\n127.0.0.1       localhost ip6-localhost ip6-loopback\n"
++            "172.26.0.1      web01\n0\n",
++        )
++        self.assertEqual(
++            self.text("getent hosts localhost 127.0.0.1 web01; echo $?"),
++            "::1             localhost ip6-localhost ip6-loopback\n127.0.0.1       localhost\n"
++            "172.26.0.1      web01\n0\n",
++        )
++        self.assertEqual(
++            self.text(
++                "getent hosts 127.0.0.1 ::1; getent hosts LOCALHOST ip6-localhost"
++            ),
++            "127.0.0.1       localhost\n"
++            + "::1             localhost ip6-localhost ip6-loopback\n" * 3,
++        )
++        self.assertEqual(
++            self.text("getent hosts 172.26.0.1 1.2.3.4; echo $?"),
++            "172.26.0.1      web01\n2\n",
++        )
++        self.assertEqual(
++            self.text("getent ahosts 127.0.0.1 web01; echo $?"),
++            "127.0.0.1       STREAM 127.0.0.1\n127.0.0.1       DGRAM  \n127.0.0.1       RAW    \n"
++            "172.26.0.1      STREAM web01\n172.26.0.1      DGRAM  \n172.26.0.1      RAW    \n0\n",
++        )
++
++    def test_a_name_with_both_addresses_as_a_real_guest_gives_it(self) -> None:
++        self.assertEqual(
++            self.text("getent ahosts localhost"),
++            "::1             STREAM localhost\n::1             DGRAM  \n::1             RAW    \n"
++            "127.0.0.1       STREAM \n127.0.0.1       DGRAM  \n127.0.0.1       RAW    \n",
++        )
++
++    def test_a_name_no_file_holds_is_declined_and_found_nowhere_if_run(self) -> None:
++        declines = mirage_netutils.Command_getent.mirage_declines
++        self.assertTrue(declines(["hosts", "example.com"]))
++        self.assertTrue(declines(["ahosts", "example.com"]))
++        self.assertFalse(declines(["hosts", "localhost", "127.0.0.1"]))
++        self.assertFalse(declines(["hosts"]))
++        self.assertFalse(declines(["passwd", "example.com"]))
++        self.assertEqual(self.text("getent hosts nosuchhost; echo $?"), "2\n")
++
++    def test_the_small_databases(self) -> None:
++        self.assertEqual(
++            self.text("getent services ssh; echo $?; getent protocols tcp; echo $?"),
++            "2\n2\n",
++        )
++        self.run_line(
++            "printf 'ssh\\t\\t22/tcp\\t\\t\\t\\t# SSH Remote Login Protocol\\n' > /etc/services"
++        )
++        self.run_line(
++            "printf 'tcp\\t6\\tTCP\\t\\t# transmission control protocol\\n' > /etc/protocols"
++        )
++        self.assertEqual(
++            self.text("getent services ssh"), "ssh                   22/tcp\n"
++        )
++        self.assertEqual(
++            self.text("getent services 22/tcp"), "ssh                   22/tcp\n"
++        )
++        self.assertEqual(
++            self.text("getent protocols tcp"), "tcp                   6 TCP\n"
++        )
++        self.assertEqual(
++            self.text("getent protocols 6"), "tcp                   6 TCP\n"
++        )
++        self.assertEqual(self.text("getent networks; echo $?"), "0\n")
++        self.assertEqual(self.text("getent initgroups root"), "root                 \n")
++
++    def test_what_getent_refuses(self) -> None:
++        tried = "Try `getent --help' or `getent --usage' for more information.\n"
++        self.assertEqual(
++            self.text("getent; echo $?"),
++            "getent: wrong number of arguments\n" + tried + "1\n",
++        )
++        self.assertEqual(
++            self.text("getent nosuchdb; echo $?"),
++            "Unknown database: nosuchdb\n" + tried + "1\n",
++        )
++        self.assertEqual(
++            self.text("getent -x; echo $?"),
++            "getent: invalid option -- 'x'\n" + tried + "64\n",
++        )
++        self.assertEqual(
++            self.text("getent passwd -1; echo $?"),
++            "getent: invalid option -- '1'\n" + tried + "64\n",
++        )
++        self.assertEqual(
++            self.text("getent --nosuch; echo $?"),
++            "getent: unrecognized option '--nosuch'\n" + tried + "64\n",
++        )
++        self.assertEqual(
++            self.text("getent -s; echo $?"),
++            "getent: option requires an argument -- 's'\n" + tried + "64\n",
++        )
++        self.assertEqual(
++            self.text("getent ethers; echo $?"),
++            "Enumeration not supported on ethers\n3\n",
++        )
++        self.assertEqual(
++            self.text("getent initgroups; echo $?"),
++            "Enumeration not supported on initgroups\n3\n",
++        )
++        self.assertEqual(
++            self.text("getent aliases; echo $?; getent rpc; echo $?"), "0\n0\n"
++        )
++
++    def test_help_usage_and_version(self) -> None:
++        self.assertTrue(
++            self.text("getent --help").startswith(
++                "Usage: getent [OPTION...] database [key ...]\n"
++            )
++        )
++        self.assertTrue(
++            self.text("getent --usage").startswith("Usage: getent [-Ai?V] [-s CONFIG]")
++        )
++        self.assertEqual(
++            self.text("getent -V | head -1"),
++            "getent (Debian GLIBC 2.36-9+deb12u14) 2.36\n",
++        )
+-- 
+2.50.1 (Apple Git-155)
+

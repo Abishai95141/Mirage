@@ -8,6 +8,7 @@ the train/test split by procedure can be checked by content (spec section 5).
 from __future__ import annotations
 
 import hashlib
+import ipaddress
 import re
 from collections.abc import Iterable
 from dataclasses import dataclass
@@ -31,18 +32,26 @@ MARKER_WORDS = ("mirage", "atomic", "scenario", "selftest", "gate1", "honeypot",
 
 Protocol = Literal["ssh", "http", "redis", "mysql"]
 
-# The catalogue holds two sets of procedures. The phase 2 set is frozen: its hash pins the
+# The catalogue holds three sets of procedures. The phase 2 set is frozen: its hash pins the
 # phase 2 split and every dataset made from it. Phase 3's depth procedures (spec 3.0) live in
 # files of their own, are hashed apart and get a split of their own, so adding or correcting
-# one never unpins anything of phase 2.
-PHASE2, DEPTH = "phase2", "depth"
+# one never unpins anything of phase 2. Demo 3's procedures (spec 3.8) were written after both
+# of those were frozen, so they are a third set, hashed apart again. It is in no split: its
+# steps are neither training nor evaluation data unless something takes them in on purpose.
+PHASE2, DEPTH, DEMO = "phase2", "depth", "demo"
 DEPTH_FILE = re.compile(r"^9\d*-depth-.+\.yaml$")  # lab/catalogue/9*-depth-*.yaml
+DEMO_FILE = re.compile(r"^9\d*-demo-.+\.yaml$")  # lab/catalogue/9*-demo-*.yaml
 DEPTH_SPLIT = "split-depth.yaml"  # beside the phase 2 split file
+# The sets with inputs that really run somewhere: depth scenarios on the reference host, and
+# demo 3's second part in a sandbox. Their inputs are held to the run-safety rules below.
+REAL_HOST_SETS = frozenset({DEPTH, DEMO})
 
 
 def set_of_file(name: str) -> str:
     """The catalogue set a file belongs to, from its name."""
-    return DEPTH if DEPTH_FILE.match(name) else PHASE2
+    if DEPTH_FILE.match(name):
+        return DEPTH
+    return DEMO if DEMO_FILE.match(name) else PHASE2
 
 
 class _Strict(BaseModel):
@@ -86,7 +95,7 @@ class Catalogue(_Strict):
     attack_version: str
     procedures: dict[str, Procedure]
     sha256: str  # of every file loaded
-    set_of: dict[str, str] = Field(default_factory=dict)  # procedure ID -> PHASE2 or DEPTH
+    set_of: dict[str, str] = Field(default_factory=dict)  # procedure ID -> its set
     set_sha256: dict[str, str] = Field(default_factory=dict)  # each set, hashed as the whole is
 
     @classmethod
@@ -228,7 +237,24 @@ class Scenario(_Strict):
 
     @classmethod
     def load(cls, path: Path) -> Scenario:
-        return cls.model_validate(yaml.safe_load(path.read_text()))
+        data = yaml.safe_load(path.read_text())
+        if not isinstance(data, dict) or "sessions" not in data:
+            # A folder given as SCENARIOS is read recursively, so /lab picks up the procedure
+            # catalogue and the split files too. Say that, not what the model expected.
+            kind = (
+                " (it is a procedure catalogue)"
+                if isinstance(data, dict) and "procedures" in data
+                else ""
+            )
+            raise NotAScenario(
+                f"{path} is not a scenario file{kind}. Scenario files are under /lab/scenarios: "
+                "for example SCENARIOS=/lab/scenarios/demo"
+            )
+        return cls.model_validate(data)
+
+
+class NotAScenario(ValueError):
+    """A file given as a scenario that is not one: the runner and the lint refuse it by name."""
 
 
 def render(template: str, values: dict[str, str]) -> str:
@@ -249,6 +275,91 @@ def check_input(text: str, forbidden_ids: tuple[str, ...] = ()) -> list[str]:
     for ident in forbidden_ids:
         if ident and ident.lower() in low:
             problems.append(f"input contains the ID {ident!r}")
+    return problems
+
+
+# ---------------------------------------------------------------- inputs that really run
+#
+# Against a decoy nothing is executed. On the reference host (arm R of phase 3's depth
+# comparison) and in the sandbox every input runs as root in a real, throwaway container.
+# That container has no egress and tight limits, and these rules are the second line: an
+# input that tries to leave the container, reach its host or exhaust a resource is refused
+# by the lint for every depth procedure, and again by the runner on the rendered input
+# before it is sent to a real host. A deny list cannot prove an input safe; it stops the
+# known ways of doing harm and anything new is caught, if at all, by the container.
+
+_IPV4 = re.compile(r"(?<![\w.])(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})(?![\w.])")
+# Addresses an input may name literally: loopback, "any", netmasks and the three ranges
+# reserved for documentation. Everything a scenario aims at comes from a slot.
+_OPEN_NETS = tuple(
+    ipaddress.ip_network(n)
+    for n in ("127.0.0.0/8", "0.0.0.0/32", "192.0.2.0/24", "198.51.100.0/24", "203.0.113.0/24")
+)
+_FILL_SOURCE = re.compile(r"\bif=/dev/(zero|urandom|random|full)\b")
+_RUN_SAFETY: tuple[tuple[str, re.Pattern[str]], ...] = (
+    ("starts a process flood", re.compile(r":\s*\(\s*\)\s*\{[^}]*\|[^}]*&[^}]*\}")),
+    (
+        "loops without end",
+        re.compile(
+            r"\bwhile\s+(true|:|1|\[\s*1\s*\])(\s|;)|\buntil\s+false\b|\bfor\s*\(\(\s*;\s*;"
+        ),
+    ),
+    ("writes without end", re.compile(r"(^|[;&|]\s*)yes\b(?![^|]*\|\s*head\b)")),
+    (
+        "fills disk or memory",
+        re.compile(r"\bfallocate\b|\bstress(-ng)?\b|\btruncate\s+(-s|--size)[= ]*\+?\d+\s*[GgTt]"),
+    ),
+    (
+        "touches a raw device",
+        re.compile(
+            r"/dev/(sd[a-z]|nvme\d|vd[a-z]|xvd[a-z]|mem\b|kmem\b|port\b|mapper/|dm-\d|loop\d)"
+            r"|\b(mknod|mkfs(\.\w+)?|fdisk|parted|wipefs|losetup|blkdiscard)\b"
+        ),
+    ),
+    (
+        "reaches for the kernel",
+        re.compile(
+            r"\b(insmod|modprobe|rmmod|kexec|bpftool)\b|/proc/sysrq-trigger"
+            r"|/proc/sys/kernel/(core_pattern|modprobe|sysrq)|\bsysctl\s+(-w|--write)\b"
+        ),
+    ),
+    (
+        "reaches for the container's boundary",
+        re.compile(
+            r"(docker|containerd|crio|podman)\.sock|/run/(docker|containerd|crio)\b"
+            r"|\b(nsenter|unshare|pivot_root|runc|crictl|kubectl|capsh|setcap)\b"
+            r"|/proc/1/(root|ns)\b|release_agent|notify_on_release"
+            r"|\bmount\s+(-|/|\w+\s+/)|\bumount\b|\bchroot\b"
+        ),
+    ),
+    (
+        "stops or signals the whole host",
+        re.compile(
+            r"\b(reboot|shutdown|halt|poweroff|telinit)\b|\binit\s+[06]\b"
+            r"|\bkill(all5)?\s+(-\w+\s+)*-?1(\s|;|$)"
+        ),
+    ),
+)
+
+
+def check_run_safety(text: str) -> list[str]:
+    """Why an input may not be run on a real host; an empty list means these rules have
+    nothing against it. Each problem names the rule, never the input."""
+    problems = [
+        f"an input that really runs {name}" for name, pattern in _RUN_SAFETY if pattern.search(text)
+    ]
+    if _FILL_SOURCE.search(text) and not re.search(r"\bcount=\d+", text):
+        problems.append("an input that really runs copies from an endless device with no count")
+    for match in _IPV4.finditer(text):
+        try:
+            address = ipaddress.ip_address(match.group(0))
+        except ValueError:
+            continue  # not an address (a version number, say)
+        if not any(address in net for net in _OPEN_NETS) and not match.group(0).startswith("255."):
+            problems.append(
+                "an input that really runs names a literal address outside the reserved ranges"
+            )
+            break
     return problems
 
 
@@ -299,6 +410,18 @@ def lint(
     # command that names another procedure hands a reader the label just the same.
     forbidden = tuple(dict.fromkeys((*catalogue.procedures, scenario.id, *scenario_ids)))
     captured: set[str] = set()  # names captured by the sessions before this one
+    misplaced: set[str] = set()  # demo procedures that a split file names
+
+    def split_of(proc: Procedure) -> str:
+        """The split a procedure is in. A demo procedure is in none, by design, and that
+        counts as a place of its own; any other procedure needs one."""
+        placed = (splits or {}).get(proc.id)
+        if catalogue.set_of.get(proc.id) == DEMO:
+            if placed is not None:
+                misplaced.add(proc.id)
+            return DEMO
+        return placed or "unassigned"
+
     for si, session in enumerate(scenario.sessions):
         where = f"{scenario.id} session {si}"
         ids = [s.id for s in session.steps]
@@ -328,8 +451,11 @@ def lint(
                 out.append(f"{where}: login procedure must be an auth procedure for this protocol")
             elif session.protocol not in ("ssh", "mysql"):
                 out.append(f"{where}: only SSH and MySQL sessions authenticate")
-            elif splits is not None:
-                used_splits.add(splits.get(proc.id, "unassigned"))
+            else:
+                # The login's procedure counts as one of the scenario's, as its steps' do.
+                used_sets.add(catalogue.set_of.get(proc.id, PHASE2))
+                if splits is not None:
+                    used_splits.add(split_of(proc))
         for i, step in enumerate(session.steps):
             at = f"{where} step {step.id}"
             proc = catalogue.procedures.get(step.procedure)
@@ -358,6 +484,9 @@ def lint(
                 sample = render(proc.template, {s: step.with_.get(s, "x") for s in proc.slots()})
                 for problem in check_input(sample, forbidden):
                     out.append(f"{at}: {problem}")
+                if catalogue.set_of.get(proc.id) in REAL_HOST_SETS:
+                    for problem in check_run_safety(sample):
+                        out.append(f"{at}: {problem}")
             if step.capture is not None:
                 if proc.kind == "upload":
                     out.append(f"{at}: an upload has no output to capture from")
@@ -366,12 +495,14 @@ def lint(
                 capturing.add(step.capture.name)
             used_sets.add(catalogue.set_of.get(proc.id, PHASE2))
             if splits is not None:
-                used_splits.add(splits.get(proc.id, "unassigned"))
+                used_splits.add(split_of(proc))
         captured |= capturing
     # A depth scenario and a phase 2 one are split apart and held out apart. A scenario that
     # drew on both would tie the two splits together through its procedures.
     if len(used_sets) > 1:
         out.append(f"{scenario.id}: mixes catalogue sets {sorted(used_sets)}")
+    for pid in sorted(misplaced):
+        out.append(f"{scenario.id}: demo procedure {pid} is named by a split; that set has none")
     if splits is not None:
         if "unassigned" in used_splits:
             out.append(f"{scenario.id}: uses a procedure with no split")

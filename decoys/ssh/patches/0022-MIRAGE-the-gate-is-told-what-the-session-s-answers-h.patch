@@ -1,0 +1,77 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: MIRAGE <noreply@anthropic.com>
+Date: Wed, 18 Nov 2026 16:29:13 +0530
+Subject: [PATCH] MIRAGE: the gate is told what the session's answers have used
+
+The policy keeps a budget of generated output for a session and for its
+source, and calls nothing to learn what was spent, so it counted what it
+had granted: 400 tokens an answer. The median answer uses 50 and a cached
+one none, so a session was cut off from the responder after seven
+answers, and a program that had just worked could then "not be
+executed" (found by the suite's consistency group: the next login was
+given a working one).
+
+Each gate request now carries respond_spent: the output tokens the
+responder reported for the session's answers so far. A policy that does
+not know the field ignores it.
+---
+ src/cowrie/mirage_gate.py              |  3 +++
+ src/cowrie/mirage_respond.py           |  5 +++++
+ src/cowrie/test/test_mirage_respond.py | 11 +++++++++++
+ 3 files changed, 19 insertions(+)
+
+diff --git a/src/cowrie/mirage_gate.py b/src/cowrie/mirage_gate.py
+index 0d1de81..1f18bdf 100644
+--- a/src/cowrie/mirage_gate.py
++++ b/src/cowrie/mirage_gate.py
+@@ -390,6 +390,9 @@ def gate_then_run(shell: HoneyPotShell, cmdAndArgs: list[str]) -> Any:
+         "known": tier in ("emulated", "rendered"),
+         "tier": tier,
+         "supports": supports,
++        # What the session's generated answers have used so far (mirage_respond counts
++        # it): the policy's budget is tokens spent, and it calls nothing to learn them.
++        "respond_spent": int(getattr(proto, "mirage_respond_spent", 0)),
+         "interactive": bool(shell.interactive),
+         "user": shell.user.get("username") if isinstance(shell.user, dict) else None,
+     }
+diff --git a/src/cowrie/mirage_respond.py b/src/cowrie/mirage_respond.py
+index 4aff583..7ec3835 100644
+--- a/src/cowrie/mirage_respond.py
++++ b/src/cowrie/mirage_respond.py
+@@ -436,6 +436,11 @@ class Answer(HoneyPotCommand):
+             self.write(stdout)
+         if stderr:
+             self.errorWrite(stderr)
++        used = rec.get("output_tokens")
++        if isinstance(used, int) and not isinstance(used, bool) and used > 0:
++            # Told to the gate with every later request of the session (mirage_gate).
++            spent = getattr(self.protocol, "mirage_respond_spent", 0)
++            self.protocol.mirage_respond_spent = spent + used
+         self.finish(
+             code,
+             "answered",
+diff --git a/src/cowrie/test/test_mirage_respond.py b/src/cowrie/test/test_mirage_respond.py
+index 2972d15..045da82 100644
+--- a/src/cowrie/test/test_mirage_respond.py
++++ b/src/cowrie/test/test_mirage_respond.py
+@@ -169,6 +169,17 @@ class AnswerTests(RespondTestBase):
+         self.assertEqual(report["request_id"], self.gate.requests[0]["request_id"])
+         self.assertIsNotNone(report["first_ms"])
+ 
++    def test_the_gate_is_told_what_the_session_s_answers_have_used(self) -> None:
++        # The policy's budget is tokens spent. It was tokens granted, 400 an answer, which
++        # cut a session off after seven answers that had used a tenth of that.
++        self.ask([end(stdout="a\n", output_tokens=42)])
++        self.ask([end(stdout="b\n", output_tokens=0)])  # from the cache: nothing used
++        self.ask([end(stdout="c\n", output_tokens=58)])
++        self.ask([{"type": "abort", "reason": "deadline"}])
++        self.run_line("echo last")
++        spent = [request["respond_spent"] for request in self.gate.requests]
++        self.assertEqual(spent, [0, 42, 42, 100, 100])
++
+     def test_the_request_says_who_where_and_what_is_there(self) -> None:
+         self.run_line("cd /tmp; export APP=1; mkdir /tmp/seen")
+         self.ask([end()], "stat -f /tmp/seen missing")
+-- 
+2.50.1 (Apple Git-155)
+

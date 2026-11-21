@@ -42,7 +42,7 @@ from typing import Any
 import nats
 from nats.js.api import AckPolicy, ConsumerConfig
 
-from mirage_pipeline.normaliser import ClickHouse, Settings, _retry, ensure_streams
+from mirage_pipeline.normaliser import CHUNK, ClickHouse, Settings, _retry, ensure_streams
 from mirage_pipeline.rows import _ch_ts
 from mirage_schema import MirageEvent
 from mirage_schema.techniques import Engine
@@ -56,7 +56,6 @@ UNIT_WINDOW_S = 3600.0  # how far back a session rule looks for the same actor's
 SWEEP_EVERY_S = 15.0
 SWEEP_WINDOW_S = 300.0  # a change is reconciled if it is at most this old
 SWEEP_LIMIT = 500  # changed sessions read per source per sweep
-CHUNK = 2000  # session IDs per query
 RETIRED_TS = "1970-01-01 00:00:00.000000"  # the time on a retired actor alert
 
 # Aggregate a session's honeytokens and artifacts from its events (structural, no labels).

@@ -1,0 +1,159 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: MIRAGE <noreply@anthropic.com>
+Date: Tue, 17 Nov 2026 13:40:05 +0530
+Subject: [PATCH] MIRAGE: an exec request is acknowledged before its command
+ runs
+
+The emulator ran an exec request's command inside the request, so the
+output, the exit status and the channel's close went out before the reply
+to the request. sshd replies first. paramiko, which waits for the reply,
+reported 'Channel closed' for every command; any client can see the order.
+The policy gate's round trip had been hiding this: it showed on a decoy
+with the gate off, which is also how stock Cowrie behaves. The command now
+starts on the next reactor turn, and an end-of-file that arrives before it
+is delivered once it has started.
+---
+ src/cowrie/ssh/session.py                 | 37 ++++++++++++
+ src/cowrie/test/test_mirage_exec_order.py | 72 +++++++++++++++++++++++
+ 2 files changed, 109 insertions(+)
+ create mode 100644 src/cowrie/test/test_mirage_exec_order.py
+
+diff --git a/src/cowrie/ssh/session.py b/src/cowrie/ssh/session.py
+index b13f57b..6a3fa84 100644
+--- a/src/cowrie/ssh/session.py
++++ b/src/cowrie/ssh/session.py
+@@ -23,9 +23,43 @@ class HoneyPotSSHSession(session.SSHSession):
+ 
+     _log = Logger()
+ 
++    # MIRAGE: an exec request that has been acknowledged and not yet started,
++    # and an end-of-file that arrived for it in between (see request_exec).
++    _mirage_exec_pending = False
++    _mirage_eof = False
++
+     def __init__(self, *args, **kw):
+         session.SSHSession.__init__(self, *args, **kw)
+ 
++    def request_exec(self, data: bytes) -> Literal[0, 1]:
++        """MIRAGE: acknowledge an exec request before its command runs.
++
++        The emulator runs the command inside the request, so its output, its
++        exit status and the channel's close all went out before the reply to
++        the request itself. sshd replies first, because its command is another
++        process. A client that waits for the reply (paramiko does) saw the
++        channel close instead, and any client can see the order. With the
++        policy gate on, the gate's round trip happened to hide this.
++        """
++        from twisted.internet import reactor
++
++        self._mirage_exec_pending = True
++        reactor.callLater(0, self._mirage_exec, data)
++        return 1
++
++    def _mirage_exec(self, data: bytes) -> None:
++        self._mirage_exec_pending = False
++        if self.conn is None or self.localClosed or self.remoteClosed:
++            return  # the client went away between the request and its turn
++        if not session.SSHSession.request_exec(self, data):
++            self.loseConnection()
++            return
++        if self._mirage_eof:
++            # The client closed its side before the command started: it still
++            # has to learn that its input has ended.
++            self._mirage_eof = False
++            self.eofReceived()
++
+     def request_env(self, data: bytes) -> Literal[0, 1]:
+         name, rest = getNS(data)
+         value, rest = getNS(rest)
+@@ -68,6 +102,9 @@ class HoneyPotSSHSession(session.SSHSession):
+         """
+         Redirect EOF to emulated shell. If shell is gone, then disconnect
+         """
++        if self._mirage_exec_pending:
++            self._mirage_eof = True  # delivered once the command has started
++            return
+         if self.session:
+             self.session.eofReceived()
+         else:
+diff --git a/src/cowrie/test/test_mirage_exec_order.py b/src/cowrie/test/test_mirage_exec_order.py
+new file mode 100644
+index 0000000..e5d7135
+--- /dev/null
++++ b/src/cowrie/test/test_mirage_exec_order.py
+@@ -0,0 +1,72 @@
++# SPDX-License-Identifier: BSD-3-Clause
++# ABOUTME: Tests that an exec request is acknowledged before its command runs,
++# ABOUTME: as sshd does, and that an early end-of-file still reaches the command.
++
++from __future__ import annotations
++
++import unittest
++from unittest import mock
++
++from twisted.conch.ssh import session as conch_session
++from twisted.conch.ssh.common import NS
++
++from cowrie.ssh.session import HoneyPotSSHSession
++from cowrie.test.reactorpump import pump
++
++
++def channel() -> HoneyPotSSHSession:
++    chan = HoneyPotSSHSession()
++    chan.conn = mock.MagicMock()
++    chan.localClosed = chan.remoteClosed = False
++    return chan
++
++
++class ExecOrderTests(unittest.TestCase):
++    def test_the_request_is_accepted_before_the_command_starts(self) -> None:
++        chan = channel()
++        started: list[bytes] = []
++        with mock.patch.object(
++            conch_session.SSHSession, "request_exec", lambda _self, data: started.append(data) or 1
++        ):
++            self.assertEqual(chan.request_exec(NS(b"id")), 1)
++            # Twisted sends the reply when this returns; nothing has run yet.
++            self.assertEqual(started, [])
++            self.assertTrue(pump(lambda: bool(started)))
++        self.assertEqual(started, [NS(b"id")])
++        self.assertFalse(chan._mirage_exec_pending)
++
++    def test_an_end_of_file_that_comes_first_is_delivered_after_the_start(self) -> None:
++        chan = channel()
++        order: list[str] = []
++
++        def start(self: HoneyPotSSHSession, _data: bytes) -> int:
++            order.append("started")
++            self.session = mock.MagicMock()
++            self.session.eofReceived.side_effect = lambda: order.append("eof")
++            return 1
++
++        with mock.patch.object(conch_session.SSHSession, "request_exec", start):
++            chan.request_exec(NS(b"cat"))
++            chan.eofReceived()  # the client has nothing to send
++            self.assertEqual(order, [])  # and the channel is not closed for it
++            chan.conn.sendClose.assert_not_called()
++            self.assertTrue(pump(lambda: len(order) == 2))
++        self.assertEqual(order, ["started", "eof"])
++
++    def test_a_channel_closed_in_between_runs_nothing(self) -> None:
++        chan = channel()
++        started: list[bytes] = []
++        with mock.patch.object(
++            conch_session.SSHSession, "request_exec", lambda _self, data: started.append(data) or 1
++        ):
++            chan.request_exec(NS(b"id"))
++            chan.remoteClosed = True
++            pump(lambda: not chan._mirage_exec_pending)
++        self.assertEqual(started, [])
++
++    def test_a_command_that_cannot_start_closes_the_channel(self) -> None:
++        chan = channel()
++        with mock.patch.object(conch_session.SSHSession, "request_exec", lambda _s, _d: 0):
++            with mock.patch.object(chan, "loseConnection") as lose:
++                chan.request_exec(NS(b"id"))
++                self.assertTrue(pump(lambda: lose.called))
+-- 
+2.50.1 (Apple Git-155)
+

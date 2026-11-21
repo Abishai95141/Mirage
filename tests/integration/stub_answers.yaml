@@ -1,0 +1,47 @@
+# What the scripted model server answers in the integration tests (tests/integration/
+# test_respond.py). Every command here is one the deployed decoy has a program for and no
+# emulation of, so the policy's rules v2 send it to the responder. These are not answers to
+# keep or to show anyone: several are wrong on purpose, to see that they never get through,
+# and the ones that change something are only what the test needs applied (`install` stood
+# here until the decoy got its own on 18 November 2026; `locale -a` until the render library
+# got it).
+answers:
+  # read-only: streamed, and cached for the next session
+  - match: 'locale charmap'
+    stdout: "ANSI_X3.4-1968\n"
+  - match: 'od -c /etc/hostname'
+    stdout: "0000000   w   e   b   0   1  \\n\n0000006\n"
+    piece: 6
+    delay_ms: 20
+  # changes something: held, its operation applied before a line is shown
+  - match: 'mkfifo /tmp/itest-made'
+    ops: [{op: mkdir, path: /tmp/itest-made, mode: 493}]
+  - match: 'ssh-keygen -q -f /tmp/itest-file'
+    stdout: ""
+    ops: [{op: write, path: /tmp/itest-file, content: "from the answer\n", mode: 384}]
+  # an operation that cannot be applied: its parent is not there
+  - match: 'mkfifo /tmp/itest-absent/x/y'
+    stdout: "this line must never be shown\n"
+    ops: [{op: mkdir, path: /tmp/itest-absent/x/y, mode: 493}]
+  # a line the output filter refuses
+  - match: 'locale -m'
+    stdout: "C\nThis is a honeypot\n"
+  # a first line that comes too late
+  - match: 'locale -k LC_TIME'
+    stdout: "d_t_fmt\n"
+    first_delay_ms: 4000
+  # slow enough to interrupt, and to type behind
+  - match: 'od -c /etc/hosts'
+    stdout: "slow 1\nslow 2\nslow 3\nslow 4\nslow 5\nslow 6\nslow 7\nslow 8\n"
+    piece: 7
+    delay_ms: 350
+  - match: 'od -c /etc/shells'
+    stdout: "shells 1\nshells 2\nshells 3\n"
+    piece: 9
+    delay_ms: 250
+  # asked while the model server is stopped: the entry is here so that it is the stop, not a
+  # missing answer, that the test sees
+  - match: 'locale language'
+    stdout: "American English\n"
+  - match: 'locale territory'
+    stdout: "United States\n"

@@ -234,7 +234,7 @@ def test_every_decision_logs_policies_versions_and_the_verb_class(tmp_path, monk
     # the context: the class beside the raw verb, and which feature set this is
     assert (r["context"]["verb"], r["context"]["verb_class"]) == ("cat", "file_read")
     assert r["context"]["rule_action"] == "allow"
-    assert r["context_version"] == f"{CONTEXT_VERSION}.{verbs.VERSION}" == "2.1"
+    assert r["context_version"] == f"{CONTEXT_VERSION}.{verbs.VERSION}" == "3.1"
     # every field the record had before is still there
     for old in ("eventid", "timestamp", "request", "input", "action", "decision_id", "latency_us"):
         assert old in r
@@ -257,4 +257,4 @@ def test_the_pipeline_mapping_still_reads_the_record(tmp_path, monkeypatch):
         assert p["explore"] is record["explore"]
         assert event.policy.action == record["action"]
         assert event.policy.propensity == record["propensity"]
-        assert event.raw["context_version"] == "2.1"  # not in the payload: see the mapping
+        assert event.raw["context_version"] == "3.1"  # not in the payload: see the mapping

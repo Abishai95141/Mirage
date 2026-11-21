@@ -131,13 +131,16 @@ def _networks(service: str) -> set[str]:
 
 def test_network_membership():
     for decoy in DECOYS:
-        assert _networks(decoy) == {"mirage_decoy", "mirage_gate"}, decoy
+        # Only the SSH decoy has commands for the responder to answer (phase 3).
+        extra = {"mirage_respond"} if decoy == "cowrie" else set()
+        assert _networks(decoy) == {"mirage_decoy", "mirage_gate"} | extra, decoy
     assert _networks("policy") == {"mirage_gate"}
+    assert _networks("responder") == {"mirage_respond", "mirage_llm"}
     assert _networks("edge") == {"mirage_decoy", "mirage_edge"}
 
 
 def test_decoy_and_gate_networks_are_internal():
-    for net in ("mirage_decoy", "mirage_gate"):
+    for net in ("mirage_decoy", "mirage_gate", "mirage_respond", "mirage_llm"):
         info = json.loads(docker("network", "inspect", net).stdout)[0]
         assert info["Internal"] is True, net
 
@@ -166,6 +169,71 @@ def test_decoys_reach_only_the_policy_port_on_the_gate():
         # (one profile is one host). On the gate they reach only the policy port.
         leaks = {k: v for k, v in leaks.items() if not any(ip in k for ip in others)}
         assert leaks == {}, (decoy, leaks)
+
+
+def test_the_responder_has_no_egress_and_no_way_to_the_pipeline():
+    """Attacker text reaches the responder, and through it a model. Neither may reach
+    anything but each other: no input leaves this machine (phase 3 spec 3.2b)."""
+    results = _run_in(["exec", "mirage-responder-1", "python"], _targets())
+    _assert_blocked(results)
+    # Nor the policy service, which is on another network altogether.
+    policy_ip = container_ip("policy", "mirage_gate")
+    res = _run_in(
+        ["exec", "mirage-responder-1", "python"],
+        {"tcp": [[policy_ip, 8000], ["policy", 8000]], "dns": ["policy"], "udp_dns": []},
+    )
+    assert not any(v == "connected" or v.startswith("resolved:") for v in res.values()), res
+
+
+def test_only_the_ssh_decoy_reaches_the_responder_and_only_its_port():
+    responder_ip = container_ip("responder", "mirage_respond")
+    targets = {
+        "tcp": [
+            [responder_ip, 8100],
+            [responder_ip, 22],
+            [responder_ip, 8000],
+            [responder_ip, 8080],
+        ],
+        "dns": [],
+        "udp_dns": [responder_ip],
+    }
+    res = _run_in(["exec", "mirage-cowrie-1", COWRIE_PY], targets)
+    assert res.pop(f"tcp {responder_ip}:8100") == "connected", res
+    assert not any(v in ("connected", "answered") for v in res.values()), res
+    for decoy, py in DECOYS.items():
+        if decoy == "cowrie":
+            continue
+        res = _run_in(
+            ["exec", f"mirage-{decoy}-1", py],
+            {
+                "tcp": [[responder_ip, 8100], ["responder", 8100]],
+                "dns": ["responder"],
+                "udp_dns": [],
+            },
+        )
+        assert not any(v == "connected" or v.startswith("resolved:") for v in res.values()), (
+            decoy,
+            res,
+        )
+
+
+RESPONDER_POST = r"""
+import json, sys, urllib.request, urllib.error
+req = urllib.request.Request("http://responder:8100/v1/respond", data=b"{}",
+    headers={"Content-Type": "application/json", "Authorization": sys.argv[1]})
+try:
+    print(urllib.request.urlopen(req, timeout=3).status)
+except urllib.error.HTTPError as e:
+    print(e.code)
+"""
+
+
+def test_the_responder_refuses_a_wrong_or_missing_token():
+    for auth in ("Bearer wrong-token-0000000000000000", ""):
+        out = docker(
+            "exec", "mirage-cowrie-1", COWRIE_PY, "-c", RESPONDER_POST, auth
+        ).stdout.strip()
+        assert out == "401", out
 
 
 def test_policy_service_has_no_egress():

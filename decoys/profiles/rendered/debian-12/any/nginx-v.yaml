@@ -1,0 +1,21 @@
+# Written by `mirage-profile render-library`; do not edit. What a real host printed.
+argv: nginx -v
+program: /usr/sbin/nginx
+source: reference-container
+who: any
+exit_code: 0
+ms:
+- 3
+- 3
+- 3
+- 3
+- 3
+stdout: ''
+stderr: |
+  nginx version: nginx/1.22.1
+inventory:
+  corpus: 0
+  lab: 5
+shape: error
+streams: stderr
+recorded: {}

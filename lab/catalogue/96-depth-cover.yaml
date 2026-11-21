@@ -6,7 +6,7 @@ procedures:
     tactic: TA0002
     source: own
     protocol: ssh
-    template: printf "log-{{hex}}\n" > /var/tmp/{{word}}-c/app.log && echo ok$?
+    template: mkdir -p /var/tmp/{{word}}-c && printf "log-{{hex}}\n" > /var/tmp/{{word}}-c/app.log && echo ok$?
   - id: d-log-has
     technique: T1059.004
     tactic: TA0002
@@ -30,7 +30,7 @@ procedures:
     tactic: TA0002
     source: own
     protocol: ssh
-    template: cp /etc/hostname /var/tmp/{{word}}-c/{{file}}.txt && echo ok$?
+    template: mkdir -p /var/tmp/{{word}}-c && cp /etc/hostname /var/tmp/{{word}}-c/{{file}}.txt && echo ok$?
   - id: d-file-delete
     technique: T1070.004
     tactic: TA0005

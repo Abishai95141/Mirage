@@ -1,0 +1,12 @@
+# A hardware class (phase 3 spec 3.2a, decision R6): one believable machine a deployment can
+# claim to be. Everything a class says about itself is recorded from a real Debian 12 system
+# on this virtual hardware (capture/run.sh), never written by hand or by a model.
+id: kvm-epyc-1c-2g
+about: The smallest KVM virtual server a hosting company sells. One virtual CPU, 2 GB, a 40 GB virtio disk.
+vm:
+  cpu: EPYC
+  cpus: 1
+  memory_mb: 2048
+  disk_gb: 40
+  machine: pc
+  disk_bus: virtio

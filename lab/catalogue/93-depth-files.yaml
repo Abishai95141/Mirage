@@ -84,4 +84,4 @@ procedures:
     tactic: TA0002
     source: own
     protocol: ssh
-    template: pwd | grep -q "{{word}}-w" && echo ok$?
+    template: cd /var/tmp/{{word}}-w && pwd | grep -q "{{word}}-w" && echo ok$?

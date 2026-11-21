@@ -26,7 +26,7 @@ import nats
 from nats.js.api import AckPolicy, ConsumerConfig
 
 from mirage_pipeline.analyst import STRENGTH, Analyst, Changes, Exposure, Use
-from mirage_pipeline.normaliser import ClickHouse, Settings, _retry, ensure_streams
+from mirage_pipeline.normaliser import CHUNK, ClickHouse, Settings, _retry, ensure_streams
 from mirage_pipeline.rows import _ch_ts, to_row
 from mirage_schema import MirageEvent
 from mirage_tokens import Token, load
@@ -190,6 +190,7 @@ class Sessioniser:
             len(a.linked),
             len(a.conn_map),
         )
+        await self.reconcile()
 
     def analyse(self, events: list[MirageEvent]) -> Changes:
         out = Changes()
@@ -236,22 +237,65 @@ class Sessioniser:
         return await self.summarise(ch.touched, version)
 
     async def summarise(self, sids: set[str], version: int) -> int:
+        """Recompute the summary of each of these logical sessions from its events.
+
+        The IDs go to the store in parts. A logical session and all of its connections are
+        always in the same part: the query groups by logical session, so one cut in two
+        would be written as two half summaries, the later replacing the earlier.
+        """
         if not sids:
             return 0
         a = self.analyst
-        pairs = [(c, s) for c, s in a.conn_map.items() if s in sids]
-        ids = sorted(sids | {c for c, _ in pairs})
-        rows = []
-        for i in range(0, len(ids), 2000):
-            rows += await self.ch.select(
+        conns_of: dict[str, list[str]] = {s: [] for s in sids}
+        for c, s in a.conn_map.items():
+            if s in conns_of and c != s:
+                conns_of[s].append(c)
+        parts: list[list[str]] = [[]]
+        size = 0
+        for s in sorted(conns_of):
+            need = 1 + len(conns_of[s])
+            if size and size + need > CHUNK:
+                parts.append([])
+                size = 0
+            parts[-1].append(s)
+            size += need
+        written = 0
+        for part in parts:
+            pairs = [(c, s) for s in part for c in conns_of[s]]
+            rows = await self.ch.select(
                 SUMMARY_SQL,
                 conns=[c for c, _ in pairs],
                 sids=[s for _, s in pairs],
-                ids=ids[i : i + 2000],
+                ids=sorted(set(part) | {c for c, _ in pairs}),
             )
-        out = [summary_row(r, a.components.actor_id(r["sid"]), version) for r in rows]
-        await self.ch.insert(out, "mirage.session_summary")
-        return len(out)
+            out = [summary_row(r, a.components.actor_id(r["sid"]), version) for r in rows]
+            await self.ch.insert(out, "mirage.session_summary")
+            written += len(out)
+        return written
+
+    async def reconcile(self) -> int:
+        """Bring every stored summary's actor ID into line with the links that are stored.
+
+        Links are written before summaries. A batch that fails between the two leaves the
+        links in the store, and when it is delivered again they are already known, so nothing
+        marks their sessions for a new summary: the actor's sessions would keep two IDs for
+        good. This runs whenever the state is rebuilt from the store, and rewrites exactly
+        the summaries whose actor ID is not what the links say.
+        """
+        a = self.analyst
+        stale = {
+            r["session_id"]
+            for r in await self.ch.select(
+                "SELECT session_id, actor_id FROM mirage.session_summary FINAL"
+            )
+            if r["actor_id"] != a.components.actor_id(r["session_id"])
+        }
+        if stale:
+            log.warning(
+                "%d summaries name another actor than their links do; rewriting", len(stale)
+            )
+            await self.summarise(stale, time.time_ns())
+        return len(stale)
 
 
 async def run(cfg: Config, stop: asyncio.Event) -> None:

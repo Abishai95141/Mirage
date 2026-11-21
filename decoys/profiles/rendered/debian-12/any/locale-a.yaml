@@ -1,0 +1,22 @@
+# Written by `mirage-profile render-library`; do not edit. What a real host printed.
+argv: locale -a
+program: /usr/bin/locale
+source: reference-container
+who: any
+exit_code: 0
+ms:
+- 2
+- 2
+- 2
+- 1
+- 2
+stdout: |
+  C
+  C.utf8
+  POSIX
+stderr: ''
+inventory:
+  responder: 1
+shape: text
+streams: stdout
+recorded: {}

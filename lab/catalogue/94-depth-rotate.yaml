@@ -30,7 +30,7 @@ procedures:
     tactic: TA0006
     source: own
     protocol: ssh
-    template: grep -qE "^root:[^*!]" /etc/shadow && echo ok$?
+    template: "grep -qE '^root:[^*!]' /etc/shadow && echo ok$?"
   - id: d-passwd-age
     technique: T1098
     tactic: TA0003

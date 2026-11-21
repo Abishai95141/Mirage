@@ -1,0 +1,762 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: MIRAGE <noreply@anthropic.com>
+Date: Tue, 17 Nov 2026 03:15:19 +0530
+Subject: [PATCH 09/10] MIRAGE: render library: recorded answers for commands
+ the emulator lacks
+
+A deployment's profile carries what a real host of its kind printed for a few
+commands the emulator has no class for (the text, the stream, the exit code,
+the time it took). The shell asks the library before its own lookup. An entry
+answers only when the emulator has no command of that name, the word typed
+resolves to the entry's program and that file is still as installed, the
+arguments are exactly the entry's, and the caller is one the entry answers.
+Everything else is answered as before.
+
+The gate request and the decision event gain 'tier' (emulated, rendered or
+none); a rendered command is 'known'. /proc/loadavg and /proc/stat are
+generated on each read from the hardware class's record, in step with the
+uptime the emulator reports. With no [mirage] render_library set, nothing
+changes.
+---
+ docs/OUTPUT.rst                       |  16 +-
+ src/cowrie/core/eventids.py           |   1 +
+ src/cowrie/mirage_gate.py             |  19 +-
+ src/cowrie/mirage_render.py           | 300 ++++++++++++++++++++++++++
+ src/cowrie/shell/honeypot.py          |  12 +-
+ src/cowrie/shell/protocol.py          |   5 +
+ src/cowrie/test/test_mirage_render.py | 278 ++++++++++++++++++++++++
+ 7 files changed, 620 insertions(+), 11 deletions(-)
+ create mode 100644 src/cowrie/mirage_render.py
+ create mode 100644 src/cowrie/test/test_mirage_render.py
+
+diff --git a/docs/OUTPUT.rst b/docs/OUTPUT.rst
+index 28bf796..938c545 100644
+--- a/docs/OUTPUT.rst
++++ b/docs/OUTPUT.rst
+@@ -353,7 +353,8 @@ Attributes:
+     * `input`: the expanded command line
+     * `action`: ``allow``, ``delay``, ``fake_success``, ``fake_error`` or ``terminate``
+     * `fallback`: true when no valid decision arrived in time and ``allow`` was used
+-    * `known`: whether the emulated shell implements the command
++    * `known`: whether the decoy has an answer of its own for the command
++    * `tier`: where that answer would come from: ``emulated``, ``rendered`` (the render library) or ``none``
+     * `decision_id`: the policy service's identifier for the decision
+     * `propensity`: probability the policy gave the chosen action
+     * `latency_ms`: time spent waiting for the decision
+@@ -376,6 +377,19 @@ Attributes:
+     * `mode`, `uid`, `gid`, `size`: the new attributes, where they apply
+     * `sha256`: the content's hash, for a completed SFTP upload
+ 
++cowrie.render.served
++====================
++
++MIRAGE: a command the emulator has no class for was answered from the
++deployment's render library (only emitted when ``[mirage] render_library`` is
++set).
++
++Attributes:
++
++    * `input`: the command line answered
++    * `library`: the version of the library the answer came from
++    * `exit_code`: the exit status the answer set
++
+ cowrie.proxy.backend_connect_error
+ ==================================
+ 
+diff --git a/src/cowrie/core/eventids.py b/src/cowrie/core/eventids.py
+index 2140c5c..ca43048 100644
+--- a/src/cowrie/core/eventids.py
++++ b/src/cowrie/core/eventids.py
+@@ -66,6 +66,7 @@ ALL: frozenset[str] = frozenset(
+         # MIRAGE policy gate
+         "cowrie.policy.decision",
+         "cowrie.fs.change",
++        "cowrie.render.served",
+         # Proxy backend plumbing
+         "cowrie.proxy.backend_connect_error",
+         "cowrie.proxy.backend_connected",
+diff --git a/src/cowrie/mirage_gate.py b/src/cowrie/mirage_gate.py
+index aba4543..f547ec9 100644
+--- a/src/cowrie/mirage_gate.py
++++ b/src/cowrie/mirage_gate.py
+@@ -254,14 +254,15 @@ def _session_id(shell: HoneyPotShell) -> str | None:
+     return getattr(events, "identity", {}).get("session")
+ 
+ 
+-def _is_known(shell: HoneyPotShell, argv: list[str]) -> bool:
++def _tier(shell: HoneyPotShell, argv: list[str]) -> str:
++    """What the decoy would answer with if allowed: its emulator, its render
++    library (``rendered``), or nothing of its own (``none``)."""
++    from cowrie import mirage_render
++
+     words = [w for w in argv if not ASSIGNMENT_WORD.match(w)]
+     if not words:
+-        return True
+-    if words[0] in shell.functions:
+-        return True
+-    paths = shell.environ.get("PATH", "").split(":")
+-    return shell.protocol.getCommand(words[0], paths, shell.cwd) is not None
++        return "emulated"
++    return mirage_render.tier(shell, words)
+ 
+ 
+ def gate_then_run(shell: HoneyPotShell, cmdAndArgs: list[str]) -> Any:
+@@ -271,6 +272,7 @@ def gate_then_run(shell: HoneyPotShell, cmdAndArgs: list[str]) -> Any:
+ 
+     argv = list(cmdAndArgs)
+     proto = shell.protocol
++    tier = _tier(shell, argv)
+     proto.mirage_seq = getattr(proto, "mirage_seq", 0) + 1
+     request = {
+         "request_id": str(uuid.uuid4()),
+@@ -284,7 +286,9 @@ def gate_then_run(shell: HoneyPotShell, cmdAndArgs: list[str]) -> Any:
+         "protocol": "ssh",
+         "argv": argv,
+         "cwd": shell.cwd,
+-        "known": _is_known(shell, argv),
++        # A command the render library answers is known to the decoy too.
++        "known": tier != "none",
++        "tier": tier,
+         "interactive": bool(shell.interactive),
+         "user": shell.user.get("username") if isinstance(shell.user, dict) else None,
+     }
+@@ -334,6 +338,7 @@ def _apply(
+         fallback=fallback,
+         fallback_reason=reason,
+         known=request["known"],
++        tier=request["tier"],
+         seq=request["seq"],
+         rule_id=None if fallback else decision.get("rule_id"),
+         rules_version=None if fallback else decision.get("rules_version"),
+diff --git a/src/cowrie/mirage_render.py b/src/cowrie/mirage_render.py
+new file mode 100644
+index 0000000..d4c67e4
+--- /dev/null
++++ b/src/cowrie/mirage_render.py
+@@ -0,0 +1,300 @@
++# SPDX-License-Identifier: BSD-3-Clause
++# ABOUTME: MIRAGE render library. Answers commands the emulator lacks from this
++# ABOUTME: deployment's recorded answers, and the /proc files that change by the second.
++
++"""MIRAGE render library for the Cowrie shell.
++
++``[mirage] render_library`` names a JSON file written when the deployment's
++profile is rendered. It holds what a real host of this deployment's kind printed
++for a few commands the emulator lacks: the text, the stream, the exit code and
++the time it took. ``HoneyPotShell._run_expanded`` asks :func:`command_for`
++before its own lookup. With no file configured it returns None every time:
++stock behaviour.
++
++An entry answers a command only when all of this holds:
++
++* the emulator has no command class of that name (the emulator wins);
++* the word typed resolves, through PATH or as a path, to the entry's program,
++  and that file is still the one the image came with: not removed, not
++  overwritten, still executable;
++* the arguments are exactly the entry's;
++* the caller is someone the entry answers (some answers are root's alone).
++
++Anything else falls through to the stock lookup, so a command this file does
++not know is answered exactly as it was before.
++
++The same file carries the hardware class's record of /proc/stat and
++/proc/loadavg. Those change by the second on a real machine, so they are
++generated on each read (:func:`register_proc`), in step with the uptime the
++emulator already reports.
++"""
++
++from __future__ import annotations
++
++import json
++import random
++import stat
++from typing import TYPE_CHECKING, Any
++
++from twisted.logger import Logger
++
++from cowrie.core.config import CowrieConfig
++from cowrie.shell import fs as cfs
++from cowrie.shell.command import HoneyPotCommand
++
++if TYPE_CHECKING:
++    from cowrie.shell.honeypot import HoneyPotShell
++
++log = Logger()
++
++USER_HZ = 100  # the unit of the CPU times in /proc/stat
++# What an idle server's processors do after boot, as shares of their time. The
++# class's record covers the boot itself; these carry it forward. They are a
++# model of a quiet machine, not a record of one.
++IDLE_USER, IDLE_SYSTEM, IDLE_IOWAIT, IDLE_SOFTIRQ = 0.004, 0.003, 0.0005, 0.0005
++# After boot, interrupts and context switches come at this share of the rate
++# they came at during the recorded boot.
++QUIET_RATE = 0.05
++MAX_OUTPUT_BYTES = 256 * 1024
++
++
++def _merged(path: str) -> str:
++    """Debian's merged /usr: /bin and /sbin are /usr/bin and /usr/sbin."""
++    for top in ("/bin/", "/sbin/"):
++        if path.startswith(top):
++            return "/usr" + path
++    return path
++
++
++class Library:
++    def __init__(self, doc: dict[str, Any]) -> None:
++        self.version: str = str(doc.get("version", ""))
++        self.entries: dict[tuple[str, tuple[str, ...]], dict[str, Any]] = {}
++        for entry in doc.get("entries") or []:
++            argv = [str(a) for a in entry["argv"]]
++            program = _merged(str(entry["program"]))
++            if program.rsplit("/", 1)[-1] != argv[0]:
++                continue  # an entry must be for the program it names
++            self.entries[(program, tuple(argv[1:]))] = entry
++        self.programs = {program for program, _ in self.entries}
++        self.proc: dict[str, Any] = doc.get("proc") or {}
++        self.delay: bool = CowrieConfig.getboolean("mirage", "render_delay", fallback=True)
++
++    @classmethod
++    def from_config(cls) -> Library | None:
++        path = CowrieConfig.get("mirage", "render_library", fallback="")
++        if not path:
++            return None
++        try:
++            with open(path, encoding="utf-8") as fh:
++                library = cls(json.load(fh))
++        except (OSError, ValueError, KeyError, TypeError) as e:
++            # A missing or broken file must never stop the decoy: it answers
++            # as stock Cowrie does.
++            log.warn("render library not loaded from {path}: {err!r}", path=path, err=e)
++            return None
++        log.info(
++            "render library {version}: {n} entries",
++            version=library.version,
++            n=len(library.entries),
++        )
++        return library
++
++
++_UNSET = object()
++_library: Any = _UNSET
++
++
++def get_library() -> Library | None:
++    global _library
++    if _library is _UNSET:
++        _library = Library.from_config()
++    return _library
++
++
++def reset_for_tests(library: Library | None | object = _UNSET) -> None:
++    global _library
++    _library = library
++
++
++def _program(shell: HoneyPotShell, cmd: str, paths: list[str]) -> str | None:
++    """The file ``cmd`` names, as the shell would find it: as a path when it has
++    a slash, through PATH otherwise."""
++    fs = shell.protocol.fs
++    if "/" in cmd:
++        path = fs.resolve_path(cmd, shell.cwd)
++        return path if fs.exists(path) else None
++    for directory in paths:
++        if not directory:
++            continue
++        candidate = f"{fs.resolve_path(directory, shell.cwd)}/{cmd}"
++        if fs.exists(candidate):
++            return candidate
++    return None
++
++
++def _as_installed(shell: HoneyPotShell, path: str) -> bool:
++    """Whether ``path`` is still the program the image came with: a regular,
++    executable file with no contents written in this session."""
++    node = shell.protocol.fs.getfile(path)
++    if node is None or node[cfs.A_TYPE] != cfs.T_FILE:
++        return False
++    if node[cfs.A_REALFILE] or isinstance(node[cfs.A_CONTENTS], bytes):
++        return False
++    return bool(node[cfs.A_MODE] & (stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH))
++
++
++def find(
++    shell: HoneyPotShell, cmd: str, args: list[str], environ: dict[str, str]
++) -> dict[str, Any] | None:
++    """The library's entry for this command as this shell would run it, or None."""
++    library = get_library()
++    if library is None or not cmd.strip():
++        return None
++    commands = shell.protocol.commands
++    if cmd in commands or cmd.rsplit("/", 1)[-1] in commands:
++        return None  # the emulator implements it
++    found = _program(shell, cmd, environ.get("PATH", "").split(":"))
++    if found is None or found in commands:
++        return None
++    program = _merged(found)
++    if program not in library.programs:
++        return None
++    entry = library.entries.get((program, tuple(args)))
++    if entry is None:
++        return None
++    if entry.get("who") == "root" and shell.user.get("uid") != 0:
++        return None
++    if not _as_installed(shell, found):
++        return None
++    return entry
++
++
++def command_for(
++    shell: HoneyPotShell, cmd: str, args: list[str], environ: dict[str, str]
++) -> type[HoneyPotCommand] | None:
++    """A command class that prints the library's answer, or None when the
++    library has none and the stock lookup should run."""
++    entry = find(shell, cmd, args, environ)
++    if entry is None:
++        return None
++    library = get_library()
++    assert library is not None
++    out = str(entry.get("stdout") or "").encode("utf8")[:MAX_OUTPUT_BYTES]
++    err = str(entry.get("stderr") or "").encode("utf8")[:MAX_OUTPUT_BYTES]
++    code = int(entry.get("exit_code", 0))
++    times = [int(t) for t in entry.get("ms") or [] if int(t) > 0]
++    version = library.version
++    line = " ".join([cmd, *args])
++
++    class Command_rendered(HoneyPotCommand):
++        def start(self) -> None:
++            self.protocol.events.dispatch(
++                "cowrie.render.served",
++                "Rendered: %(input)s",
++                input=line,
++                library=version,
++                exit_code=code,
++            )
++            # The time the real command took, one of the times measured: the
++            # prompt comes back as fast as it would on the machine recorded.
++            delay = random.choice(times) / 1000.0 if times and library.delay else 0.0
++            if delay > 0:
++                self.callLater(delay, self.answer)
++            else:
++                self.answer()
++
++        def answer(self) -> None:
++            if out:
++                self.writeBytes(out)
++            if err:
++                self.errorWritefn(err)
++            self.exit(code)
++
++    return Command_rendered
++
++
++def tier(shell: HoneyPotShell, argv: list[str]) -> str:
++    """What the decoy would answer this simple command with if allowed:
++    ``emulated`` (a command the emulator has), ``rendered`` (the library) or
++    ``none`` (nothing of its own)."""
++    words = list(argv)
++    args, _ops = shell.parser.parse_redirections(words)
++    if not args or args[0] in shell.functions:
++        return "emulated"
++    if find(shell, args[0], args[1:], shell.environ) is not None:
++        return "rendered"
++    paths = shell.environ.get("PATH", "").split(":")
++    known = shell.protocol.getCommand(args[0], paths, shell.cwd) is not None
++    return "emulated" if known else "none"
++
++
++# ------------------------------------------------------------------- /proc
++
++
++def proc_loadavg(protocol: Any, library: Library) -> bytes:
++    """/proc/loadavg in step with what ``uptime`` prints here (a load of zero):
++    one task running, the reader; as many tasks as the class recorded; and the
++    newest process ID of this session."""
++    fields = str(library.proc.get("loadavg", "")).split()
++    tasks = fields[3].split("/")[-1] if len(fields) > 3 and "/" in fields[3] else "100"
++    return f"0.00 0.00 0.00 1/{tasks} {protocol.last_pid}\n".encode()
++
++
++def proc_stat(protocol: Any, library: Library) -> bytes:
++    """/proc/stat for an idle machine that has been up as long as this one says
++    it has: the class's record of the counters at the end of its boot, carried
++    forward to now. Since boot each processor's time has gone to idle but for a
++    trace; interrupts and context switches have come at a quiet machine's rate;
++    the boot time is the emulator's own and the fork count keeps ahead of the
++    session's process IDs. Two reads a moment apart differ as they would."""
++    recorded = float(library.proc.get("recorded_uptime_s") or 0.0)
++    extra = max(0.0, float(protocol.uptime()) - recorded)
++    growth = 1.0 + (QUIET_RATE * extra / recorded if recorded > 0 else 0.0)
++    ticks = int(extra * USER_HZ)
++    busy = {
++        0: int(ticks * IDLE_USER),
++        2: int(ticks * IDLE_SYSTEM),
++        4: int(ticks * IDLE_IOWAIT),
++        6: int(ticks * IDLE_SOFTIRQ),
++    }
++    lines: list[tuple[str, list[int]]] = []
++    for raw in str(library.proc.get("stat", "")).splitlines():
++        name, *rest = raw.split()
++        try:
++            values = [int(v) for v in rest]
++        except ValueError:
++            return b""  # not a record this can carry forward: say nothing
++        if name.startswith("cpu") and name != "cpu" and len(values) >= 7:
++            for column, more in busy.items():
++                values[column] += more
++            values[3] += ticks - sum(busy.values())
++        elif name in ("intr", "ctxt", "softirq"):
++            values = [int(v * growth) for v in values]
++        elif name == "btime":
++            values = [int(protocol.boot_time())]
++        elif name == "processes" and values:
++            values = [max(values[0], int(protocol.last_pid) + 1)]
++        lines.append((name, values))
++    cores = [values for name, values in lines if name.startswith("cpu") and name != "cpu"]
++    out = []
++    for name, values in lines:
++        if name == "cpu" and cores:
++            # The first line is the sum of the processors' own lines.
++            values = [sum(column) for column in zip(*cores, strict=False)]
++            out.append("cpu  " + " ".join(map(str, values)))
++        else:
++            out.append(" ".join([name, *map(str, values)]))
++    return ("\n".join(out) + "\n").encode() if out else b""
++
++
++def register_proc(protocol: Any) -> None:
++    """Have this session's filesystem generate the /proc files the class
++    recorded and a file cannot serve."""
++    library = get_library()
++    if library is None or not library.proc:
++        return
++    if library.proc.get("loadavg"):
++        protocol.fs.generated_files["/proc/loadavg"] = lambda: proc_loadavg(protocol, library)
++    if library.proc.get("stat"):
++        protocol.fs.generated_files["/proc/stat"] = lambda: proc_stat(protocol, library)
+diff --git a/src/cowrie/shell/honeypot.py b/src/cowrie/shell/honeypot.py
+index d9afb81..2cd670b 100644
+--- a/src/cowrie/shell/honeypot.py
++++ b/src/cowrie/shell/honeypot.py
+@@ -1216,9 +1216,15 @@ class HoneyPotShell:
+             return
+ 
+         cmd = args.pop(0)
+-        cmdclass = self.protocol.getCommand(
+-            cmd, environ.get("PATH", "").split(":"), self.cwd
+-        )
++        # MIRAGE: an answer from this deployment's render library, where the
++        # emulator has no command of its own; None means the stock lookup.
++        from cowrie import mirage_render
++
++        cmdclass = mirage_render.command_for(self, cmd, args, environ)
++        if cmdclass is None:
++            cmdclass = self.protocol.getCommand(
++                cmd, environ.get("PATH", "").split(":"), self.cwd
++            )
+         if not cmdclass:
+             self.protocol.events.dispatch(
+                 "cowrie.command.failed",
+diff --git a/src/cowrie/shell/protocol.py b/src/cowrie/shell/protocol.py
+index ecec63a..c2f1f7c 100644
+--- a/src/cowrie/shell/protocol.py
++++ b/src/cowrie/shell/protocol.py
+@@ -122,6 +122,11 @@ class HoneyPotBaseProtocol(insults.TerminalProtocol, TimeoutMixin):
+         self.events.dispatch("cowrie.session.params", "", arch=self.user.server.arch)
+         self.fs.events = self.events  # MIRAGE: cowrie.fs.change for shell commands
+         self.fs.generated_files["/proc/uptime"] = self.proc_uptime
++        # MIRAGE: the other /proc files that change by the second, from the
++        # deployment's hardware class.
++        from cowrie import mirage_render
++
++        mirage_render.register_proc(self)
+ 
+         idle_timeout = CowrieConfig.getint("honeypot", "idle_timeout", fallback=180)
+         self.setTimeout(idle_timeout)
+diff --git a/src/cowrie/test/test_mirage_render.py b/src/cowrie/test/test_mirage_render.py
+new file mode 100644
+index 0000000..1179f9b
+--- /dev/null
++++ b/src/cowrie/test/test_mirage_render.py
+@@ -0,0 +1,278 @@
++# SPDX-License-Identifier: BSD-3-Clause
++# ABOUTME: Tests the MIRAGE render library: recorded answers for commands the emulator
++# ABOUTME: lacks, served only when the shell would really run that program, and /proc files.
++
++from __future__ import annotations
++
++import copy
++import os
++import tempfile
++import unittest
++from typing import Any
++from unittest import mock
++
++from twisted.internet import task
++
++from cowrie import mirage_gate, mirage_render
++from cowrie.shell.protocol import HoneyPotInteractiveProtocol
++from cowrie.test.eventcapture import capture_eventlog
++from cowrie.test.fake_server import FakeAvatar, FakeServer
++from cowrie.test.fake_transport import FakeTransport
++from cowrie.test.test_mirage_gate import FakeGate, allow
++
++os.environ["COWRIE_HONEYPOT_DATA_PATH"] = "data"
++os.environ["COWRIE_HONEYPOT_DOWNLOAD_PATH"] = tempfile.gettempdir()
++os.environ["COWRIE_SHELL_FILESYSTEM"] = "src/cowrie/data/fs.pickle"
++
++PROMPT = "root@unitTest:~# "
++STAT = """cpu  200 0 300 5000 100 0 20 0 0 0
++cpu0 120 0 140 2400 60 0 12 0 0 0
++cpu1 80 0 160 2600 40 0 8 0 0 0
++intr 4000 10 0 30
++ctxt 9000
++btime 1700000000
++processes 480
++procs_running 1
++procs_blocked 0
++softirq 2000 0 700 5
++"""
++
++
++def entry(argv: list[str], program: str, **more: Any) -> dict[str, Any]:
++    base = {"argv": argv, "program": program, "who": "any", "exit_code": 0, "ms": [40]}
++    return {**base, "stdout": "", "stderr": "", **more}
++
++
++DOC = {
++    "version": "test-1",
++    "entries": [
++        entry(["mirage-report", "-a"], "/usr/bin/mirage-report", stdout="ALPHA\n"),
++        entry(
++            ["mirage-report", "-e"],
++            "/usr/bin/mirage-report",
++            stderr="mirage-report: no\n",
++            exit_code=3,
++        ),
++        entry(["mirage-admin", "-t"], "/usr/sbin/mirage-admin", who="root", stdout="ROOT ONLY\n"),
++        entry(["uname", "-a"], "/usr/bin/uname", stdout="NOT THE EMULATOR\n"),
++    ],
++    "proc": {"recorded_uptime_s": 30.0, "loadavg": "0.31 0.09 0.03 2/109 479\n", "stat": STAT},
++}
++
++
++class RenderTestBase(unittest.TestCase):
++    delay = False
++
++    def setUp(self) -> None:
++        self.library = mirage_render.Library(copy.deepcopy(DOC))
++        self.library.delay = self.delay
++        mirage_render.reset_for_tests(self.library)
++        mirage_gate.reset_for_tests(None)
++        self.proto = HoneyPotInteractiveProtocol(FakeAvatar(FakeServer()))
++        self.tr = FakeTransport("", "31337")
++        self.proto.makeConnection(self.tr)
++        self.proto.events, self.events = capture_eventlog()
++        for path in ("/usr/bin/mirage-report", "/usr/sbin/mirage-admin"):
++            self.proto.fs.mkfile(path, 0, 0, 4096, 0o100755)
++        self.tr.clear()
++
++    def tearDown(self) -> None:
++        self.proto.connectionLost()
++        mirage_render.reset_for_tests()
++        mirage_gate.reset_for_tests()
++
++    def run_line(self, line: str) -> str:
++        self.tr.clear()
++        self.proto.lineReceived(line.encode())
++        return self.tr.value().decode().replace(PROMPT, "")
++
++
++class AnswerTests(RenderTestBase):
++    def test_exact_argv_is_answered_from_the_library(self) -> None:
++        self.assertEqual(self.run_line("mirage-report -a"), "ALPHA\n")
++
++    def test_stderr_and_exit_code_are_the_recorded_ones(self) -> None:
++        self.assertEqual(self.run_line("mirage-report -e; echo $?"), "mirage-report: no\n3\n")
++        self.assertEqual(self.run_line("mirage-report -e 2>/dev/null; echo $?"), "3\n")
++
++    def test_and_or_lists_follow_the_recorded_status(self) -> None:
++        self.assertEqual(self.run_line("mirage-report -a && echo yes"), "ALPHA\nyes\n")
++        self.assertNotIn("yes", self.run_line("mirage-report -e 2>/dev/null && echo yes"))
++
++    def test_other_arguments_are_not_answered(self) -> None:
++        for line in ("mirage-report", "mirage-report -z", "mirage-report -a -a"):
++            self.assertNotIn("ALPHA", self.run_line(line), line)
++
++    def test_the_emulator_wins_over_an_entry(self) -> None:
++        self.assertNotIn("NOT THE EMULATOR", self.run_line("uname -a"))
++
++    def test_a_path_to_the_program_is_answered(self) -> None:
++        self.assertEqual(self.run_line("/usr/bin/mirage-report -a"), "ALPHA\n")
++        self.assertIn("ALPHA\n", self.run_line("cd /usr; bin/mirage-report -a"))
++
++    def test_path_decides_whether_the_program_is_found(self) -> None:
++        out = self.run_line("PATH=/nowhere mirage-report -a")
++        self.assertIn("command not found", out)
++        self.assertNotIn("ALPHA", out)
++
++    def test_merged_usr_names_one_program(self) -> None:
++        self.assertEqual(mirage_render._merged("/bin/ss"), "/usr/bin/ss")
++        self.assertEqual(mirage_render._merged("/sbin/nginx"), "/usr/sbin/nginx")
++        self.assertEqual(mirage_render._merged("/usr/bin/ss"), "/usr/bin/ss")
++
++    def test_roots_answer_is_not_given_to_another_user(self) -> None:
++        self.assertEqual(self.run_line("/usr/sbin/mirage-admin -t"), "ROOT ONLY\n")
++        self.proto.cmdstack[0].user["uid"] = 1000
++        self.assertNotIn("ROOT ONLY", self.run_line("/usr/sbin/mirage-admin -t"))
++
++    def test_a_removed_program_is_gone(self) -> None:
++        self.run_line("rm /usr/bin/mirage-report")
++        out = self.run_line("mirage-report -a")
++        self.assertIn("command not found", out)
++        self.assertNotIn("ALPHA", out)
++
++    def test_an_overwritten_program_is_not_answered_for(self) -> None:
++        self.run_line("echo hello > /usr/bin/mirage-report")
++        self.assertNotIn("ALPHA", self.run_line("mirage-report -a"))
++
++    def test_a_program_made_unexecutable_is_not_answered_for(self) -> None:
++        self.run_line("chmod 644 /usr/bin/mirage-report")
++        self.assertNotIn("ALPHA", self.run_line("mirage-report -a"))
++
++    def test_the_answer_goes_down_a_pipe(self) -> None:
++        self.assertEqual(self.run_line("mirage-report -a | grep ALPHA"), "ALPHA\n")
++        self.assertEqual(self.run_line("x=$(mirage-report -a); echo got $x"), "got ALPHA\n")
++
++    def test_an_event_names_the_library(self) -> None:
++        self.run_line("mirage-report -a")
++        (served,) = [e for e in self.events if e["eventid"] == "cowrie.render.served"]
++        self.assertEqual(served["library"], "test-1")
++        self.assertEqual(served["input"], "mirage-report -a")
++
++    def test_without_a_library_nothing_changes(self) -> None:
++        mirage_render.reset_for_tests(None)
++        self.assertNotIn("ALPHA", self.run_line("mirage-report -a"))
++        self.assertIn("command not found", self.run_line("no-such-program"))
++
++    def test_a_broken_library_file_is_no_library(self) -> None:
++        with tempfile.NamedTemporaryFile("w", suffix=".json") as fh:
++            fh.write("{ not json")
++            fh.flush()
++            with mock.patch.dict(os.environ, {"COWRIE_MIRAGE_RENDER_LIBRARY": fh.name}):
++                self.assertIsNone(mirage_render.Library.from_config())
++
++
++class TimingTests(RenderTestBase):
++    delay = True
++
++    def setUp(self) -> None:
++        super().setUp()
++        self.clock = task.Clock()
++        patcher = mock.patch("cowrie.shell.command.reactor", self.clock)
++        patcher.start()
++        self.addCleanup(patcher.stop)
++
++    def test_the_answer_comes_after_the_measured_time(self) -> None:
++        self.proto.lineReceived(b"mirage-report -a")
++        self.assertNotIn(b"ALPHA", self.tr.value())
++        self.clock.advance(0.039)
++        self.assertNotIn(b"ALPHA", self.tr.value())
++        self.clock.advance(0.002)
++        self.assertIn(b"ALPHA", self.tr.value())
++
++    def test_typed_ahead_input_waits_behind_the_answer(self) -> None:
++        self.proto.lineReceived(b"mirage-report -a")
++        self.proto.lineReceived(b"echo NEXT")
++        self.assertNotIn(b"NEXT", self.tr.value())
++        self.clock.advance(0.05)
++        out = self.tr.value()
++        self.assertLess(out.index(b"ALPHA"), out.index(b"NEXT"))
++
++    def test_ctrl_c_stops_the_answer(self) -> None:
++        self.proto.lineReceived(b"mirage-report -a")
++        self.proto.handle_CTRL_C()
++        self.clock.advance(1.0)
++        self.assertNotIn(b"ALPHA", self.tr.value())
++        self.assertEqual(self.proto.cmdstack[0].last_exit_code, 130)
++
++
++class GateTests(RenderTestBase):
++    def setUp(self) -> None:
++        super().setUp()
++        self.gate = FakeGate(allow)
++        mirage_gate.reset_for_tests(self.gate)
++
++    def tiers(self) -> list[tuple[str, bool]]:
++        return [(r["tier"], r["known"]) for r in self.gate.requests]
++
++    def test_the_gate_is_told_which_rung_would_answer(self) -> None:
++        self.run_line("mirage-report -a 2>/dev/null")
++        self.run_line("uname -a")
++        self.run_line("no-such-program")
++        self.assertEqual(self.tiers(), [("rendered", True), ("emulated", True), ("none", False)])
++
++    def test_arguments_outside_the_library_are_not_the_rendered_tier(self) -> None:
++        self.run_line("mirage-report -z")
++        self.assertNotEqual(self.gate.requests[0]["tier"], "rendered")
++
++    def test_the_policy_still_decides_first(self) -> None:
++        def deny(request: dict[str, Any]) -> dict[str, Any]:
++            return {"action": "fake_error", "output": "denied\n", "decision_id": "d"}
++
++        self.gate.rule = deny
++        out = self.run_line("mirage-report -a")
++        self.assertIn("denied", out)
++        self.assertNotIn("ALPHA", out)
++
++    def test_the_decision_event_carries_the_tier(self) -> None:
++        self.run_line("mirage-report -a")
++        (event,) = [e for e in self.events if e["eventid"] == "cowrie.policy.decision"]
++        self.assertEqual(event["tier"], "rendered")
++
++
++class ProcTests(RenderTestBase):
++    def stat(self) -> dict[str, list[int]]:
++        text = mirage_render.proc_stat(self.proto, self.library).decode()
++        return {ln.split()[0]: [int(v) for v in ln.split()[1:]] for ln in text.splitlines()}
++
++    def test_the_files_are_generated_for_the_session(self) -> None:
++        generated = self.proto.fs.generated_files
++        mirage_render.register_proc(self.proto)
++        self.assertIn("/proc/loadavg", generated)
++        self.assertIn("/proc/stat", generated)
++        self.assertEqual(generated["/proc/stat"](), mirage_render.proc_stat(self.proto, self.library))
++
++    def test_loadavg_agrees_with_uptime_and_the_sessions_pids(self) -> None:
++        out = mirage_render.proc_loadavg(self.proto, self.library).decode()
++        self.assertEqual(out, f"0.00 0.00 0.00 1/109 {self.proto.last_pid}\n")
++        self.assertIn("load average: 0.00, 0.00, 0.00", self.run_line("uptime"))
++
++    def test_stat_is_carried_forward_from_the_record(self) -> None:
++        with mock.patch.object(self.proto, "uptime", return_value=30.0 + 1000.0):
++            now = self.stat()
++        # 1000 s more at 100 ticks a second, nearly all of it idle, on each processor.
++        self.assertEqual(sum(now["cpu0"]) - (120 + 140 + 2400 + 60 + 12), 100000)
++        self.assertGreater(now["cpu0"][3] - 2400, 99000)
++        self.assertEqual(now["cpu"], [a + b for a, b in zip(now["cpu0"], now["cpu1"], strict=True)])
++        self.assertEqual(now["btime"], [int(self.proto.boot_time())])
++        self.assertGreater(now["processes"][0], self.proto.last_pid)
++        self.assertGreater(now["ctxt"][0], 9000)
++        self.assertEqual(now["procs_running"], [1])
++
++    def test_stat_moves_between_two_reads(self) -> None:
++        with mock.patch.object(self.proto, "uptime", return_value=5000.0):
++            first = self.stat()
++        with mock.patch.object(self.proto, "uptime", return_value=5002.0):
++            second = self.stat()
++        self.assertEqual(sum(second["cpu1"]) - sum(first["cpu1"]), 200)
++        self.assertGreaterEqual(second["intr"][0], first["intr"][0])
++
++    def test_a_machine_younger_than_the_record_shows_the_record(self) -> None:
++        with mock.patch.object(self.proto, "uptime", return_value=10.0):
++            now = self.stat()
++        self.assertEqual(now["cpu0"], [120, 0, 140, 2400, 60, 0, 12, 0, 0, 0])
++        self.assertEqual(now["ctxt"], [9000])
++
++    def test_a_record_that_is_not_numbers_gives_nothing(self) -> None:
++        self.library.proc["stat"] = "cpu  a b c\n"
++        self.assertEqual(mirage_render.proc_stat(self.proto, self.library), b"")
+-- 
+2.50.1 (Apple Git-155)
+

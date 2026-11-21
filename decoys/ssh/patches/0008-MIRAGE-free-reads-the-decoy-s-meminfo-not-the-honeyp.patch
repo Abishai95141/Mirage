@@ -1,0 +1,156 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: MIRAGE <noreply@anthropic.com>
+Date: Mon, 16 Nov 2026 16:00:00 +0530
+Subject: [PATCH] MIRAGE: free reads the decoy's meminfo, not the honeypot
+ host's
+
+Stock Cowrie's free opens the real /proc/meminfo. On a decoy that is the
+memory of the machine the honeypot runs on: it contradicts whatever the
+decoy's own /proc/meminfo says, it is the same on every decoy one machine
+hosts, and it tells an attacker something true about that machine. Phase 3's
+depth baseline found it once a profile had a hardware class: cat showed the
+class's memory and free showed the lab host's.
+
+free now reads /proc/meminfo through the decoy's filesystem, and prints zeros
+when the file is absent. free -m divides by 1024, as procps does: with 1000
+the total disagreed with the same file read by hand.
+---
+ src/cowrie/commands/free.py           | 28 ++++++-----
+ src/cowrie/test/test_mirage_phase3.py | 69 +++++++++++++++++++++++++++
+ 2 files changed, 85 insertions(+), 12 deletions(-)
+ create mode 100644 src/cowrie/test/test_mirage_phase3.py
+
+diff --git a/src/cowrie/commands/free.py b/src/cowrie/commands/free.py
+index 705981d..8d72602 100644
+--- a/src/cowrie/commands/free.py
++++ b/src/cowrie/commands/free.py
+@@ -66,9 +66,9 @@ class Command_free(HoneyPotCommand):
+         )
+ 
+         if fmt == "megabytes":
+-            # Transform KB to MB
++            # free -m counts in mebibytes, as procps does
+             for key, value in raw_mem_stats.items():
+-                raw_mem_stats[key] = int(value / 1000)
++                raw_mem_stats[key] = int(value / 1024)
+ 
+         if fmt == "human":
+             magnitude = ["B", "M", "G", "T", "Z"]
+@@ -90,7 +90,9 @@ class Command_free(HoneyPotCommand):
+ 
+     def get_free_stats(self) -> dict[str, int]:
+         """
+-        Get the free stats from /proc
++        Get the free stats from the decoy's own /proc/meminfo: the file in its
++        filesystem. Never the real one, which is the memory of the machine the
++        honeypot runs on, the same on every decoy that machine hosts.
+         """
+         needed_keys = [
+             "Buffers",
+@@ -102,17 +104,19 @@ class Command_free(HoneyPotCommand):
+             "Shmem",
+             "MemAvailable",
+         ]
+-        mem_info_map: dict[str, int] = {}
++        mem_info_map: dict[str, int] = dict.fromkeys(needed_keys, 0)
+         try:
+-            with open("/proc/meminfo") as proc_file:
+-                for line in proc_file:
+-                    tokens = line.split(":")
+-
+-                    # Later we are going to do some math on those numbers, better not include uneeded keys for performance
+-                    if tokens[0] in needed_keys:
+-                        mem_info_map[tokens[0]] = int(tokens[1].lstrip().split(" ")[0])
++            text = self.fs.file_contents("/proc/meminfo").decode("utf-8", "replace")
+         except Exception:
+-            pass
++            text = ""
++        for line in text.splitlines():
++            tokens = line.split(":")
++            # Later we are going to do some math on those numbers, better not include uneeded keys for performance
++            if len(tokens) > 1 and tokens[0] in needed_keys:
++                try:
++                    mem_info_map[tokens[0]] = int(tokens[1].lstrip().split(" ")[0])
++                except ValueError:
++                    pass
+ 
+         # Got a map with all tokens from /proc/meminfo and sizes in KBs
+         return mem_info_map
+diff --git a/src/cowrie/test/test_mirage_phase3.py b/src/cowrie/test/test_mirage_phase3.py
+new file mode 100644
+index 0000000..e25c778
+--- /dev/null
++++ b/src/cowrie/test/test_mirage_phase3.py
+@@ -0,0 +1,69 @@
++# SPDX-License-Identifier: BSD-3-Clause
++# ABOUTME: Tests the MIRAGE phase 3 changes to the emulator: commands that report on the
++# ABOUTME: machine read the decoy's own files, never the honeypot host's.
++
++from __future__ import annotations
++
++import unittest
++from unittest import mock
++
++from cowrie.shell import protocol
++from cowrie.test import fake_server, fake_transport
++
++PROMPT = b"root@unitTest:~# "
++MEMINFO = b"""MemTotal:        4009072 kB
++MemFree:         3519600 kB
++MemAvailable:    3610204 kB
++Buffers:           10716 kB
++Cached:           215924 kB
++SwapCached:            0 kB
++SwapTotal:             0 kB
++SwapFree:              0 kB
++Shmem:               520 kB
++"""
++
++
++class FreeReadsTheDecoyTests(unittest.TestCase):
++    def setUp(self) -> None:
++        self.proto = protocol.HoneyPotInteractiveProtocol(
++            fake_server.FakeAvatar(fake_server.FakeServer())
++        )
++        self.tr = fake_transport.FakeTransport("", "31337")
++        self.proto.makeConnection(self.tr)
++        self.tr.clear()
++        real = self.proto.fs.file_contents
++        self.asked: list[str] = []
++
++        def contents(target: str) -> bytes:
++            self.asked.append(target)
++            return MEMINFO if target == "/proc/meminfo" else real(target)
++
++        self.proto.fs.file_contents = contents  # type: ignore[method-assign]
++
++    def tearDown(self) -> None:
++        self.proto.connectionLost()
++
++    def run_line(self, line: str) -> str:
++        self.tr.clear()
++        self.proto.lineReceived(line.encode())
++        return self.tr.value().decode().replace(PROMPT.decode(), "")
++
++    def test_free_shows_the_decoys_memory_in_mebibytes(self) -> None:
++        out = self.run_line("free -m")
++        mem = out.splitlines()[1].split()
++        self.assertEqual(mem[0], "Mem:")
++        self.assertEqual(int(mem[1]), 4009072 // 1024)
++        self.assertIn("/proc/meminfo", self.asked)
++
++    def test_free_never_opens_the_hosts_meminfo(self) -> None:
++        with mock.patch("builtins.open", side_effect=AssertionError("the host was read")):
++            out = self.run_line("free")
++        self.assertIn("4009072", out)
++
++    def test_free_without_the_file_prints_zeros_not_the_host(self) -> None:
++        def missing(target: str) -> bytes:
++            raise FileNotFoundError(target)
++
++        self.proto.fs.file_contents = missing  # type: ignore[method-assign]
++        mem = self.run_line("free").splitlines()[1].split()
++        self.assertEqual(mem[1:4], ["0", "0", "0"])
+-- 
+2.50.1 (Apple Git-155)
+

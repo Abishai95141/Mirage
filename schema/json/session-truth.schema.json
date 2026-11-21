@@ -140,6 +140,19 @@
       "title": "End Ts",
       "type": "string"
     },
+    "error": {
+      "anyOf": [
+        {
+          "maxLength": 300,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Error"
+    },
     "kind": {
       "const": "session",
       "default": "session",

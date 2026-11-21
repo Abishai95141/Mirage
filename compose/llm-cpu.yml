@@ -1,0 +1,7 @@
+# The model server with no GPU: the same service as in docker-compose.yml, every layer on the
+# CPU (`make llm-up-cpu`). It is for a host whose GPU runtime is not installed yet, to prove
+# the path from the decoy to the model. It is several times too slow to measure anything by:
+# answers longer than a few lines run into the responder's deadlines and fall back.
+services:
+  llama:
+    deploy: !reset null

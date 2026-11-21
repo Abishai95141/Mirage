@@ -15,6 +15,10 @@ set -euo pipefail
 
 HOST="${1:?usage: tools/lab-host/sync.sh user@host [directory]}"
 DEST="${2:-mirage}"
+# Where plain ssh does not reach the host (over Tailscale from a laptop that does not route
+# it), set RSYNC_RSH to the ssh command to use; tools/lab-host/remote.sh --sync does. rsync
+# reads that variable by itself.
+REMOTE_SHELL="${RSYNC_RSH:-ssh}"
 cd "$(git rev-parse --show-toplevel)"
 
 rsync -az \
@@ -25,4 +29,5 @@ rsync -az --delete .git/ "$HOST:$DEST/.git/"
 
 echo "here: $(git describe --always --dirty --abbrev=7)"
 # shellcheck disable=SC2029  # $DEST is meant to expand on this side
-ssh "$HOST" "cd '$DEST' && echo \"host: \$(git describe --always --dirty --abbrev=7)\" && git status --short | head -n 40"
+bash -c "$REMOTE_SHELL \"\$1\" \"\$2\"" _ "$HOST" \
+  "cd '$DEST' && echo \"host: \$(git describe --always --dirty --abbrev=7)\" && git status --short | head -n 40"

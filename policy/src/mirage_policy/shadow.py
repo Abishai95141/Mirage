@@ -34,7 +34,25 @@ name                       type          meaning
 ``seen_before``            bool          this input (protocol and text) was seen before in
                                          this process, in any session; bounded memory
 ``seen_before_in_session`` bool          the same, within this session only
-``rule_action``            str           the action the rules chose for this input
+``rule_action``            str           the action the rules chose for this input, as
+                                         one of contract v1's five: an action of v2 shows
+                                         here as ``allow``, what the decoy would have done
+                                         unasked
+``rule_action_v2``         str | None    that action of contract v2 (``respond``,
+                                         ``plant_token``, ``escalate``); None for a v1 one
+``tier``                   str | None    what the decoy has for this input: ``emulated``,
+                                         ``rendered`` or ``none``; None from a decoy that
+                                         does not say
+``actor_class``            str | None    the classifier's answer for the session so far;
+                                         None until the policy process scores it (R15)
+``actor_confidence``       float | None  the probability it gave that class
+``respond_budget_left``    str           how much generated output the session and its
+                                         source may still be granted: ``full``, ``part``,
+                                         ``low`` (a quarter or less) or ``none``
+``token_planted``          bool          the policy has planted a token in this session
+``previous_action``        str | None    the action sent for the session's previous input
+``had_non_allow``          bool          an earlier input of the session was answered
+                                         with something other than ``allow``
 =========================  ============  ==================================================
 
 ``context_version`` in the decision record (:data:`mirage_policy.explore.CONTEXT_VERSION`)

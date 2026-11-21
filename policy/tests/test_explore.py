@@ -11,6 +11,7 @@ from fastapi.testclient import TestClient
 
 from mirage_policy.app import RULES_DIR, Settings, create_app
 from mirage_policy.explore import (
+    ACTIONS,
     BanditPolicy,
     Context,
     TacticRules,
@@ -45,7 +46,7 @@ def test_terminate_is_masked_on_the_first_input():
     assert Action.TERMINATE not in allowed_actions(req(seq=1))
     assert Action.TERMINATE not in allowed_actions(req(seq=None))  # nothing seen yet: first
     assert Action.TERMINATE in allowed_actions(req(seq=2))
-    assert set(allowed_actions(req(seq=5))) == set(Action)
+    assert set(allowed_actions(req(seq=5))) == set(ACTIONS)
 
 
 def test_explore_only_in_range_and_when_enabled():

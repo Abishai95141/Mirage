@@ -1,0 +1,83 @@
+# The fixed set of commands behind the live-model bench and the model comparison (phase 3
+# spec 3.2c; eval/probes/llm_bench.py). Each is a command a person would run on this host
+# that the decoy's emulator has no command class for and the render library no entry for, so
+# the policy asks the responder and, with a live backend, the model answers.
+#
+#   id     stable; reports name commands by it
+#   cmd    the line sent. It really runs on the reference host: read-only, or confined to
+#          /tmp and cleaning up after itself
+#   class  what the answer depends on (responder/src/mirage_responder/classes.yaml):
+#          stateless (the host alone), state-reading (the host and its files),
+#          state-changing (it changes something)
+#
+# What is not here, on purpose: commands whose true answer on the reference container is not
+# the persona's (`systemctl`, `journalctl`, `ip addr`, `uname -r`, `systemd-detect-virt`);
+# network clients and interactive programs, which are never generated; anything the emulator
+# or the library already answers (the first bench run found eleven of the first list that stock
+# Cowrie emulates: perl, base64, du, tar, sed -i, last, ssh -V, bash --version; they were taken
+# out and others put in; `getent` and `tty` went the same way when the decoy got its own on
+# 18 November, and `install`, `truncate`, `link`, `unlink` and `shred` the same day); programs the reference image does not have (python3, file,
+# strings, hexdump, column, crontab), which the decoy says are not found, as it should. Some
+# entries are hard for a model on purpose (a checksum,
+# a key's fingerprint): the bench reports what the model cannot do as well as what it can.
+commands:
+  # ---- stateless: what is installed and how the host is set up
+  - {id: locale, class: stateless, cmd: "locale"}
+  - {id: locale-a, class: stateless, cmd: "locale -a"}
+  - {id: locale-charmap, class: stateless, cmd: "locale charmap"}
+  - {id: dpkg-status, class: stateless, cmd: "dpkg -s openssh-server"}
+  - {id: dpkg-list, class: stateless, cmd: "dpkg -l nginx"}
+  - {id: dpkg-query, class: stateless, cmd: "dpkg-query -W -f='${Package} ${Version}\\n' bash"}
+  - {id: dpkg-search, class: stateless, cmd: "dpkg -S /bin/ls"}
+  - {id: apt-cache-policy, class: stateless, cmd: "apt-cache policy nginx"}
+  - {id: openssl-version, class: stateless, cmd: "openssl version"}
+  - {id: nginx-build, class: stateless, cmd: "nginx -V"}
+  - {id: mariadb-version, class: stateless, cmd: "mariadb --version"}
+  - {id: redis-version, class: stateless, cmd: "redis-server --version"}
+  - {id: sysctl-ostype, class: stateless, cmd: "sysctl kernel.ostype"}
+  - {id: sysctl-missing, class: stateless, cmd: "sysctl kernel.nosuchkey"}
+  - {id: alternatives-editor, class: stateless, cmd: "update-alternatives --list editor"}
+  - {id: chage-root, class: stateless, cmd: "chage -l root"}
+  - {id: lastlog-root, class: stateless, cmd: "lastlog -u root"}
+  - {id: ldd-ls, class: stateless, cmd: "ldd /bin/ls"}
+  - {id: sshd-effective, class: stateless, cmd: "sshd -T | grep -i -e '^permitrootlogin' -e '^port '"}
+  - {id: logname, class: stateless, cmd: "logname"}
+  - {id: sysctl-swappiness, class: stateless, cmd: "sysctl vm.swappiness"}
+  - {id: apt-cache-show, class: stateless, cmd: "apt-cache show bash | head -4"}
+  - {id: chage-user, class: stateless, cmd: "chage -l caleb"}
+  - {id: dpkg-files, class: stateless, cmd: "dpkg -L bash | head -4"}
+  - {id: redis-cli-version, class: stateless, cmd: "redis-cli --version"}
+  - {id: nginx-help, class: stateless, cmd: "nginx -h 2>&1 | head -3"}
+  - {id: pinky, class: stateless, cmd: "pinky -l root | head -2"}
+  - {id: dircolors, class: stateless, cmd: "dircolors -b | head -1 | cut -c1-40"}
+  # ---- state-reading: the host's files
+  - {id: od-hostname, class: state-reading, cmd: "od -c /etc/hostname"}
+  - {id: cksum-hostname, class: state-reading, cmd: "cksum /etc/hostname"}
+  - {id: b2sum-hostname, class: state-reading, cmd: "b2sum /etc/hostname"}
+  - {id: diff-two, class: state-reading, cmd: "diff /etc/hostname /etc/shells"}
+  - {id: cmp-two, class: state-reading, cmd: "cmp /etc/hostname /etc/shells"}
+  - {id: paste-two, class: state-reading, cmd: "paste -d: /etc/hostname /etc/hostname"}
+  - {id: expr, class: state-reading, cmd: "expr 6 \\* 7"}
+  - {id: factor, class: state-reading, cmd: "factor 360"}
+  - {id: numfmt, class: state-reading, cmd: "numfmt --to=iec 1048576"}
+  - {id: fold, class: state-reading, cmd: "echo abcdefghij | fold -w 4"}
+  - {id: namei, class: state-reading, cmd: "namei -l /etc/ssh/sshd_config"}
+  - {id: expand, class: state-reading, cmd: "printf 'a\\tb\\n' | expand | od -c | head -2"}
+  - {id: nginx-config, class: state-reading, cmd: "nginx -T 2>/dev/null | head -5"}
+  - {id: key-fingerprint, class: state-reading, cmd: "ssh-keygen -l -f /etc/ssh/ssh_host_ed25519_key.pub"}
+  - {id: sum-hostname, class: state-reading, cmd: "sum /etc/hostname"}
+  - {id: comm-shells, class: state-reading, cmd: "comm -12 /etc/shells /etc/shells | head -3"}
+  - {id: pathchk, class: state-reading, cmd: "pathchk /etc/hostname; echo $?"}
+  - {id: shuf-one, class: state-reading, cmd: "shuf -i 5-5"}
+  - {id: join-hostname, class: state-reading, cmd: "join /etc/hostname /etc/hostname"}
+  - {id: ptx-hostname, class: state-reading, cmd: "ptx /etc/hostname | head -2"}
+  - {id: fmt-shells, class: state-reading, cmd: "fmt -w 30 /etc/shells | head -3"}
+  # ---- state-changing: confined to /tmp, and nothing left behind
+  - {id: gzip, class: state-changing, cmd: "echo hello > /tmp/bench-g; gzip /tmp/bench-g; ls /tmp/bench-g.gz; gzip -d /tmp/bench-g.gz; cat /tmp/bench-g; rm /tmp/bench-g"}
+  - {id: split, class: state-changing, cmd: "printf 'a\\nb\\n' > /tmp/bench-s; split -l 1 /tmp/bench-s /tmp/bench-p; ls /tmp/bench-paa /tmp/bench-pab; rm /tmp/bench-s /tmp/bench-paa /tmp/bench-pab"}
+  - {id: mkfifo, class: state-changing, cmd: "mkfifo /tmp/bench-f; ls -l /tmp/bench-f | cut -c1; rm /tmp/bench-f"}
+  - {id: keygen, class: state-changing, cmd: "ssh-keygen -q -t ed25519 -N '' -f /tmp/bench-k; ls /tmp/bench-k /tmp/bench-k.pub; rm /tmp/bench-k /tmp/bench-k.pub"}
+  - {id: csplit, class: state-changing, cmd: "printf 'a\\nb\\nc\\n' > /tmp/bench-c; csplit -s -f /tmp/bench-cx /tmp/bench-c 2; cat /tmp/bench-cx00; cat /tmp/bench-cx01; rm /tmp/bench-c /tmp/bench-cx00 /tmp/bench-cx01"}
+  - {id: genrsa, class: state-changing, cmd: "openssl genrsa -out /tmp/bench-o 2048 2>/dev/null; head -1 /tmp/bench-o; rm /tmp/bench-o"}
+  - {id: openssl-rand, class: state-changing, cmd: "openssl rand -out /tmp/bench-r 16; wc -c < /tmp/bench-r; rm /tmp/bench-r"}
+  - {id: savelog, class: state-changing, cmd: "echo x > /tmp/bench-v; savelog -q /tmp/bench-v; ls /tmp/bench-v /tmp/bench-v.0; rm /tmp/bench-v /tmp/bench-v.0"}

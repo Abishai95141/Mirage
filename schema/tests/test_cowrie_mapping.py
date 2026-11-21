@@ -201,3 +201,73 @@ def test_every_documented_session_event_is_mapped():
     )
     expected = {e for e in documented if not e.startswith(operational)}
     assert expected - TABLE.keys() == set()
+
+
+# ---- phase 3: how a command was answered, a planted token, a kept password change
+
+
+def test_a_rendered_answer_is_not_an_input():
+    ev = map_record(rec("cowrie.render.served", input="nginx -v", library="1", exit_code=0))
+    assert (ev.event_class, ev.action, ev.outcome) == (
+        EventClass.PROCESS_ACTIVITY,
+        "rendered",
+        Outcome.SUCCESS,
+    )
+    assert ev.payload["command"] == "nginx -v"
+
+
+@pytest.mark.parametrize(
+    ("how", "outcome"),
+    [
+        ("answered", Outcome.SUCCESS),
+        ("fallback", Outcome.FAILURE),
+        ("cut", Outcome.FAILURE),
+        ("cancelled", Outcome.FAILURE),
+    ],
+)
+def test_a_responder_answer_keeps_its_own_word_for_how_it_ended(how, outcome):
+    ev = map_record(
+        rec(
+            "cowrie.mirage.respond",
+            input="stat -f /",
+            outcome=how,
+            reason=None if how == "answered" else "timeout",
+            request_id="r-1",
+            seq=4,
+            lines=3,
+            first_ms=210.5,
+            total_ms=900.0,
+        )
+    )
+    assert (ev.event_class, ev.action, ev.outcome) == (
+        EventClass.PROCESS_ACTIVITY,
+        "responded",
+        outcome,
+    )
+    assert ev.payload["respond_outcome"] == how and "outcome" not in ev.payload
+    assert ev.payload["request_id"] == "r-1"  # what it joins the decision and the responder on
+
+
+def test_a_planted_token_is_file_activity_that_succeeded_or_did_not():
+    done = map_record(
+        rec("cowrie.mirage.plant", planted=True, paths=["/root/.my.cnf"], decision_id="d")
+    )
+    assert (done.event_class, done.action, done.outcome) == (
+        EventClass.FILE_ACTIVITY,
+        "token_planted",
+        Outcome.SUCCESS,
+    )
+    refused = map_record(rec("cowrie.mirage.plant", planted=False, paths=[], reason="no parent"))
+    assert refused.outcome is Outcome.FAILURE
+
+
+def test_a_kept_password_change_is_authentication():
+    ev = map_record(
+        rec("cowrie.mirage.credential", username="root", password="N3w!", realm="chpasswd")
+    )
+    assert (ev.event_class, ev.action, ev.outcome) == (
+        EventClass.AUTHENTICATION,
+        "password_changed",
+        Outcome.SUCCESS,
+    )
+    assert (ev.payload["username"], ev.payload["password"]) == ("root", "N3w!")

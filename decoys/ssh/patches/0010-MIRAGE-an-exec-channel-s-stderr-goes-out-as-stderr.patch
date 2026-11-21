@@ -1,0 +1,249 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: MIRAGE <noreply@anthropic.com>
+Date: Tue, 17 Nov 2026 03:30:07 +0530
+Subject: [PATCH 10/10] MIRAGE: an exec channel's stderr goes out as stderr
+
+On an exec channel with no pty, sshd sends a command's stderr as SSH extended
+data: 'ssh host cmd 2>/dev/null' hides an error and '2>&1' is needed to
+capture it. Cowrie wrote both streams as ordinary data, so every error of
+every command arrived on stdout, which no real server does and one command
+shows. A terminal target now says which stream it is, and the session writes
+stderr through the channel's own stderr where there is one. With a pty, on
+telnet and in an interactive shell there is one stream, as before.
+---
+ src/cowrie/insults/insults.py         | 19 ++++++
+ src/cowrie/shell/honeypot.py          |  9 ++-
+ src/cowrie/shell/pipe.py              | 23 +++++--
+ src/cowrie/test/test_mirage_stderr.py | 98 +++++++++++++++++++++++++++
+ 4 files changed, 141 insertions(+), 8 deletions(-)
+ create mode 100644 src/cowrie/test/test_mirage_stderr.py
+
+diff --git a/src/cowrie/insults/insults.py b/src/cowrie/insults/insults.py
+index 8317ceb..85a1ffc 100644
+--- a/src/cowrie/insults/insults.py
++++ b/src/cowrie/insults/insults.py
+@@ -186,6 +186,25 @@ class LoggingServerProtocol(insults.ServerProtocol):
+         self.ttylogWritten = written
+         return len(data)
+ 
++    def writeStderr(self, data: bytes) -> None:
++        """MIRAGE: write what a command sent to its stderr.
++
++        On an exec channel with no pty, sshd sends a command's stderr as SSH
++        extended data, so `ssh host cmd 2>/dev/null` hides it and `2>&1` is
++        needed to capture it. Writing it as ordinary data, as write() does,
++        shows every error on stdout: something no real server does. With a pty,
++        or on a transport that has no second stream, there is one stream and
++        this is write().
++        """
++        send = getattr(self.transport, "errReceived", None)
++        has_pty = hasattr(getattr(self.terminalProtocol, "user", None), "windowSize")
++        if self.type != "e" or has_pty or send is None:
++            self.write(data)
++            return
++        self.bytesSent += len(data)
++        self.ttylogSize += self.ttylogWrite(ttylog.TYPE_OUTPUT, data)
++        send(data)
++
+     def write(self, data: bytes) -> None:
+         self.bytesSent += len(data)
+         self.ttylogSize += self.ttylogWrite(ttylog.TYPE_OUTPUT, data)
+diff --git a/src/cowrie/shell/honeypot.py b/src/cowrie/shell/honeypot.py
+index 2cd670b..a150c71 100644
+--- a/src/cowrie/shell/honeypot.py
++++ b/src/cowrie/shell/honeypot.py
+@@ -45,7 +45,12 @@ from cowrie.shell.bashparse import (
+     max_input_size,
+ )
+ from cowrie.shell.parser import CommandParser
+-from cowrie.shell.pipe import FD_CAPTURE, FD_TERMINAL, PipeProtocol
++from cowrie.shell.pipe import (
++    FD_CAPTURE,
++    FD_TERMINAL,
++    TERMINAL_STDERR,
++    PipeProtocol,
++)
+ 
+ # Honeypot safety caps. A loop in an uploaded script must never hang or exhaust
+ # the process: bound the number of iterations a single loop runs. Real malware
+@@ -153,7 +158,7 @@ class HoneyPotShell:
+         # terminal; a capture child (see run_child) points fd 1 at a sink.
+         self.fds: dict[int, tuple[str, Any]] = {
+             1: (FD_TERMINAL, None),
+-            2: (FD_TERMINAL, None),
++            2: (FD_TERMINAL, TERMINAL_STDERR),
+         }
+         # A shell a command starts (bash -c, a script, su -c) writes where that
+         # command writes, so `$(bash -c ...)` or `sh x.sh > f` captures it.
+diff --git a/src/cowrie/shell/pipe.py b/src/cowrie/shell/pipe.py
+index bb7716b..0c40f19 100644
+--- a/src/cowrie/shell/pipe.py
++++ b/src/cowrie/shell/pipe.py
+@@ -22,6 +22,9 @@ if TYPE_CHECKING:
+ # FD target type constants
+ FD_STDIN = "stdin"
+ FD_TERMINAL = "terminal"
++# MIRAGE: which of the session's two streams a terminal target is. With a pty
++# they are one stream; on an exec channel without one, sshd sends stderr apart.
++TERMINAL_STDERR = "stderr"
+ FD_CAPTURE = "capture"
+ FD_FILE = "file"
+ FD_FILE_INPUT = "file_input"
+@@ -112,10 +115,12 @@ class PipeProtocol:
+         self.targets[0] = (FD_STDIN, None)
+         if self.base_targets is not None:
+             self.targets[1] = self.base_targets.get(1, (FD_TERMINAL, None))
+-            self.targets[2] = self.base_targets.get(2, (FD_TERMINAL, None))
++            self.targets[2] = self.base_targets.get(
++                2, (FD_TERMINAL, TERMINAL_STDERR)
++            )
+         else:
+             self.targets[1] = (FD_TERMINAL, None)
+-            self.targets[2] = (FD_TERMINAL, None)
++            self.targets[2] = (FD_TERMINAL, TERMINAL_STDERR)
+ 
+         # Defer reading stdin until all redirections are processed, so that
+         # when an output redirection truncates the file also used for input
+@@ -284,7 +289,7 @@ class PipeProtocol:
+         """Send a redirection-related error to the terminal and flag failure."""
+         self.redirection_error = True
+         try:
+-            self.protocol.terminal.write(message.encode("utf8"))
++            self._write_to_terminal(message.encode("utf8"), stderr=True)
+         except Exception:
+             self._log.info("{msg}", msg=message)
+ 
+@@ -321,9 +326,15 @@ class PipeProtocol:
+             status=reason.value.exitCode,
+         )
+ 
+-    def _write_to_terminal(self, data: bytes) -> None:
++    def _write_to_terminal(self, data: bytes, stderr: bool = False) -> None:
+         if self.protocol is not None and self.protocol.terminal is not None:
+-            self.protocol.terminal.write(data)
++            # MIRAGE: stderr goes out as stderr where the session has such a
++            # stream (see LoggingServerProtocol.writeStderr).
++            write_stderr = getattr(self.protocol.terminal, "writeStderr", None)
++            if stderr and write_stderr is not None:
++                write_stderr(data)
++            else:
++                self.protocol.terminal.write(data)
+         elif not self.terminal_lost:
+             self.terminal_lost = True
+             self._log.info("Connection was probably lost. Could not write to terminal")
+@@ -343,7 +354,7 @@ class PipeProtocol:
+         t_type, t_val = target
+ 
+         if t_type == FD_TERMINAL:
+-            self._write_to_terminal(data)
++            self._write_to_terminal(data, stderr=t_val == TERMINAL_STDERR)
+         elif t_type == FD_CAPTURE:
+             # The sink is a bytearray shared by every command writing to this
+             # fd (a capture subshell, or a pipeline stage feeding the next).
+diff --git a/src/cowrie/test/test_mirage_stderr.py b/src/cowrie/test/test_mirage_stderr.py
+new file mode 100644
+index 0000000..426077e
+--- /dev/null
++++ b/src/cowrie/test/test_mirage_stderr.py
+@@ -0,0 +1,98 @@
++# SPDX-License-Identifier: BSD-3-Clause
++# ABOUTME: Tests that a command's stderr leaves an exec channel as SSH stderr, as sshd
++# ABOUTME: sends it, and stays in the one stream of a session that has a pty.
++
++from __future__ import annotations
++
++import os
++import tempfile
++import unittest
++
++from cowrie.insults import insults
++from cowrie.shell import protocol
++from cowrie.test.eventcapture import CaptureSink, make_exec_transport
++from cowrie.test.fake_server import FakeAvatar, FakeServer
++from cowrie.test.fake_transport import FakeTransport
++
++os.environ["COWRIE_HONEYPOT_DATA_PATH"] = "data"
++os.environ["COWRIE_HONEYPOT_DOWNLOAD_PATH"] = tempfile.gettempdir()
++os.environ["COWRIE_SHELL_FILESYSTEM"] = "src/cowrie/data/fs.pickle"
++
++PROMPT = b"root@unitTest:~# "
++
++
++def run_exec(cmd: bytes, pty: bool = False, stderr_stream: bool = True) -> tuple[bytes, bytes]:
++    """Run ``cmd`` on a fake SSH exec channel; what went out as stdout and as stderr."""
++    out, err = bytearray(), bytearray()
++    transport = make_exec_transport(CaptureSink())
++    transport.write = out.extend
++    if stderr_stream:
++        transport.errReceived = err.extend
++    avatar = FakeAvatar(FakeServer())
++    if not pty:
++        # The fake avatar always has a window size; a session has one only
++        # once the client asked for a pty.
++        del avatar.windowSize
++    lsp = insults.LoggingServerProtocol(protocol.HoneyPotExecProtocol, avatar, cmd)
++    lsp.makeConnection(transport)
++    return bytes(out), bytes(err)
++
++
++class ExecStderrTests(unittest.TestCase):
++    def test_an_error_goes_out_as_stderr(self) -> None:
++        out, err = run_exec(b"nosuchcommand")
++        self.assertEqual(out, b"")
++        self.assertIn(b"nosuchcommand: command not found", err)
++
++    def test_stdout_and_stderr_are_two_streams(self) -> None:
++        out, err = run_exec(b"echo good; ls /nonexistent-dir; echo after")
++        self.assertEqual(out, b"good\nafter\n")
++        self.assertIn(b"/nonexistent-dir", err)
++        self.assertNotIn(b"good", err)
++
++    def test_a_redirect_to_stdout_joins_them(self) -> None:
++        out, err = run_exec(b"ls /nonexistent-dir 2>&1")
++        self.assertIn(b"/nonexistent-dir", out)
++        self.assertEqual(err, b"")
++
++    def test_a_redirect_to_stderr_moves_stdout(self) -> None:
++        out, err = run_exec(b"echo warning >&2; echo fine")
++        self.assertEqual((out, err), (b"fine\n", b"warning\n"))
++
++    def test_stderr_sent_to_dev_null_is_gone(self) -> None:
++        out, err = run_exec(b"ls /nonexistent-dir 2>/dev/null; echo done")
++        self.assertEqual((out, err), (b"done\n", b""))
++
++    def test_a_pipe_carries_stdout_and_leaves_stderr_out(self) -> None:
++        out, err = run_exec(b"ls /nonexistent-dir | cat; echo end")
++        self.assertEqual(out, b"end\n")
++        self.assertIn(b"/nonexistent-dir", err)
++
++    def test_a_group_redirect_covers_its_errors(self) -> None:
++        out, err = run_exec(b"{ nosuchcommand; echo in; } 2>/dev/null")
++        self.assertEqual((out, err), (b"in\n", b""))
++
++    def test_a_bad_redirection_is_reported_on_stderr(self) -> None:
++        out, err = run_exec(b"echo x > /nonexistent-dir/file")
++        self.assertEqual(out, b"")
++        self.assertIn(b"No such file or directory", err)
++
++    def test_with_a_pty_there_is_one_stream(self) -> None:
++        out, err = run_exec(b"nosuchcommand", pty=True)
++        self.assertIn(b"command not found", out)
++        self.assertEqual(err, b"")
++
++    def test_a_transport_with_one_stream_gets_everything(self) -> None:
++        out, err = run_exec(b"nosuchcommand", stderr_stream=False)
++        self.assertIn(b"command not found", out)
++
++
++class InteractiveTests(unittest.TestCase):
++    def test_an_interactive_shell_shows_errors_in_its_one_stream(self) -> None:
++        proto = protocol.HoneyPotInteractiveProtocol(FakeAvatar(FakeServer()))
++        tr = FakeTransport("", "31337")
++        proto.makeConnection(tr)
++        tr.clear()
++        proto.lineReceived(b"nosuchcommand")
++        self.assertIn(b"nosuchcommand: command not found", tr.value())
++        proto.connectionLost()
+-- 
+2.50.1 (Apple Git-155)
+

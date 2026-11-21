@@ -36,6 +36,7 @@ from mirage_lab.models import (
     SessionSpec,
     Step,
     check_input,
+    check_run_safety,
     lint,
     load_split,
     render,
@@ -55,6 +56,9 @@ def now() -> datetime:
 
 def new_run_id() -> str:
     return f"r{datetime.now(UTC):%Y%m%d%H%M%S}-{uuid.uuid4().hex[:6]}"
+
+
+FAILED_CHECKS = "failed-checks.jsonl"  # beside the truth files, for a run on a real host
 
 
 class InputRefused(ValueError):
@@ -78,6 +82,14 @@ class Settings:
         default_factory=lambda: Path(os.environ.get("LAB_SPLIT") or DEFAULT_SPLIT)
     )
     truth_keep_days: float = KEEP_DAYS  # see truth.prune
+    # The target is a real host (arm R of the depth comparison): what is sent really runs.
+    # Every rendered input is then held to the run-safety rules, and a check that fails is
+    # written down with what the host answered, so a broken check can be told from a hard one.
+    real_host: bool = False
+    # Write down what a failed check saw against any target (the depth comparison's emulator
+    # arms: to tell what the decoy answered from what a real host answers). Always on for a
+    # real host. Off for the lab's own runs, whose directory the label join reads.
+    keep_failed: bool = False
 
 
 @dataclass
@@ -374,6 +386,8 @@ class ActorRun:
                 checked, ok = True, self._capture(step.capture, result.output) and ok
             outcome = "unchecked" if not checked else ("ok" if ok else "failed")
             self._step_record(session_ref, attempt, proc, result.conn, result, "ran", outcome)
+            if outcome == "failed" and (self.settings.real_host or self.settings.keep_failed):
+                self._failed_check(session_ref, attempt, step, text, result)
             previous_len = len(result.output)
             done.add(step.id)
             if not result.alive:
@@ -404,10 +418,35 @@ class ActorRun:
         values = self.slots.fill(proc.slots(), step.with_)
         text = render(proc.template or "", values)
         problems = check_input(text, self.forbidden_ids)
+        if not problems and self.settings.real_host:
+            problems = check_run_safety(text)
         if problems:
             # The lint passed on sample values; a drawn value tripped it. Never send it.
             raise InputRefused(f"{self.scenario.id}/{step.id}: {problems[0]}")
         return text
+
+    def _failed_check(
+        self, session_ref: str, attempt: str, step: Step, text: str, r: Result
+    ) -> None:
+        """Keep what a failed check saw (on a real host, or where the run asked for it). The
+        input itself is not kept: a line of the answer that repeats it (a terminal's echo) is
+        dropped."""
+        lines = [ln for ln in r.output.splitlines() if text.strip() not in ln]
+        record = {
+            "run_id": self.run_id,
+            "scenario_id": self.scenario.id,
+            "session_ref": session_ref,
+            "step": attempt,
+            "procedure_id": step.procedure,
+            "expect": step.expect,
+            "expect_status": step.expect_status,
+            "capture": step.capture.regex if step.capture else None,
+            "status": r.status,
+            "output_lines": len(lines),
+            "output": "\n".join(lines)[:800],
+        }
+        with (self.settings.out_dir / FAILED_CHECKS).open("a") as f:
+            f.write(json.dumps(record) + "\n")
 
     def _send(self, proc: Procedure, text: str, driver: Any) -> Result:
         if proc.kind == "upload":

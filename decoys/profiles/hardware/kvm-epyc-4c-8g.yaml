@@ -1,0 +1,10 @@
+# A hardware class (phase 3 spec 3.2a, decision R6). See kvm-epyc-1c-2g.yaml.
+id: kvm-epyc-4c-8g
+about: A mid-sized KVM virtual server on a newer host. Four virtual CPUs, 8 GB, a 160 GB SCSI disk.
+vm:
+  cpu: EPYC-Milan
+  cpus: 4
+  memory_mb: 8192
+  disk_gb: 160
+  machine: q35
+  disk_bus: scsi

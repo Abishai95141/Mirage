@@ -128,7 +128,7 @@ def probe_ssh(c: Container, port: int) -> dict[str, Any]:
     sys.path.insert(0, str(Path(__file__).resolve().parents[4]))
     from eval.probes.ssh_probes import probe_kexinit
 
-    kex = probe_kexinit("127.0.0.1", port, samples=1)
+    kex = probe_kexinit(f"127.0.0.1:{port}", samples=1)
     t = c.exec("sshd", "-T").stdout
     eff = dict(line.split(" ", 1) for line in t.splitlines() if " " in line)
     return {

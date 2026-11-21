@@ -81,6 +81,19 @@
       "title": "Attack Version",
       "type": "string"
     },
+    "attempts": {
+      "anyOf": [
+        {
+          "minimum": 0,
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Attempts"
+    },
     "dst": {
       "$ref": "#/$defs/Endpoint"
     },

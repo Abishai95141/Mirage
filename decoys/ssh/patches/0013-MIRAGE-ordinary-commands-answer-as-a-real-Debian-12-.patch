@@ -1,0 +1,1919 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: MIRAGE <noreply@anthropic.com>
+Date: Tue, 17 Nov 2026 12:52:31 +0530
+Subject: [PATCH] MIRAGE: ordinary commands answer as a real Debian 12 host
+ does
+
+Found by holding the emulator against a real host with the fingerprint
+suite. A new module, loaded last, replaces ls, id, wc, who, w and env and
+adds sort, stat, type and command -v, each written from a record of what
+GNU coreutils 9.1, procps 4 and bash 5.2 print:
+
+- ls: one name to a line without a terminal, columns filled downwards with
+  tab padding on one, a header for each of several directories, a total and
+  real link counts and dates in the long format, exit status 2;
+- the shell expands *, ? and [...] in unquoted words, and a leading ~;
+- the session's environment is what sshd and PAM set (SSH_CONNECTION,
+  SSH_CLIENT, MOTD_SHOWN; no TMOUT; UID is not exported; SHLVL 0 for an
+  exec request);
+- who and w show a login only for a session with a terminal.
+
+The gate's tier now says 'none' for a program that exists in the filesystem
+and that nothing emulates (the stand-in could only print 'cannot execute
+binary file'), and for options a command declines.
+---
+ src/cowrie/commands/__init__.py          |    2 +
+ src/cowrie/commands/mirage_coreutils.py  | 1130 ++++++++++++++++++++++
+ src/cowrie/mirage_render.py              |   29 +-
+ src/cowrie/shell/bashparse.py            |   39 +-
+ src/cowrie/shell/honeypot.py             |   12 +-
+ src/cowrie/shell/mirage_glob.py          |  109 +++
+ src/cowrie/shell/protocol.py             |   11 +
+ src/cowrie/shell/session.py              |   14 +-
+ src/cowrie/test/test_base_commands.py    |   43 +-
+ src/cowrie/test/test_ls.py               |   30 +-
+ src/cowrie/test/test_mirage_coreutils.py |  280 ++++++
+ 11 files changed, 1672 insertions(+), 27 deletions(-)
+ create mode 100644 src/cowrie/commands/mirage_coreutils.py
+ create mode 100644 src/cowrie/shell/mirage_glob.py
+ create mode 100644 src/cowrie/test/test_mirage_coreutils.py
+
+diff --git a/src/cowrie/commands/__init__.py b/src/cowrie/commands/__init__.py
+index 44ece0e..86cbd28 100644
+--- a/src/cowrie/commands/__init__.py
++++ b/src/cowrie/commands/__init__.py
+@@ -66,4 +66,6 @@ command_modules = [
+     "wget",
+     "which",
+     "yum",
++    # MIRAGE: last, so that its commands replace the stock ones of the same name.
++    "mirage_coreutils",
+ ]
+diff --git a/src/cowrie/commands/mirage_coreutils.py b/src/cowrie/commands/mirage_coreutils.py
+new file mode 100644
+index 0000000..2c76eeb
+--- /dev/null
++++ b/src/cowrie/commands/mirage_coreutils.py
+@@ -0,0 +1,1130 @@
++# SPDX-License-Identifier: BSD-3-Clause
++# ABOUTME: MIRAGE: commands rewritten or added after the fingerprint suite held the
++# ABOUTME: emulator against a real Debian 12 host: ls, id, wc, who, w, sort, stat, type, command.
++
++"""Each command here prints what GNU coreutils 9.1, procps 4 and bash 5.2 print on
++Debian 12, for the options it takes. It was written against a record of a real
++host's answers (the fingerprint suite's reference host), not from memory.
++
++A command that is given an option it does not implement *declines*: the gate
++then reports that the emulator has no answer (tier ``none``), so that another
++rung can answer, instead of printing something a real host would not.
++"""
++
++from __future__ import annotations
++
++import getopt
++import math
++import posixpath
++import re
++import stat as statmod
++import time
++import zlib
++from typing import Any, ClassVar
++
++from cowrie.core import utils
++from cowrie.shell import fs
++from cowrie.shell.command import HoneyPotCommand
++from cowrie.shell.pipe import FD_TERMINAL
++from cowrie.shell.pwd import Group, Passwd
++
++commands: dict[str, Any] = {}
++
++TYPE_CHAR = {
++    fs.T_LINK: "l",
++    fs.T_DIR: "d",
++    fs.T_FILE: "-",
++    fs.T_BLK: "b",
++    fs.T_CHR: "c",
++    fs.T_SOCK: "s",
++    fs.T_FIFO: "p",
++}
++# Device numbers the kernel fixes (Documentation/admin-guide/devices.txt). The
++# filesystem tree does not record them.
++DEVICE_NUMBERS: dict[str, tuple[int, int]] = {
++    "mem": (1, 1),
++    "null": (1, 3),
++    "port": (1, 4),
++    "zero": (1, 5),
++    "full": (1, 7),
++    "random": (1, 8),
++    "urandom": (1, 9),
++    "kmsg": (1, 11),
++    "tty": (5, 0),
++    "console": (5, 1),
++    "ptmx": (5, 2),
++    "ttyS0": (4, 64),
++    "ttyS1": (4, 65),
++    "ttyS2": (4, 66),
++    "ttyS3": (4, 67),
++    "rtc0": (251, 0),
++    "hpet": (10, 228),
++    "fuse": (10, 229),
++    "loop-control": (10, 237),
++    "vga_arbiter": (10, 127),
++    "cpu_dma_latency": (10, 126),
++    "snapshot": (10, 231),
++    "autofs": (10, 235),
++    "btrfs-control": (10, 234),
++    "hwrng": (10, 183),
++}
++_DISK = re.compile(r"^(sd|vd|xvd)([a-z])(\d*)$")
++_NUMBERED = re.compile(r"^(tty|loop|sr|sg|vcs|vcsa|vcsu)(\d+)$")
++_MAJOR = {"sd": 8, "vd": 254, "xvd": 202, "tty": 4, "loop": 7, "sr": 11, "sg": 21, "vcs": 7}
++
++
++def device_numbers(name: str) -> tuple[int, int]:
++    if name in DEVICE_NUMBERS:
++        return DEVICE_NUMBERS[name]
++    disk = _DISK.match(name)
++    if disk:
++        letter = ord(disk.group(2)) - ord("a")
++        return _MAJOR[disk.group(1)], letter * 16 + int(disk.group(3) or 0)
++    numbered = _NUMBERED.match(name)
++    if numbered:
++        kind, n = numbered.group(1), int(numbered.group(2))
++        if kind == "vcsa":
++            return 7, 128 + n
++        if kind == "vcsu":
++            return 7, 64 + n
++        return _MAJOR[kind], n
++    return 0, 0
++
++
++def on_terminal(command: HoneyPotCommand) -> bool:
++    """Whether the command's standard output is the session's terminal: a pty,
++    and neither a pipe nor a file. An exec request without a pty has none."""
++    targets = getattr(command.pp, "targets", None)
++    target = targets.get(1) if isinstance(targets, dict) else None
++    if target is not None and target[0] != FD_TERMINAL:
++        return False
++    return hasattr(command.protocol.user, "windowSize")
++
++
++def terminal_width(command: HoneyPotCommand) -> int:
++    try:
++        return int(command.protocol.user.windowSize[1]) or 80
++    except (AttributeError, IndexError, TypeError, ValueError):
++        return 80
++
++
++class Users:
++    """The deployment's /etc/passwd and /etc/group, read once for a command."""
++
++    def __init__(self) -> None:
++        self.passwd = Passwd().passwd
++        self.group = Group().group
++
++    def name(self, uid: int) -> str:
++        return next((e["pw_name"] for e in self.passwd if e["pw_uid"] == uid), str(uid))
++
++    def group_name(self, gid: int) -> str:
++        return next((e["gr_name"] for e in self.group if e["gr_gid"] == gid), str(gid))
++
++    def entry(self, name: str) -> dict[str, Any] | None:
++        return next((e for e in self.passwd if e["pw_name"] == name), None)
++
++    def groups_of(self, name: str, gid: int) -> list[int]:
++        """The user's group IDs: the primary one, then each group listing the user."""
++        out = [gid]
++        for e in self.group:
++            members = [m for m in str(e["gr_mem"]).split(",") if m]
++            if name in members and e["gr_gid"] not in out:
++                out.append(int(e["gr_gid"]))
++        return out
++
++
++def human(size: int) -> str:
++    """A size as ``ls -h`` and ``du -h`` write it: powers of 1024, rounded up,
++    one decimal below ten."""
++    if size < 1024:
++        return str(size)
++    value = float(size)
++    for unit in "KMGTPE":
++        value /= 1024
++        if value < 1024 or unit == "E":
++            if value < 10:
++                return f"{math.ceil(value * 10) / 10:.1f}{unit}"
++            return f"{math.ceil(value)}{unit}"
++    return str(size)
++
++
++def inode_of(path: str) -> int:
++    """A stable inode number for a path: the tree keeps none."""
++    return 131073 + zlib.crc32(path.encode()) % 1_900_000
++
++
++class Declining(HoneyPotCommand):
++    """A command that implements some of its program's options. With any other
++    it declines: the gate reports tier ``none``, and if it is run all the same
++    it answers as the emulator answers any program it does not have."""
++
++    name: ClassVar[str] = ""
++    program: ClassVar[str] = ""
++
++    @classmethod
++    def mirage_declines(cls, args: list[str]) -> bool:
++        return False
++
++    def not_emulated(self) -> None:
++        prefix = self.shell.error_prefix()
++        if self.program:
++            self.errorWrite(
++                f"{prefix}{self.program}: cannot execute binary file: Exec format error\n"
++            )
++            self.exit_code = 126
++        else:
++            self.errorWrite(f"{prefix}{self.name}: not supported\n")
++            self.exit_code = 2
++
++
++# ---------------------------------------------------------------------- ls
++
++
++class Command_ls(Declining):
++    name, program = "ls", "/usr/bin/ls"
++    SHORT = "1aAdlhtrSRinFpsgoCxUL"
++    LONG: ClassVar[list[str]] = [
++        "all",
++        "almost-all",
++        "directory",
++        "human-readable",
++        "reverse",
++        "recursive",
++        "inode",
++        "numeric-uid-gid",
++        "classify",
++        "size",
++        "dereference",
++        "color",
++        "color=",
++        "help",
++    ]
++
++    @classmethod
++    def _parse(cls, args: list[str]) -> tuple[list[tuple[str, str]], list[str]]:
++        return getopt.gnu_getopt(args, cls.SHORT, cls.LONG)
++
++    @classmethod
++    def mirage_declines(cls, args: list[str]) -> bool:
++        # An option GNU ls has and this does not: decline, not "invalid option".
++        try:
++            opts, _ = cls._parse(args)
++        except getopt.GetoptError as err:
++            return len(err.opt) != 1 or err.opt in "bBcDfGHIkmNqQTuvwXZ"
++        return any(o == "--help" for o, _ in opts)
++
++    def call(self) -> None:
++        try:
++            opts, operands = self._parse(self.args)
++        except getopt.GetoptError as err:
++            if self.mirage_declines(self.args):
++                self.not_emulated()
++                return
++            if len(err.opt) == 1:
++                self.errorWrite(f"ls: invalid option -- '{err.opt}'\n")
++            else:
++                self.errorWrite(f"ls: unrecognized option '--{err.opt}'\n")
++            self.errorWrite("Try 'ls --help' for more information.\n")
++            self.exit_code = 2
++            return
++        if self.mirage_declines(self.args):
++            self.not_emulated()
++            return
++        flags = {o.lstrip("-")[:1] if not o.startswith("--") else o for o, _ in opts}
++        long_names = {
++            "--all": "a",
++            "--almost-all": "A",
++            "--directory": "d",
++            "--human-readable": "h",
++            "--reverse": "r",
++            "--recursive": "R",
++            "--inode": "i",
++            "--numeric-uid-gid": "n",
++            "--classify": "F",
++            "--size": "s",
++            "--dereference": "L",
++        }
++        self.flags = {long_names.get(f, f) for f in flags}
++        self.long = bool(self.flags & {"l", "n", "g", "o"})
++        self.users = Users()
++        self.now = time.time()
++        self.one_per_line = "1" in self.flags or not on_terminal(self)
++        self.first_block = True
++
++        files: list[tuple[str, list[Any], str]] = []
++        dirs: list[tuple[str, str]] = []
++        for operand in operands or ["."]:
++            path = self.fs.resolve_path(operand, self.cwd)
++            node = self._node(path, follow=False)
++            if node is None:
++                self.errorWrite(f"ls: cannot access '{operand}': No such file or directory\n")
++                self.exit_code = 2
++                continue
++            keep_link = self.long or bool(self.flags & {"d", "F"})
++            if node[fs.A_TYPE] == fs.T_LINK and not keep_link or "L" in self.flags:
++                followed = self._node(path, follow=True)
++                if followed is not None:
++                    node = followed
++            if node[fs.A_TYPE] == fs.T_DIR and "d" not in self.flags:
++                dirs.append((operand, path))
++            else:
++                files.append((operand, node, path))
++
++        if files:
++            self._show(self._sorted(files), total=False)
++            self.first_block = False
++        headers = len(operands) > 1 or "R" in self.flags
++        for operand, path in sorted(dirs, key=lambda d: d[0].encode()):
++            self._list_dir(operand, path, headers)
++
++    def _node(self, path: str, follow: bool) -> list[Any] | None:
++        if path == "/":
++            return ["/", fs.T_DIR, 0, 0, 4096, 0o40755, self.fs.fs[fs.A_CTIME], [], None, None]
++        try:
++            return self.fs.getfile(path, follow_symlinks=follow)
++        except Exception:
++            return None
++
++    def _list_dir(self, shown: str, path: str, header: bool) -> None:
++        try:
++            children = list(self.fs.get_path(path))
++        except Exception:
++            self.errorWrite(f"ls: cannot open directory '{shown}': Permission denied\n")
++            self.exit_code = 2
++            return
++        entries = [
++            (c[fs.A_NAME], c, posixpath.join(path, c[fs.A_NAME]))
++            for c in children
++            if "a" in self.flags or "A" in self.flags or not c[fs.A_NAME].startswith(".")
++        ]
++        if "a" in self.flags:
++            here = self._node(path, follow=True)
++            parent = self._node(posixpath.dirname(path.rstrip("/")) or "/", follow=True)
++            if here is not None:
++                entries.append((".", here, path))
++                entries.append(("..", parent or here, posixpath.dirname(path) or "/"))
++        if not self.first_block:
++            self.write("\n")
++        self.first_block = False
++        if header:
++            self.write(f"{shown}:\n")
++        entries = self._sorted(entries)
++        self._show(entries, total=self.long or "s" in self.flags)
++        if "R" in self.flags:
++            for name, node, full in entries:
++                if node[fs.A_TYPE] == fs.T_DIR and name not in (".", ".."):
++                    self._list_dir(posixpath.join(shown, name), full, True)
++
++    def _sorted(self, entries: list[tuple[str, list[Any], str]]) -> list[Any]:
++        if "U" in self.flags:
++            return entries
++        if "t" in self.flags:
++            entries = sorted(entries, key=lambda e: (-e[1][fs.A_CTIME], e[0].encode()))
++        elif "S" in self.flags:
++            entries = sorted(entries, key=lambda e: (-self._size(e[1]), e[0].encode()))
++        else:
++            entries = sorted(entries, key=lambda e: e[0].encode())
++        return entries[::-1] if "r" in self.flags else entries
++
++    @staticmethod
++    def _size(node: list[Any]) -> int:
++        if node[fs.A_TYPE] == fs.T_LINK:
++            return len(node[fs.A_TARGET] or "")
++        return int(node[fs.A_SIZE])
++
++    def _blocks(self, node: list[Any]) -> int:
++        """Kilobytes on disk, as ``ls -s`` and the total count them."""
++        kind = node[fs.A_TYPE]
++        if kind == fs.T_DIR:
++            return 4 if node[fs.A_SIZE] >= 4096 else 0
++        if kind != fs.T_FILE or node[fs.A_SIZE] == 0:
++            return 0
++        return 4 * math.ceil(node[fs.A_SIZE] / 4096)
++
++    def _mark(self, node: list[Any]) -> str:
++        kind = node[fs.A_TYPE]
++        if not self.flags & {"F", "p"}:
++            return ""
++        if kind == fs.T_DIR:
++            return "/"
++        if "p" in self.flags and "F" not in self.flags:
++            return ""
++        if kind == fs.T_LINK:
++            return "" if self.long else "@"
++        if kind == fs.T_FIFO:
++            return "|"
++        if kind == fs.T_SOCK:
++            return "="
++        if kind == fs.T_FILE and node[fs.A_MODE] & 0o111:
++            return "*"
++        return ""
++
++    def _show(self, entries: list[tuple[str, list[Any], str]], total: bool) -> None:
++        if total:
++            blocks = sum(self._blocks(n) for _, n, _ in entries)
++            shown = human(blocks * 1024) if "h" in self.flags else str(blocks)
++            self.write(f"total {shown}\n")
++        if not entries:
++            return
++        if self.long:
++            self._show_long(entries)
++            return
++        cells = []
++        for name, node, full in entries:
++            lead = ""
++            if "i" in self.flags:
++                lead += f"{inode_of(full)} "
++            if "s" in self.flags:
++                lead += f"{self._blocks(node)} "
++            cells.append((lead, name + self._mark(node)))
++        if "i" in self.flags or "s" in self.flags:
++            width = max(len(lead) for lead, _ in cells)
++            texts = [lead.rjust(width) + text for lead, text in cells]
++        else:
++            texts = [text for _, text in cells]
++        if self.one_per_line:
++            self.write("".join(t + "\n" for t in texts))
++        else:
++            self._columns(texts)
++
++    def _columns(self, names: list[str]) -> None:
++        """Columns filled downwards, as GNU ls lays them out on a terminal,
++        padded with tabs where a tab stop is passed."""
++        width, count = terminal_width(self), len(names)
++        best_cols, best_widths = 1, [max(len(n) for n in names)]
++        for cols in range(min(count, max(1, width // 3)), 0, -1):
++            rows = math.ceil(count / cols)
++            widths = [0] * cols
++            for i, name in enumerate(names):
++                col = i // rows
++                widths[col] = max(widths[col], len(name) + (0 if col == cols - 1 else 2))
++            if sum(widths) < width and math.ceil(count / rows) == cols:
++                best_cols, best_widths = cols, widths
++                break
++        rows = math.ceil(count / best_cols)
++        out = []
++        for row in range(rows):
++            position, line = 0, ""
++            for col in range(best_cols):
++                i = col * rows + row
++                if i >= count:
++                    break
++                line += names[i]
++                end = position + best_widths[col]
++                if i + rows < count:
++                    line += self._indent(position + len(names[i]), end)
++                position = end
++            out.append(line + "\n")
++        self.write("".join(out))
++
++    @staticmethod
++    def _indent(start: int, end: int) -> str:
++        out = ""
++        while start < end:
++            if end // 8 > (start + 1) // 8:
++                out += "\t"
++                start += 8 - start % 8
++            else:
++                out += " "
++                start += 1
++        return out
++
++    def _when(self, stamp: float) -> str:
++        t = time.localtime(stamp)
++        month, day = time.strftime("%b", t), f"{t.tm_mday:2d}"
++        recent = self.now - 15778476 < stamp <= self.now  # GNU ls: half a year
++        tail = time.strftime("%H:%M", t) if recent else f" {t.tm_year}"
++        return f"{month} {day} {tail}"
++
++    def _show_long(self, entries: list[tuple[str, list[Any], str]]) -> None:
++        rows = []
++        for name, node, _full in entries:
++            kind = node[fs.A_TYPE]
++            perms = statmod.filemode(statmod.S_IFREG | (node[fs.A_MODE] & 0o7777))[1:]
++            links = 1
++            if kind == fs.T_DIR:
++                links = 2 + sum(1 for c in node[fs.A_CONTENTS] if c[fs.A_TYPE] == fs.T_DIR)
++            numeric = "n" in self.flags
++            owner = str(node[fs.A_UID]) if numeric else self.users.name(node[fs.A_UID])
++            group = str(node[fs.A_GID]) if numeric else self.users.group_name(node[fs.A_GID])
++            if kind in (fs.T_CHR, fs.T_BLK):
++                major, minor = device_numbers(name.rsplit("/", 1)[-1])
++                size = f"{major}, {minor}"
++            elif "h" in self.flags:
++                size = human(self._size(node))
++            else:
++                size = str(self._size(node))
++            shown = name + self._mark(node)
++            if kind == fs.T_LINK:
++                shown += f" -> {node[fs.A_TARGET]}"
++            rows.append(
++                (TYPE_CHAR[kind] + perms, str(links), owner, group, size, node[fs.A_CTIME], shown)
++            )
++        w = [max(len(r[i]) for r in rows) for i in range(5)]
++        out = []
++        for mode, links, owner, group, size, stamp, shown in rows:
++            parts = [mode, links.rjust(w[1])]
++            if "g" not in self.flags:
++                parts.append(owner.ljust(w[2]))
++            if "o" not in self.flags:
++                parts.append(group.ljust(w[3]))
++            parts += [size.rjust(w[4]), self._when(stamp), shown]
++            out.append(" ".join(parts) + "\n")
++        self.write("".join(out))
++
++
++for _name in ("/bin/ls", "/usr/bin/ls", "ls"):
++    commands[_name] = Command_ls
++
++
++# ---------------------------------------------------------------------- id
++
++
++class Command_id(HoneyPotCommand):
++    def call(self) -> None:
++        try:
++            opts, operands = getopt.gnu_getopt(
++                self.args, "ugGnrz", ["user", "group", "groups", "name", "real", "zero"]
++            )
++        except getopt.GetoptError as err:
++            self.errorWrite(f"id: invalid option -- '{err.opt}'\n")
++            self.errorWrite("Try 'id --help' for more information.\n")
++            self.exit_code = 1
++            return
++        long_names = {"--user": "u", "--group": "g", "--groups": "G", "--name": "n"}
++        flags = {long_names.get(o, o.lstrip("-")) for o, _ in opts}
++        users = Users()
++        if operands:
++            entry = users.entry(operands[0])
++            if entry is None:
++                self.errorWrite(f"id: ‘{operands[0]}’: no such user\n")
++                self.exit_code = 1
++                return
++            name, uid, gid = entry["pw_name"], int(entry["pw_uid"]), int(entry["pw_gid"])
++        else:
++            name, uid = str(self.user["username"]), int(self.user["uid"])
++            gid = int(self.user.get("gid", uid))
++        groups = users.groups_of(name, gid)
++        which = flags & {"u", "g", "G"}
++        if len(which) > 1:
++            self.errorWrite("id: cannot print \"only\" of more than one choice\n")
++            self.exit_code = 1
++            return
++        if not which:
++            if flags & {"z", "zero"}:
++                self.errorWrite("id: option --zero not permitted in default format\n")
++                self.exit_code = 1
++                return
++            if flags & {"n", "r", "real"}:
++                self.errorWrite("id: cannot print only names or real IDs in default format\n")
++                self.exit_code = 1
++                return
++            listed = ",".join(f"{g}({users.group_name(g)})" for g in groups)
++            self.write(f"uid={uid}({name}) gid={gid}({users.group_name(gid)}) groups={listed}\n")
++            return
++        named = "n" in flags
++        if "u" in which:
++            self.write(f"{name if named else uid}\n")
++        elif "g" in which:
++            self.write(f"{users.group_name(gid) if named else gid}\n")
++        else:
++            self.write(" ".join(users.group_name(g) if named else str(g) for g in groups) + "\n")
++
++
++commands["/usr/bin/id"] = Command_id
++commands["id"] = Command_id
++
++
++# ---------------------------------------------------------------------- wc
++
++
++class Command_wc(HoneyPotCommand):
++    consumes_stdin = True
++    ORDER = "lwmcL"
++
++    def start(self) -> None:
++        try:
++            opts, operands = getopt.gnu_getopt(
++                self.args, "clmwL", ["bytes", "chars", "lines", "words", "max-line-length"]
++            )
++        except getopt.GetoptError as err:
++            self.errorWrite(f"wc: invalid option -- '{err.opt}'\n")
++            self.errorWrite("Try 'wc --help' for more information.\n")
++            self.exit_code = 1
++            self.exit()
++            return
++        long_names = {
++            "--bytes": "c",
++            "--chars": "m",
++            "--lines": "l",
++            "--words": "w",
++            "--max-line-length": "L",
++        }
++        chosen = {long_names.get(o, o.lstrip("-")) for o, _ in opts} or set("lwc")
++        self.fields = [f for f in self.ORDER if f in chosen]
++        self.operands = operands
++        if not operands and self.input_data is None and not getattr(
++            self.pp, "stdin_from_pipe", False
++        ):
++            return  # reads the terminal until end of file
++        self.finish()
++
++    def lineReceived(self, line: str) -> None:
++        self.input_data = (self.input_data or b"") + line.encode("utf8") + b"\n"
++
++    def handle_CTRL_D(self) -> None:
++        self.finish()
++
++    def eofReceived(self) -> None:
++        if not self.exited:
++            self.finish()
++
++    @staticmethod
++    def count(data: bytes) -> dict[str, int]:
++        text = data.decode("utf8", errors="replace")
++        return {
++            "l": data.count(b"\n"),
++            "w": len(data.split()),
++            "m": len(text),
++            "c": len(data),
++            "L": max((len(line) for line in text.split("\n")), default=0),
++        }
++
++    def finish(self) -> None:
++        rows: list[tuple[dict[str, int], str | None]] = []
++        width, regular = 1, True
++        if not self.operands:
++            rows.append((self.count(self.input_data or b""), None))
++            regular = False
++        for operand in self.operands:
++            path = self.fs.resolve_path(operand, self.cwd)
++            if not self.fs.exists(path):
++                self.errorWrite(f"wc: {operand}: No such file or directory\n")
++                self.exit_code = 1
++                continue
++            if self.fs.isdir(path):
++                rows.append((dict.fromkeys(self.ORDER, 0), operand))
++                self.errorWrite(f"wc: {operand}: Is a directory\n")
++                self.exit_code = 1
++                regular = False
++                continue
++            try:
++                data = self.fs.file_contents(path)
++            except Exception:
++                data = b""
++            rows.append((self.count(data), operand))
++        if len(self.operands) > 1:
++            total = {f: sum(r[0][f] for r in rows) for f in self.ORDER}
++            rows.append((total, "total"))
++        # GNU wc: as wide as the largest byte count is long; seven where an
++        # input is not a regular file; nothing to align for one number alone.
++        if len(rows) == 1 and len(self.fields) == 1:
++            width = 1
++        elif not regular:
++            width = 7
++        else:
++            width = max(len(str(max(r[0]["c"] for r in rows))) if rows else 1, 1)
++        for counts, name in rows:
++            line = " ".join(str(counts[f]).rjust(width) for f in self.fields)
++            self.write(line + (f" {name}" if name else "") + "\n")
++        self.exit()
++
++
++for _name in ("/usr/bin/wc", "/bin/wc", "wc"):
++    commands[_name] = Command_wc
++
++
++# ---------------------------------------------------------------------- who, w
++
++
++def _logged_in(command: HoneyPotCommand) -> bool:
++    """A login is recorded for a session with a terminal; an exec request has none."""
++    return hasattr(command.protocol.user, "windowSize")
++
++
++class Command_who(HoneyPotCommand):
++    def call(self) -> None:
++        if not _logged_in(self):
++            return
++        login = time.localtime(self.protocol.logintime)
++        self.write(
++            f"{self.user['username']:8s} pts/0        "
++            f"{time.strftime('%Y-%m-%d %H:%M', login)} ({self.protocol.clientIP})\n"
++        )
++
++
++class Command_w(HoneyPotCommand):
++    def call(self) -> None:
++        users = 1 if _logged_in(self) else 0
++        self.write(
++            f" {time.strftime('%H:%M:%S')} up {utils.uptime(self.protocol.uptime())},  "
++            f"{users} user,  load average: 0.00, 0.00, 0.00\n"
++        )
++        self.write("USER     TTY      FROM             LOGIN@   IDLE   JCPU   PCPU WHAT\n")
++        if users:
++            login = time.strftime("%H:%M", time.localtime(self.protocol.logintime))
++            self.write(
++                f"{self.user['username']:8s} pts/0    {self.protocol.clientIP[:16]:16s} "
++                f"{login}    0.00s  0.00s  0.00s w\n"
++            )
++
++
++commands["/usr/bin/who"] = Command_who
++commands["who"] = Command_who
++commands["/usr/bin/w"] = Command_w
++commands["w"] = Command_w
++
++
++# ---------------------------------------------------------------------- sort
++
++
++class Command_sort(Declining):
++    name, program = "sort", "/usr/bin/sort"
++    consumes_stdin = True
++    SHORT = "rnufbk:t:o:"
++
++    @classmethod
++    def mirage_declines(cls, args: list[str]) -> bool:
++        try:
++            getopt.gnu_getopt(args, cls.SHORT, ["reverse", "numeric-sort", "unique"])
++        except getopt.GetoptError:
++            return True
++        return False
++
++    def start(self) -> None:
++        if self.mirage_declines(self.args):
++            self.not_emulated()
++            self.exit()
++            return
++        opts, self.operands = getopt.gnu_getopt(
++            self.args, self.SHORT, ["reverse", "numeric-sort", "unique"]
++        )
++        long_names = {"--reverse": "r", "--numeric-sort": "n", "--unique": "u"}
++        self.flags = {long_names.get(o, o.lstrip("-")) for o, _ in opts}
++        self.key = next((a for o, a in opts if o == "-k"), None)
++        self.separator = next((a for o, a in opts if o == "-t"), None)
++        self.output = next((a for o, a in opts if o == "-o"), None)
++        if not self.operands and self.input_data is None and not getattr(
++            self.pp, "stdin_from_pipe", False
++        ):
++            return
++        self.finish()
++
++    def lineReceived(self, line: str) -> None:
++        self.input_data = (self.input_data or b"") + line.encode("utf8") + b"\n"
++
++    def handle_CTRL_D(self) -> None:
++        self.finish()
++
++    def eofReceived(self) -> None:
++        if not self.exited:
++            self.finish()
++
++    def _field(self, line: bytes) -> bytes:
++        if self.key is None:
++            return line
++        spec = re.match(r"(\d+)(?:\.\d+)?[a-zA-Z]*(?:,(\d+))?", self.key)
++        if not spec:
++            return line
++        first, last = int(spec.group(1)), int(spec.group(2)) if spec.group(2) else None
++        if self.separator is not None:
++            fields = line.split(self.separator.encode())
++            joiner = self.separator.encode()
++        else:
++            fields = re.findall(rb"\s*\S+", line)
++            joiner = b""
++        return joiner.join(fields[first - 1 : last])
++
++    def _order(self, line: bytes) -> Any:
++        key = self._field(line)
++        if "b" in self.flags:
++            key = key.lstrip()
++        if "n" in self.flags:
++            number = re.match(rb"\s*(-?\d*\.?\d*)", key)
++            text = number.group(1) if number else b""
++            try:
++                return (float(text) if text not in (b"", b"-", b".") else 0.0, line)
++            except ValueError:
++                return (0.0, line)
++        if "f" in self.flags:
++            return (key.upper(), line)
++        return (key, line)
++
++    def finish(self) -> None:
++        data = b""
++        if not self.operands:
++            data = self.input_data or b""
++        for operand in self.operands:
++            if operand == "-":
++                data += self.input_data or b""
++                continue
++            path = self.fs.resolve_path(operand, self.cwd)
++            if not self.fs.exists(path):
++                self.errorWrite(f"sort: cannot read: {operand}: No such file or directory\n")
++                self.exit_code = 2
++                self.exit()
++                return
++            if self.fs.isdir(path):
++                self.errorWrite(f"sort: read failed: {operand}: Is a directory\n")
++                self.exit_code = 2
++                self.exit()
++                return
++            try:
++                piece = self.fs.file_contents(path)
++            except Exception:
++                piece = b""
++            data += piece if not piece or piece.endswith(b"\n") else piece + b"\n"
++        lines = data.split(b"\n")
++        if lines and lines[-1] == b"":
++            lines.pop()
++        lines.sort(key=self._order, reverse="r" in self.flags)
++        if "u" in self.flags:
++            seen: set[Any] = set()
++            unique = []
++            for line in lines:
++                key = self._order(line)[0]
++                if key not in seen:
++                    seen.add(key)
++                    unique.append(line)
++            lines = unique
++        out = b"".join(line + b"\n" for line in lines)
++        if self.output:
++            path = self.fs.resolve_path(self.output, self.cwd)
++            self.fs.mkfile(path, self.user["uid"], self.user.get("gid", 0), len(out), 0o100644)
++            node = self.fs.getfile(path)
++            if node is not None:
++                node[fs.A_CONTENTS] = out
++        else:
++            self.writeBytes(out)
++        self.exit()
++
++
++for _name in ("/usr/bin/sort", "/bin/sort", "sort"):
++    commands[_name] = Command_sort
++
++
++# ---------------------------------------------------------------------- stat
++
++KIND_WORDS = {
++    fs.T_LINK: "symbolic link",
++    fs.T_DIR: "directory",
++    fs.T_BLK: "block special file",
++    fs.T_CHR: "character special file",
++    fs.T_SOCK: "socket",
++    fs.T_FIFO: "fifo",
++}
++KIND_BITS = {
++    fs.T_LINK: statmod.S_IFLNK,
++    fs.T_DIR: statmod.S_IFDIR,
++    fs.T_FILE: statmod.S_IFREG,
++    fs.T_BLK: statmod.S_IFBLK,
++    fs.T_CHR: statmod.S_IFCHR,
++    fs.T_SOCK: statmod.S_IFSOCK,
++    fs.T_FIFO: statmod.S_IFIFO,
++}
++
++
++class Command_stat(Declining):
++    name, program = "stat", "/usr/bin/stat"
++    SHORT = "Lc:t"
++    LONG: ClassVar[list[str]] = ["dereference", "format=", "printf=", "terse"]
++
++    @classmethod
++    def mirage_declines(cls, args: list[str]) -> bool:
++        try:
++            opts, _ = getopt.gnu_getopt(args, cls.SHORT, cls.LONG)
++        except getopt.GetoptError:
++            return True  # -f (a file system's own numbers) among them
++        for option, value in opts:
++            if option in ("-c", "--format", "--printf"):
++                if set(re.findall(r"%[-+ 0#]*\d*(.)", value)) - set(cls.DIRECTIVES):
++                    return True
++        return False
++
++    DIRECTIVES = "aAbBdDfFgGhHiLnNosStTuUwWxXyYzZ%"
++
++    def call(self) -> None:
++        if self.mirage_declines(self.args):
++            self.not_emulated()
++            return
++        opts, operands = getopt.gnu_getopt(self.args, self.SHORT, self.LONG)
++        follow = any(o in ("-L", "--dereference") for o, _ in opts)
++        template, newline = None, True
++        terse = any(o in ("-t", "--terse") for o, _ in opts)
++        for option, value in opts:
++            if option in ("-c", "--format"):
++                template = value
++            elif option == "--printf":
++                template, newline = value.encode().decode("unicode_escape"), False
++        if not operands:
++            self.errorWrite("stat: missing operand\nTry 'stat --help' for more information.\n")
++            self.exit_code = 1
++            return
++        self.users = Users()
++        for operand in operands:
++            path = self.fs.resolve_path(operand, self.cwd)
++            node = None
++            try:
++                if path == "/":
++                    node = ["/", fs.T_DIR, 0, 0, 4096, 0o755, self.fs.fs[fs.A_CTIME], [], None, None]
++                else:
++                    node = self.fs.getfile(path, follow_symlinks=follow)
++            except Exception:
++                node = None
++            if node is None:
++                self.errorWrite(f"stat: cannot statx '{operand}': No such file or directory\n")
++                self.exit_code = 1
++                continue
++            values = self._values(operand, path, node)
++            if template is not None:
++                self.write(self._format(template, values) + ("\n" if newline else ""))
++            elif terse:
++                self.write(self._format("%n %s %b %f %u %g %D %i %h %t %T %X %Y %Z %W %o", values) + "\n")
++            else:
++                self.write(self._default(values, node))
++
++    def _values(self, operand: str, path: str, node: list[Any]) -> dict[str, str]:
++        kind = node[fs.A_TYPE]
++        perms = node[fs.A_MODE] & 0o7777
++        size = len(node[fs.A_TARGET] or "") if kind == fs.T_LINK else int(node[fs.A_SIZE])
++        blocks = 0
++        if kind == fs.T_DIR:
++            blocks = 8 if size >= 4096 else 0
++        elif kind == fs.T_FILE and size:
++            blocks = 8 * math.ceil(size / 4096)
++        links = 1
++        if kind == fs.T_DIR:
++            links = 2 + sum(1 for c in node[fs.A_CONTENTS] if c[fs.A_TYPE] == fs.T_DIR)
++        stamp = float(node[fs.A_CTIME])
++        whole = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(stamp))
++        nanos = int((stamp % 1) * 1_000_000_000) or zlib.crc32(path.encode()) % 1_000_000_000
++        zone = time.strftime("%z", time.localtime(stamp))
++        shown = f"{whole}.{nanos:09d} {zone}"
++        major, minor = device_numbers(node[fs.A_NAME]) if kind in (fs.T_CHR, fs.T_BLK) else (0, 0)
++        quoted = f"'{operand}'"
++        if kind == fs.T_LINK:
++            quoted += f" -> '{node[fs.A_TARGET]}'"
++        word = KIND_WORDS.get(kind, "regular empty file" if size == 0 else "regular file")
++        return {
++            "a": f"{perms:o}",
++            "A": TYPE_CHAR[kind] + statmod.filemode(statmod.S_IFREG | perms)[1:],
++            "b": str(blocks),
++            "B": "512",
++            "d": "2049",
++            "D": "801",
++            "f": f"{KIND_BITS[kind] | perms:x}",
++            "F": word,
++            "g": str(node[fs.A_GID]),
++            "G": self.users.group_name(node[fs.A_GID]),
++            "h": str(links),
++            "H": "8",
++            "i": str(inode_of(path)),
++            "L": "1",
++            "n": operand,
++            "N": quoted,
++            "o": "4096",
++            "s": str(size),
++            "S": "4096",
++            "t": f"{major:x}",
++            "T": f"{minor:x}",
++            "u": str(node[fs.A_UID]),
++            "U": self.users.name(node[fs.A_UID]),
++            "w": shown,
++            "W": str(int(stamp)),
++            "x": shown,
++            "X": str(int(stamp)),
++            "y": shown,
++            "Y": str(int(stamp)),
++            "z": shown,
++            "Z": str(int(stamp)),
++            "%": "%",
++            "_target": str(node[fs.A_TARGET] or ""),
++            "_device": f"{major},{minor}",
++        }
++
++    @staticmethod
++    def _format(template: str, values: dict[str, str]) -> str:
++        def put(match: re.Match[str]) -> str:
++            flags, width, letter = match.group(1), match.group(2), match.group(3)
++            text = values.get(letter, match.group(0))
++            if width:
++                text = text.ljust(int(width)) if "-" in flags else text.rjust(int(width))
++            return text
++
++        return re.sub(r"%([-+ 0#]*)(\d*)(.)", put, template)
++
++    def _default(self, v: dict[str, str], node: list[Any]) -> str:
++        kind = node[fs.A_TYPE]
++        name = v["n"] + (f" -> {v['_target']}" if kind == fs.T_LINK else "")
++        device = f"     Device type: {v['_device']}" if kind in (fs.T_CHR, fs.T_BLK) else ""
++        return (
++            f"  File: {name}\n"
++            f"  Size: {v['s']:<10}\tBlocks: {v['b']:<10} IO Block: {v['o']:<6} {v['F']}\n"
++            f"Device: 8,1\tInode: {v['i']:<11} Links: {v['h']}{device}\n"
++            f"Access: ({int(v['a'], 8):04o}/{v['A']})  Uid: ({v['u']:>5}/{v['U']:>8})   "
++            f"Gid: ({v['g']:>5}/{v['G']:>8})\n"
++            f"Access: {v['x']}\nModify: {v['y']}\nChange: {v['z']}\n Birth: {v['w']}\n"
++        )
++
++
++for _name in ("/usr/bin/stat", "/bin/stat", "stat"):
++    commands[_name] = Command_stat
++
++
++# ---------------------------------------------------------------------- type, command
++
++BUILTINS = frozenset(
++    ". : [ alias bg bind break builtin caller cd command compgen complete compopt continue "
++    "declare dirs disown echo enable eval exec exit export false fc fg getopts hash help "
++    "history jobs kill let local logout mapfile popd printf pushd pwd read readarray "
++    "readonly return set shift shopt source suspend test times trap true type typeset "
++    "ulimit umask unalias unset wait".split()
++)
++KEYWORDS = frozenset(
++    "if then else elif fi case esac for select while until do done in function time { } ! "
++    "[[ ]] coproc".split()
++)
++
++
++def paths_of(command: HoneyPotCommand, word: str) -> list[str]:
++    """Every place ``word`` is found as a file: itself if it names a path,
++    otherwise each directory of PATH that has it, in PATH's order."""
++    if "/" in word:
++        return [word] if command.fs.isfile(command.fs.resolve_path(word, command.cwd)) else []
++    found = []
++    for directory in command.environ.get("PATH", "").split(":"):
++        if not directory:
++            continue
++        path = f"{command.fs.resolve_path(directory, command.cwd)}/{word}"
++        if command.fs.isfile(path):
++            found.append(f"{directory.rstrip('/')}/{word}")
++    return found
++
++
++def classify(command: HoneyPotCommand, word: str) -> tuple[str, list[str]]:
++    """What bash would run for ``word``: its kind and, for a file, every path it
++    is found at along PATH."""
++    if word in KEYWORDS:
++        return "keyword", []
++    if word in command.shell.functions:
++        return "function", []
++    if word in BUILTINS:
++        return "builtin", []
++    found = paths_of(command, word)
++    return ("file" if found else "none"), found
++
++
++def describe(kind: str, word: str, paths: list[str]) -> str:
++    if kind == "keyword":
++        return f"{word} is a shell keyword"
++    if kind == "builtin":
++        return f"{word} is a shell builtin"
++    if kind == "function":
++        return f"{word} is a function"
++    return f"{word} is {paths[0]}"
++
++
++class Command_type(HoneyPotCommand):
++    def call(self) -> None:
++        try:
++            opts, words = getopt.getopt(self.args, "atpPf")
++        except getopt.GetoptError as err:
++            prefix = self.shell.error_prefix()
++            self.errorWrite(f"{prefix}type: -{err.opt}: invalid option\n")
++            self.errorWrite("type: usage: type [-afptP] name [name ...]\n")
++            self.exit_code = 2
++            return
++        flags = {o.lstrip("-") for o, _ in opts}
++        for word in words:
++            kind, paths = classify(self, word)
++            if "P" in flags:  # a file along PATH, whatever else the name is
++                paths = paths_of(self, word)
++                kind = "file" if paths else "none"
++            if kind == "none":
++                if not flags & {"t", "p", "P"}:
++                    self.errorWrite(f"{self.shell.error_prefix()}type: {word}: not found\n")
++                self.exit_code = 1
++                continue
++            if "t" in flags:
++                self.write(f"{kind}\n")
++            elif flags & {"p", "P"}:
++                if kind == "file":
++                    self.write(f"{paths[0]}\n")
++            elif "a" in flags and kind == "file":
++                self.write("".join(f"{word} is {p}\n" for p in paths))
++            else:
++                self.write(describe(kind, word, paths) + "\n")
++
++
++class Command_command(Declining):
++    name = "command"
++
++    @classmethod
++    def mirage_declines(cls, args: list[str]) -> bool:
++        # `command NAME ...` runs NAME; only -v and -V are answered here.
++        return not args or args[0] not in ("-v", "-V")
++
++    def call(self) -> None:
++        if self.mirage_declines(self.args):
++            self.not_emulated()
++            return
++        verbose = self.args[0] == "-V"
++        for word in self.args[1:]:
++            kind, paths = classify(self, word)
++            if kind == "none":
++                if verbose:
++                    self.errorWrite(f"{self.shell.error_prefix()}command: {word}: not found\n")
++                self.exit_code = 1
++            elif verbose:
++                self.write(describe(kind, word, paths) + "\n")
++            else:
++                self.write((paths[0] if kind == "file" else word) + "\n")
++
++
++commands["type"] = Command_type
++commands["command"] = Command_command
++
++
++# ---------------------------------------------------------------------- env
++
++ENV_ORDER = (
++    "SHELL",
++    "PWD",
++    "LOGNAME",
++    "MOTD_SHOWN",
++    "HOME",
++    "LANG",
++    "SSH_CONNECTION",
++    "TERM",
++    "USER",
++    "SHLVL",
++    "SSH_CLIENT",
++    "PATH",
++    "SSH_TTY",
++)
++
++
++class Command_env(Declining):
++    """The environment in the order a Debian 12 session has it: what sshd and
++    PAM set, then what the session exported, then ``_``."""
++
++    name, program = "env", "/usr/bin/env"
++
++    @classmethod
++    def mirage_declines(cls, args: list[str]) -> bool:
++        return bool(args)  # options, assignments or a command to run
++
++    def call(self) -> None:
++        if self.args:
++            self.not_emulated()
++            return
++        values = {k: v for k, v in self.environ.items() if k in self.exported}
++        values["PWD"] = self.cwd
++        names = [n for n in ENV_ORDER if n in values]
++        names += [n for n in values if n not in ENV_ORDER]
++        self.write("".join(f"{n}={values[n]}\n" for n in names) + "_=/usr/bin/env\n")
++
++
++commands["/usr/bin/env"] = Command_env
++commands["env"] = Command_env
+diff --git a/src/cowrie/mirage_render.py b/src/cowrie/mirage_render.py
+index d4c67e4..52ecccc 100644
+--- a/src/cowrie/mirage_render.py
++++ b/src/cowrie/mirage_render.py
+@@ -225,8 +225,33 @@ def tier(shell: HoneyPotShell, argv: list[str]) -> str:
+     if find(shell, args[0], args[1:], shell.environ) is not None:
+         return "rendered"
+     paths = shell.environ.get("PATH", "").split(":")
+-    known = shell.protocol.getCommand(args[0], paths, shell.cwd) is not None
+-    return "emulated" if known else "none"
++    cmdclass = shell.protocol.getCommand(args[0], paths, shell.cwd)
++    if cmdclass is None:
++        return "none"
++    # A file in the filesystem that no command class stands for gets a stand-in
++    # which runs it as a shell script. If it is a program, the stand-in can
++    # only print "cannot execute binary file": the emulator has no answer.
++    script = getattr(cmdclass, "mirage_script", None)
++    if script is not None and not _is_script(shell, script):
++        return "none"
++    # A command that implements only some of its program's options says which
++    # it does not: for those it has no answer either.
++    declines = getattr(cmdclass, "mirage_declines", None)
++    if declines is not None and declines(args[1:]):
++        return "none"
++    return "emulated"
++
++
++def _is_script(shell: HoneyPotShell, path: str) -> bool:
++    """Whether the shell can run the file at ``path`` as a script: it has text
++    the emulated filesystem can read."""
++    from cowrie.shell.script import is_executable_binary
++
++    try:
++        contents = shell.protocol.fs.file_contents(path)
++    except Exception:
++        return False
++    return bool(contents) and not is_executable_binary(contents)
+ 
+ 
+ # ------------------------------------------------------------------- /proc
+diff --git a/src/cowrie/shell/bashparse.py b/src/cowrie/shell/bashparse.py
+index 17f2a24..16813bb 100644
+--- a/src/cowrie/shell/bashparse.py
++++ b/src/cowrie/shell/bashparse.py
+@@ -1400,8 +1400,13 @@ class BashParser:
+         positional parameters; where the word stays one field, those
+         boundaries become spaces, as in ``x="$@"``.
+         """
++        # MIRAGE: pathname expansion. Text that was quoted has its pattern
++        # characters marked (mirage_glob.protect), so that only an unquoted
++        # *, ? or [...] is a pattern once the word's fields are known.
++        from cowrie.shell import mirage_glob
++
+         pieces: list[tuple[str, bool] | None] = []
+-        for atom in word.children:
++        for index, atom in enumerate(word.children):
+             if isinstance(atom, Tree) and atom.data == "dq":
+                 segments = await self._eval_dquoted(line, atom)
+                 if not segments:
+@@ -1411,15 +1416,39 @@ class BashParser:
+                 for i, segment in enumerate(segments):
+                     if i:
+                         pieces.append(None)
+-                    pieces.append((segment, False))
++                    pieces.append((mirage_glob.protect(segment), False))
+                 continue
+             unquoted = isinstance(atom, Tree) and atom.data in _UNQUOTED_EXPANSIONS
+-            pieces.append((await self._eval_atom(line, atom), unquoted))
++            literal = isinstance(atom, Token) and atom.type != "ESC"
++            text = await self._eval_atom(line, atom)
++            if literal and index == 0 and split:
++                text = self._tilde(text)
++            if not (unquoted or literal):
++                text = mirage_glob.protect(text)
++            pieces.append((text, unquoted))
+         if not split:
+             if all(piece is not None and piece[1] and not piece[0] for piece in pieces):
+                 return []
+-            return ["".join(" " if piece is None else piece[0] for piece in pieces)]
+-        return self._split_fields(pieces)
++            whole = "".join(" " if piece is None else piece[0] for piece in pieces)
++            return [mirage_glob.unprotect(whole)]
++        fields: list[str] = []
++        for field in self._split_fields(pieces):
++            matches = (
++                self.context.glob(field)
++                if mirage_glob.has_pattern(field) and hasattr(self.context, "glob")
++                else []
++            )
++            fields.extend(matches or [mirage_glob.unprotect(field)])
++        return fields
++
++    def _tilde(self, text: str) -> str:
++        """MIRAGE: a word that starts with an unquoted ``~`` or ``~/`` names the
++        home directory."""
++        if text == "~" or text.startswith("~/"):
++            home = self.context.get_variable("HOME")
++            if home:
++                return home + text[1:]
++        return text
+ 
+     @staticmethod
+     def _split_fields(pieces: list[tuple[str, bool] | None]) -> list[str]:
+diff --git a/src/cowrie/shell/honeypot.py b/src/cowrie/shell/honeypot.py
+index a150c71..95f97d7 100644
+--- a/src/cowrie/shell/honeypot.py
++++ b/src/cowrie/shell/honeypot.py
+@@ -133,7 +133,8 @@ class HoneyPotShell:
+             )
+         else:
+             self.environ = copy.copy(protocol.environ)
+-            self.exported = set(protocol.environ.keys())
++            # MIRAGE: UID is bash's own variable, not part of the environment.
++            self.exported = set(protocol.environ.keys()) - {"UID"}
+             self.functions = {}
+             self.user = {
+                 "uid": protocol.user.uid,
+@@ -229,8 +230,17 @@ class HoneyPotShell:
+ 
+     def get_variable(self, name: str) -> str | None:
+         """Look up a shell variable for the Lark word evaluator."""
++        if name == "PWD":  # MIRAGE: bash keeps it in step with cd
++            return self.cwd
+         return self.environ.get(name)
+ 
++    def glob(self, word: str) -> list[str]:
++        """MIRAGE: the paths an unquoted pattern matches in the emulated
++        filesystem, for the word evaluator (see ``mirage_glob``)."""
++        from cowrie.shell import mirage_glob
++
++        return mirage_glob.expand(self.protocol.fs, self.cwd, word)
++
+     def error_prefix(self) -> str:
+         """The prefix bash puts on an error it reports: its name and, for a
+         non-interactive shell, the line being run."""
+diff --git a/src/cowrie/shell/mirage_glob.py b/src/cowrie/shell/mirage_glob.py
+new file mode 100644
+index 0000000..8b9a9a3
+--- /dev/null
++++ b/src/cowrie/shell/mirage_glob.py
+@@ -0,0 +1,109 @@
++# SPDX-License-Identifier: BSD-3-Clause
++# ABOUTME: MIRAGE: pathname expansion against the emulated filesystem, as bash
++# ABOUTME: does it before a command runs: *, ? and [...] in unquoted words.
++
++"""Upstream leaves ``*`` to each command, so ``echo /etc/host*`` printed the
++pattern and ``ls /etc/*.conf`` found nothing. Here the shell expands it.
++
++A word reaches this module with every *quoted* metacharacter preceded by
++``MARK``, so that ``"*"`` and ``\\*`` stay themselves. A pattern that matches
++nothing is left as typed, which is bash's default.
++"""
++
++from __future__ import annotations
++
++import re
++from typing import Any
++
++MARK = "\x00"
++_META = "*?["
++_ACTIVE = re.compile(rf"(?<!{MARK})[*?]|(?<!{MARK})\[[^\]/]+\]")
++
++
++def protect(text: str) -> str:
++    """Quoted text: its metacharacters are not patterns."""
++    return "".join(MARK + c if c in _META else c for c in text.replace(MARK, ""))
++
++
++def unprotect(text: str) -> str:
++    return text.replace(MARK, "")
++
++
++def has_pattern(word: str) -> bool:
++    return _ACTIVE.search(word) is not None
++
++
++def _component(component: str) -> re.Pattern[str]:
++    """One path component of a pattern, as a regular expression."""
++    out, i = "", 0
++    while i < len(component):
++        c = component[i]
++        if c == MARK and i + 1 < len(component):
++            out += re.escape(component[i + 1])
++            i += 2
++            continue
++        if c == "*":
++            out += "[^/]*"
++        elif c == "?":
++            out += "[^/]"
++        elif c == "[":
++            end = component.find("]", i + 2)
++            if end == -1:
++                out += re.escape(c)
++            else:
++                body = component[i + 1 : end].replace(MARK, "")
++                negate = body[:1] in "!^"
++                body = body[1:] if negate else body
++                out += "[" + ("^" if negate else "") + body.replace("\\", "\\\\") + "]"
++                i = end
++        else:
++            out += re.escape(c)
++        i += 1
++    return re.compile(out + r"\Z", re.S)
++
++
++def expand(filesystem: Any, cwd: str, word: str) -> list[str]:
++    """The paths ``word`` matches, sorted as bash sorts them in the C locale;
++    empty when it matches nothing."""
++    absolute = word.startswith("/")
++    parts = word.split("/")
++    dirs_only = len(parts) > 1 and parts[-1] == ""
++    components = [p for p in parts if p != ""]
++    found = ["/" if absolute else ""]
++    for index, component in enumerate(components):
++        last = index == len(components) - 1
++        step: list[str] = []
++        for base in found:
++            real = filesystem.resolve_path(base or ".", cwd)
++            if not has_pattern(component):
++                name = unprotect(component)
++                candidate = base + name
++                if filesystem.lexists(filesystem.resolve_path(candidate, cwd)) or name in (
++                    ".",
++                    "..",
++                ):
++                    step.append(candidate)
++                continue
++            try:
++                if not filesystem.isdir(real):
++                    continue
++                names = [node[0] for node in filesystem.get_path(real)]
++            except Exception:
++                continue
++            pattern = _component(component)
++            hidden = component.startswith(".")
++            for name in names:
++                if name.startswith(".") and not hidden:
++                    continue
++                if pattern.match(name):
++                    step.append(base + name)
++        if not last:
++            step = [
++                s + "/" for s in step if filesystem.isdir(filesystem.resolve_path(s, cwd))
++            ]
++        found = step
++        if not found:
++            return []
++    if dirs_only:
++        found = [f + "/" for f in found if filesystem.isdir(filesystem.resolve_path(f, cwd))]
++    return sorted(found, key=str.encode)
+diff --git a/src/cowrie/shell/protocol.py b/src/cowrie/shell/protocol.py
+index c2f1f7c..eea9e0b 100644
+--- a/src/cowrie/shell/protocol.py
++++ b/src/cowrie/shell/protocol.py
+@@ -147,6 +147,13 @@ class HoneyPotBaseProtocol(insults.TerminalProtocol, TimeoutMixin):
+             except Exception:
+                 self.kippoIP = "192.168.0.1"
+ 
++        # MIRAGE: sshd tells the session who connected, and to which address.
++        if self.environ is not None:
++            self.environ["SSH_CONNECTION"] = (
++                f"{self.clientIP} {self.realClientPort} {self.kippoIP} 22"
++            )
++            self.environ["SSH_CLIENT"] = f"{self.clientIP} {self.realClientPort} 22"
++
+         # IPv6 GUA of server in user visible reports (can be fake or real)
+         if CowrieConfig.has_option("honeypot", "internet_facing_ipv6"):
+             self.kippoIPv6 = CowrieConfig.get("honeypot", "internet_facing_ipv6")
+@@ -218,6 +225,10 @@ class HoneyPotBaseProtocol(insults.TerminalProtocol, TimeoutMixin):
+         """Return a command class that executes a shell script from the virtual filesystem."""
+ 
+         class Command_scriptcmd(command.HoneyPotCommand):
++            # MIRAGE: the file this stands in for. The gate's tier asks whether
++            # it is a script the shell can run or a program nothing emulates.
++            mirage_script = path
++
+             def call(self):
+                 # Running ./file or /path/file: the kernel rejects a binary with
+                 # ENOEXEC ("cannot execute binary file"); a shell script is run
+diff --git a/src/cowrie/shell/session.py b/src/cowrie/shell/session.py
+index 3a81aea..1c78330 100644
+--- a/src/cowrie/shell/session.py
++++ b/src/cowrie/shell/session.py
+@@ -60,14 +60,17 @@ class SSHSessionForCowrieUser:
+         self.uid = avatar.uid
+         self.gid = avatar.gid
+         self.username = avatar.username
++        # MIRAGE: what sshd and PAM leave in the environment on Debian 12. Stock
++        # Cowrie exported TMOUT and UID, which a real session does not have.
++        # UID stays as a shell variable; the first shell does not export it.
+         self.environ = {
+-            "HOME": self.avatar.home,
+-            "LOGNAME": self.username,
+             "SHELL": "/bin/bash",
++            "LOGNAME": self.username,
++            "MOTD_SHOWN": "pam",
++            "HOME": self.avatar.home,
++            "USER": self.username,
+             "SHLVL": "1",
+-            "TMOUT": "1800",
+             "UID": str(self.uid),
+-            "USER": self.username,
+         }
+         if self.uid == 0:
+             self.environ["PATH"] = (
+@@ -96,6 +99,7 @@ class SSHSessionForCowrieUser:
+         # The terminal type is attacker input from the pty request and need
+         # not be valid UTF-8.
+         self.environ["TERM"] = terminal.decode("utf-8", errors="replace")
++        self.environ["SSH_TTY"] = "/dev/pts/0"  # MIRAGE: sshd sets it with a pty
+         self.avatar.conn.transport.events.dispatch(
+             "cowrie.client.size",
+             "Terminal Size: %(width)s %(height)s",
+@@ -109,6 +113,8 @@ class SSHSessionForCowrieUser:
+         mirage_gate.set_tcp_nodelay(self.avatar.conn.transport)
+ 
+     def execCommand(self, processprotocol, cmd):
++        # MIRAGE: bash -c runs the command in place of itself, so it sees SHLVL 0.
++        self.environ["SHLVL"] = "0"
+         self.protocol = insults.LoggingServerProtocol(
+             protocol.HoneyPotExecProtocol, self, cmd
+         )
+diff --git a/src/cowrie/test/test_base_commands.py b/src/cowrie/test/test_base_commands.py
+index d8b4617..2dc9dde 100644
+--- a/src/cowrie/test/test_base_commands.py
++++ b/src/cowrie/test/test_base_commands.py
+@@ -155,27 +155,52 @@ class ShellBaseCommandsTests(unittest.TestCase):  # TODO: ps, history
+         )
+ 
+     def test_set_command(self) -> None:
++        # MIRAGE: sshd's SSH_CLIENT and SSH_CONNECTION are in the session too.
+         self.proto.lineReceived(b"set\n")
++        output = self.tr.value()
++        self.assertTrue(output.endswith(PROMPT))
++        lines = output[: -len(PROMPT)].decode().splitlines()
+         self.assertEqual(
+-            self.tr.value(),
+-            b"COLUMNS=80\nHOME=/root\nLINES=25\nLOGNAME=root\nPATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin\nTMOUT=1800\nUSER=root\n"
+-            + PROMPT,
++            [line.split("=", 1)[0] for line in lines],
++            [
++                "COLUMNS",
++                "HOME",
++                "LINES",
++                "LOGNAME",
++                "PATH",
++                "SSH_CLIENT",
++                "SSH_CONNECTION",
++                "TMOUT",
++                "USER",
++            ],
+         )
++        self.assertIn("HOME=/root", lines)
++        self.assertRegex(lines[5], r"^SSH_CLIENT=\S+ \d+ 22$")
++        self.assertRegex(lines[6], r"^SSH_CONNECTION=\S+ \d+ \S+ 22$")
+ 
+     def test_unset_command(self) -> None:
+         self.proto.lineReceived(b"unset\n")
+         self.assertEqual(self.tr.value(), PROMPT)
+ 
+     def test_export_command(self) -> None:
++        # MIRAGE: sshd's SSH_CLIENT and SSH_CONNECTION are exported too.
+         self.proto.lineReceived(b"export\n")
++        output = self.tr.value()
++        self.assertTrue(output.endswith(PROMPT))
++        lines = output[: -len(PROMPT)].decode().splitlines()
+         self.assertEqual(
+-            self.tr.value(),
+-            b'declare -x HOME="/root"\n'
+-            b'declare -x LOGNAME="root"\n'
+-            b'declare -x PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"\n'
+-            b'declare -x TMOUT="1800"\n'
+-            b'declare -x USER="root"\n' + PROMPT,
++            [line.split("=", 1)[0] for line in lines],
++            [
++                "declare -x HOME",
++                "declare -x LOGNAME",
++                "declare -x PATH",
++                "declare -x SSH_CLIENT",
++                "declare -x SSH_CONNECTION",
++                "declare -x TMOUT",
++                "declare -x USER",
++            ],
+         )
++        self.assertIn('declare -x HOME="/root"', lines)
+ 
+     def test_nop_commands(self) -> None:
+         for command in (
+diff --git a/src/cowrie/test/test_ls.py b/src/cowrie/test/test_ls.py
+index 1fe12c9..75c9167 100644
+--- a/src/cowrie/test/test_ls.py
++++ b/src/cowrie/test/test_ls.py
+@@ -39,18 +39,36 @@ class ShellLsCommandTests(unittest.TestCase):
+         )
+ 
+     def test_ls_command_002(self) -> None:
++        # MIRAGE: on a terminal GNU ls fills its columns downwards and pads
++        # with tabs, so the names read in order column by column.
+         self.proto.lineReceived(b"ls /\n")
++        output = self.tr.value()
++        self.assertTrue(output.endswith(PROMPT))
++        rows = [
++            line.expandtabs(8).split()
++            for line in output[: -len(PROMPT)].decode().splitlines()
++        ]
++        self.assertGreater(len(rows), 1)
++        by_column = [
++            rows[r][c]
++            for c in range(len(rows[0]))
++            for r in range(len(rows))
++            if c < len(rows[r])
++        ]
+         self.assertEqual(
+-            self.tr.value(),
+-            b"bin   boot  dev   etc   home  lib   lib64 media mnt   opt   proc  root  run   \nsbin  srv   sys   tmp   usr   var   \n"
+-            + PROMPT,
++            by_column,
++            "bin boot dev etc home lib lib64 media mnt opt proc root run sbin srv "
++            "sys tmp usr var".split(),
+         )
+ 
+     def test_ls_command_003(self) -> None:
+         self.proto.lineReceived(b"ls -l /\n")
+         output = self.tr.value()
+-        self.assertIn(b"drwxr-xr-x 1 root root 4096 ", output)
+-        self.assertIn(b"lrwxrwxrwx 1 root root    7 ", output)
++        # MIRAGE: a total first, and a directory's link count is 2 and one for
++        # each directory in it, as GNU ls shows them.
++        self.assertTrue(output.startswith(b"total "))
++        self.assertIn(b"drwxr-xr-x  2 root root 4096 ", output)
++        self.assertIn(b"lrwxrwxrwx  1 root root    7 ", output)
+         self.assertIn(b" bin -> usr/bin\n", output)
+         self.assertTrue(output.endswith(PROMPT))
+ 
+@@ -58,7 +76,7 @@ class ShellLsCommandTests(unittest.TestCase):
+         self.proto.lineReceived(b"ls -lh /\n")
+         output = self.tr.value()
+         # -h prints human-readable sizes (4096 -> 4.0K)
+-        self.assertIn(b"drwxr-xr-x 1 root root 4.0K ", output)
++        self.assertIn(b"drwxr-xr-x  2 root root 4.0K ", output)
+         self.assertNotIn(b" 4096 ", output)
+         self.assertTrue(output.endswith(PROMPT))
+ 
+diff --git a/src/cowrie/test/test_mirage_coreutils.py b/src/cowrie/test/test_mirage_coreutils.py
+new file mode 100644
+index 0000000..d2e9961
+--- /dev/null
++++ b/src/cowrie/test/test_mirage_coreutils.py
+@@ -0,0 +1,280 @@
++# SPDX-License-Identifier: BSD-3-Clause
++# ABOUTME: Tests the commands MIRAGE rewrote or added against a real Debian 12
++# ABOUTME: host's answers: ls, id, wc, who, sort, stat, type, command, env, globs.
++
++from __future__ import annotations
++
++import re
++from typing import Any
++
++from cowrie import mirage_render
++from cowrie.shell import fs, mirage_glob
++from cowrie.test.test_mirage_gate import PROMPT, GateTestBase
++
++
++class Base(GateTestBase):
++    def out(self, line: str) -> str:
++        """What a line prints, without the prompt that follows it."""
++        text = self.run_line(line).decode()
++        prompt = PROMPT.decode()
++        if text.endswith(prompt):
++            return text[: -len(prompt)]
++        # The prompt names the working directory, which a test may have changed.
++        return re.sub(r"root@unitTest:[^#]*# \Z", "", text)
++
++    def no_terminal(self) -> None:
++        """Make the session look like an exec request: no pty was asked for."""
++        if hasattr(self.proto.user, "windowSize"):
++            del self.proto.user.windowSize
++
++    def setUp(self) -> None:
++        super().setUp()
++        self.proto.user.windowSize = [24, 80]
++        self.out("mkdir /tmp/t /tmp/t/sub /tmp/e")
++        self.out("touch /tmp/t/a.conf /tmp/t/b.conf /tmp/t/.hidden")
++        self.out("echo hello > /tmp/t/c.txt")
++
++
++class LsTests(Base):
++    def test_without_a_terminal_names_come_one_to_a_line(self) -> None:
++        self.no_terminal()
++        self.assertEqual(self.out("ls /tmp/t"), "a.conf\nb.conf\nc.txt\nsub\n")
++
++    def test_on_a_terminal_names_are_in_columns(self) -> None:
++        # GNU ls pads with a tab wherever the gap passes a tab stop.
++        self.assertEqual(self.out("ls /tmp/t"), "a.conf\tb.conf\tc.txt  sub\n")
++
++    def test_through_a_pipe_names_come_one_to_a_line(self) -> None:
++        self.assertEqual(self.out("ls /tmp/t | cat"), "a.conf\nb.conf\nc.txt\nsub\n")
++
++    def test_columns_fill_downwards_and_pad_with_tabs(self) -> None:
++        self.out("mkdir /tmp/w")
++        names = [f"name-{i:02d}-{'x' * (i % 5)}" for i in range(30)]
++        self.out("touch " + " ".join(f"/tmp/w/{n}" for n in names))
++        lines = self.out("ls /tmp/w").splitlines()
++        self.assertGreater(len(lines), 1)
++        self.assertTrue(all(len(line.expandtabs(8)) <= 80 for line in lines))
++        first_column = [line.split()[0] for line in lines]
++        self.assertEqual(first_column, sorted(names)[: len(lines)])
++        self.assertIn("\t", "".join(lines))
++
++    def test_hidden_files_need_a_and_a_adds_the_two_dots(self) -> None:
++        self.no_terminal()
++        self.assertEqual(self.out("ls -A /tmp/t").splitlines()[0], ".hidden")
++        self.assertEqual(self.out("ls -a /tmp/t").splitlines()[:3], [".", "..", ".hidden"])
++
++    def test_several_operands_files_first_then_each_directory_under_its_name(self) -> None:
++        self.no_terminal()
++        self.assertEqual(
++            self.out("ls /tmp/t /tmp/e /tmp/t/c.txt"),
++            "/tmp/t/c.txt\n\n/tmp/e:\n\n/tmp/t:\na.conf\nb.conf\nc.txt\nsub\n",
++        )
++
++    def test_a_missing_operand_is_an_error_and_status_2(self) -> None:
++        self.no_terminal()
++        text = self.out("ls /tmp/e /nonexistent-x; echo status=$?")
++        self.assertIn("ls: cannot access '/nonexistent-x': No such file or directory\n", text)
++        self.assertIn("/tmp/e:\n", text)
++        self.assertTrue(text.endswith("status=2\n"))
++
++    def test_the_long_format_has_a_total_and_gnu_s_columns(self) -> None:
++        lines = self.out("ls -la /tmp/t").splitlines()
++        self.assertEqual(lines[0], "total 16")  # ., .., sub and the one file with bytes
++        self.assertRegex(lines[1], r"^drwxr-xr-x 3 root root +\d+ [A-Z][a-z]{2} [ \d]\d \d\d:\d\d \.$")
++        entry = next(line for line in lines if line.endswith(" c.txt"))
++        self.assertRegex(entry, r"^-rw-r--r-- 1 root root +6 [A-Z][a-z]{2} [ \d]\d \d\d:\d\d c\.txt$")
++
++    def test_d_names_the_directory_itself(self) -> None:
++        self.assertEqual(self.out("ls -d /tmp/t"), "/tmp/t\n")
++        self.assertRegex(self.out("ls -ld /tmp/t"), r"^drwxr-xr-x 3 root root .* /tmp/t\n$")
++
++    def test_a_link_is_followed_unless_it_is_listed_long(self) -> None:
++        parent = self.proto.fs.get_path("/tmp")
++        self.proto.fs._ensure_private_fs()
++        parent = self.proto.fs.get_path("/tmp")
++        parent.append(["link-t", fs.T_LINK, 0, 0, 6, 0o120777, 0, [], "/tmp/t", None])
++        self.no_terminal()
++        self.assertEqual(self.out("ls /tmp/link-t"), "a.conf\nb.conf\nc.txt\nsub\n")
++        self.assertRegex(self.out("ls -l /tmp/link-t"), r"^lrwxrwxrwx 1 root root 6 .* /tmp/link-t -> /tmp/t\n$")
++
++    def test_an_invalid_option_is_gnu_s_error(self) -> None:
++        text = self.out("ls -Y /tmp/t; echo status=$?")
++        self.assertIn("ls: invalid option -- 'Y'\nTry 'ls --help' for more information.\n", text)
++        self.assertTrue(text.endswith("status=2\n"))
++
++    def test_recursion_lists_each_directory_under_its_name(self) -> None:
++        self.no_terminal()
++        self.assertEqual(
++            self.out("ls -R /tmp/t"), "/tmp/t:\na.conf\nb.conf\nc.txt\nsub\n\n/tmp/t/sub:\n"
++        )
++
++    def test_human_sizes_round_up_as_gnu_s_do(self) -> None:
++        from cowrie.commands.mirage_coreutils import human
++
++        self.assertEqual([human(n) for n in (0, 1023, 1024, 1032, 4096, 34000, 573928)],
++                         ["0", "1023", "1.0K", "1.1K", "4.0K", "34K", "561K"])
++
++
++class GlobTests(Base):
++    def test_a_star_is_expanded_and_sorted(self) -> None:
++        self.assertEqual(self.out("echo /tmp/t/*.conf"), "/tmp/t/a.conf /tmp/t/b.conf\n")
++
++    def test_a_quoted_or_escaped_star_is_itself(self) -> None:
++        self.assertEqual(self.out('echo "/tmp/t/*.conf"'), "/tmp/t/*.conf\n")
++        self.assertEqual(self.out("echo '/tmp/t/*.conf'"), "/tmp/t/*.conf\n")
++        self.assertEqual(self.out("echo /tmp/t/\\*.conf"), "/tmp/t/*.conf\n")
++
++    def test_a_pattern_that_matches_nothing_is_left_as_typed(self) -> None:
++        self.assertEqual(self.out("echo /tmp/t/*.none"), "/tmp/t/*.none\n")
++
++    def test_question_mark_and_brackets(self) -> None:
++        self.assertEqual(self.out("echo /tmp/t/?.conf"), "/tmp/t/a.conf /tmp/t/b.conf\n")
++        self.assertEqual(self.out("echo /tmp/t/[b-z].conf"), "/tmp/t/b.conf\n")
++        self.assertEqual(self.out("echo /tmp/t/[!a].conf"), "/tmp/t/b.conf\n")
++
++    def test_hidden_names_match_only_a_pattern_that_starts_with_a_dot(self) -> None:
++        self.assertEqual(self.out("cd /tmp/t; echo *"), "a.conf b.conf c.txt sub\n")
++        self.assertEqual(self.out("cd /tmp/t; echo .h*"), ".hidden\n")
++
++    def test_a_pattern_in_a_directory_part(self) -> None:
++        self.assertEqual(self.out("echo /tmp/?/c.txt"), "/tmp/t/c.txt\n")
++        self.assertEqual(self.out("echo /tmp/t/*/"), "/tmp/t/sub/\n")
++
++    def test_a_command_gets_the_expanded_names(self) -> None:
++        self.no_terminal()
++        self.assertEqual(self.out("ls /tmp/t/*.conf"), "/tmp/t/a.conf\n/tmp/t/b.conf\n")
++        self.assertEqual(self.out("cat /tmp/t/*.txt"), "hello\n")
++
++    def test_a_pattern_from_a_variable_is_expanded_and_a_quoted_one_is_not(self) -> None:
++        self.assertEqual(self.out("p=/tmp/t/*.txt; echo $p"), "/tmp/t/c.txt\n")
++        self.assertEqual(self.out('p=/tmp/t/*.txt; echo "$p"'), "/tmp/t/*.txt\n")
++
++    def test_test_brackets_and_assignments_are_not_patterns(self) -> None:
++        self.assertEqual(self.out("[ -f /tmp/t/c.txt ] && echo yes"), "yes\n")
++        self.assertEqual(self.out("x=/tmp/t/*.conf; echo \"$x\""), "/tmp/t/*.conf\n")
++
++    def test_a_tilde_names_the_home_directory(self) -> None:
++        self.assertEqual(self.out("echo ~"), "/root\n")
++        self.assertEqual(self.out("echo ~/x"), "/root/x\n")
++        self.assertEqual(self.out('echo "~"'), "~\n")
++
++    def test_the_marker_never_reaches_a_command(self) -> None:
++        self.assertNotIn(mirage_glob.MARK, self.out("echo 'a*b' \"c?d\" e\\[f"))
++
++
++class SmallCommandTests(Base):
++    def test_id_takes_its_options_and_a_user(self) -> None:
++        self.assertEqual(self.out("id"), "uid=0(root) gid=0(root) groups=0(root)\n")
++        self.assertEqual(self.out("id -u"), "0\n")
++        self.assertEqual(self.out("id -un"), "root\n")
++        self.assertEqual(self.out("id -G"), "0\n")
++        self.assertEqual(self.out("id -gn"), "root\n")
++        text = self.out("id nosuchuser; echo status=$?")
++        self.assertEqual(text, "id: \u2018nosuchuser\u2019: no such user\nstatus=1\n")
++
++    def test_wc_counts_files_and_standard_input_as_gnu_wc_prints_them(self) -> None:
++        self.assertEqual(self.out("wc /tmp/t/c.txt"), "1 1 6 /tmp/t/c.txt\n")
++        self.assertEqual(self.out("wc -l /tmp/t/c.txt"), "1 /tmp/t/c.txt\n")
++        self.assertEqual(self.out("echo a b c | wc -w"), "3\n")
++        self.assertEqual(self.out("echo a b c | wc"), "      1       3       6\n")
++        self.assertEqual(
++            self.out("wc -l /tmp/t/c.txt /tmp/t/a.conf"),
++            "1 /tmp/t/c.txt\n0 /tmp/t/a.conf\n1 total\n",
++        )
++        text = self.out("wc -l /nonexistent-x; echo status=$?")
++        self.assertEqual(text, "wc: /nonexistent-x: No such file or directory\nstatus=1\n")
++
++    def test_who_shows_a_login_only_for_a_session_with_a_terminal(self) -> None:
++        self.assertRegex(self.out("who"), r"^root     pts/0        \d{4}-\d\d-\d\d \d\d:\d\d \(")
++        self.assertIn(" 1 user,", self.out("w"))
++        self.no_terminal()
++        self.assertEqual(self.out("who"), "")
++        text = self.out("w")
++        self.assertIn(" 0 user,", text)
++        self.assertEqual(len(text.splitlines()), 2)
++
++    def test_sort_orders_lines_as_the_c_locale_does(self) -> None:
++        self.out("printf 'b\\nB\\na\\n10\\n9\\n' > /tmp/s")
++        self.assertEqual(self.out("sort /tmp/s"), "10\n9\nB\na\nb\n")
++        self.assertEqual(self.out("sort -r /tmp/s"), "b\na\nB\n9\n10\n")
++        self.assertEqual(self.out("sort -n /tmp/s").splitlines()[-2:], ["9", "10"])
++        self.assertEqual(self.out("cat /tmp/s | sort | head -n 1"), "10\n")
++        self.assertEqual(self.out("printf 'a\\na\\nb\\n' | sort -u"), "a\nb\n")
++        text = self.out("sort /nonexistent-x; echo status=$?")
++        self.assertEqual(
++            text, "sort: cannot read: /nonexistent-x: No such file or directory\nstatus=2\n"
++        )
++
++    def test_sort_by_a_field(self) -> None:
++        self.out("printf 'x:3\\ny:1\\nz:2\\n' > /tmp/k")
++        self.assertEqual(self.out("sort -t: -k2 -n /tmp/k"), "y:1\nz:2\nx:3\n")
++
++    def test_stat_prints_coreutils_layout_and_formats(self) -> None:
++        text = self.out("stat /tmp/t/c.txt")
++        lines = text.splitlines()
++        self.assertEqual(lines[0], "  File: /tmp/t/c.txt")
++        self.assertRegex(lines[1], r"^  Size: 6         \tBlocks: 8          IO Block: 4096   regular file$")
++        self.assertRegex(lines[2], r"^Device: 8,1\tInode: \d+ +Links: 1$")
++        self.assertEqual(lines[3], "Access: (0644/-rw-r--r--)  Uid: (    0/    root)   Gid: (    0/    root)")
++        self.assertRegex(lines[4], r"^Access: \d{4}-\d\d-\d\d \d\d:\d\d:\d\d\.\d{9} [+-]\d{4}$")
++        self.assertEqual([line.split(":")[0].strip() for line in lines[4:]],
++                         ["Access", "Modify", "Change", "Birth"])
++        self.assertEqual(self.out("stat -c '%a %U %G %s %n' /tmp/t/c.txt"), "644 root root 6 /tmp/t/c.txt\n")
++        self.assertEqual(self.out("stat -c %F /tmp/t"), "directory\n")
++        text = self.out("stat /nonexistent-x; echo status=$?")
++        self.assertEqual(
++            text, "stat: cannot statx '/nonexistent-x': No such file or directory\nstatus=1\n"
++        )
++
++    def test_type_and_command_say_what_a_name_is(self) -> None:
++        self.assertEqual(self.out("type cd"), "cd is a shell builtin\n")
++        self.assertEqual(self.out("type if"), "if is a shell keyword\n")
++        self.assertEqual(self.out("type -t cd"), "builtin\n")
++        self.assertEqual(self.out("command -v cd"), "cd\n")
++        text = self.out("type nosuchprogram; echo status=$?")
++        self.assertRegex(text, r"^-?bash: (line \d+: )?type: nosuchprogram: not found\nstatus=1\n$")
++        self.assertEqual(self.out("command -v nosuchprogram; echo status=$?"), "status=1\n")
++        where = self.out("command -v ls").strip()
++        self.assertRegex(where, r"^/(usr/)?bin/ls$")
++        self.assertEqual(self.out("type ls"), f"ls is {where}\n")
++        self.assertEqual(self.out("type -t ls"), "file\n")
++
++    def test_env_is_what_a_debian_session_has_in_its_order(self) -> None:
++        self.out("export EXTRA=1")
++        names = [line.split("=", 1)[0] for line in self.out("env").splitlines()]
++        self.assertEqual(names[-1], "_")
++        self.assertEqual(names[-2], "EXTRA")
++        self.assertNotIn("TMOUT", names[:0] + [n for n in names if n == "UID"])
++        self.assertNotIn("UID", names)
++        self.assertLess(names.index("PWD"), names.index("HOME"))
++        self.assertIn("PWD=/tmp\n", self.out("cd /tmp; env"))
++
++
++class TierTests(Base):
++    def tier(self, line: str) -> str:
++        self.gate.requests.clear()
++        self.run_line(line)
++        return self.gate.requests[-1]["tier"]
++
++    def test_a_command_that_declines_an_option_has_no_answer_of_its_own(self) -> None:
++        self.assertEqual(self.tier("stat /tmp/t"), "emulated")
++        self.assertEqual(self.tier("stat -f /"), "none")
++        self.assertEqual(self.tier("sort /tmp/t/c.txt"), "emulated")
++        self.assertEqual(self.tier("sort --version"), "none")
++        self.assertEqual(self.tier("command -v ls"), "emulated")
++        self.assertEqual(self.tier("command ls"), "none")
++        self.assertEqual(self.tier("env"), "emulated")
++        self.assertEqual(self.tier("env FOO=1 ls"), "none")
++
++    def test_a_program_nothing_emulates_is_tier_none_and_a_script_is_emulated(self) -> None:
++        shell: Any = self.proto.cmdstack[0]
++        self.out("echo 'echo from-script' > /tmp/script.sh; chmod +x /tmp/script.sh")
++        self.assertTrue(mirage_render._is_script(shell, "/tmp/script.sh"))
++        self.assertEqual(self.tier("/tmp/script.sh"), "emulated")
++        self.proto.fs.mkfile("/tmp/program", 0, 0, 8, 0o100755)
++        node = self.proto.fs.getfile("/tmp/program")
++        assert node is not None
++        node[fs.A_CONTENTS] = b"\x7fELF\x02\x01\x01\x00"
++        self.assertFalse(mirage_render._is_script(shell, "/tmp/program"))
++        self.assertEqual(self.tier("/tmp/program"), "none")
++        self.assertEqual(self.tier("nosuchprogram"), "none")
+-- 
+2.50.1 (Apple Git-155)
+

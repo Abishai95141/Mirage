@@ -85,3 +85,67 @@ def test_policy_log_record_maps(tmp_path):
     assert ev.session_id == "s9" and ev.sensor == "dep" and str(ev.src.ip) == "198.51.100.2"
     assert ev.payload["request_id"] == "r9" and ev.payload["seq"] == 4
     assert ev.payload["rule_id"] == "default-allow" and ev.policy.action == "allow"
+
+
+# ---- the responder's own record (phase 3)
+
+
+def responder_record(**over):
+    record = {
+        "eventid": "responder.answer",
+        "timestamp": "2026-11-17T10:00:01.250000Z",
+        "request_id": "r-1",
+        "session_id": "a1b2c3d4e5f6",
+        "deployment_id": "web-db-1",
+        "seq": 4,
+        "src_ip": "203.0.113.9",
+        "verb": "stat",
+        "class": "state-reading",
+        "backend": "llama",
+        "model_version": "qwen-9b-q4",
+        "prompt_version": "1",
+        "lines": 3,
+        "ops_proposed": 0,
+        "ops_applied": 0,
+        "prompt_tokens": 443,
+        "output_tokens": 61,
+        "first_ms": 410.2,
+        "total_ms": 912.0,
+        "outcome": "end",
+        "rung": "model",
+        "exit_code": 0,
+    }
+    return record | over
+
+
+def test_a_responder_record_joins_the_decoys_event_on_the_request():
+    from mirage_schema import EventClass, Outcome, Source
+    from mirage_schema.mappings import responder
+
+    ev = responder.map_record(responder_record())
+    assert (ev.source, ev.event_class, ev.action, ev.outcome) == (
+        Source.RESPONDER,
+        EventClass.PROCESS_ACTIVITY,
+        "answer",
+        Outcome.SUCCESS,
+    )
+    assert (ev.session_id, ev.sensor, str(ev.src.ip)) == ("a1b2c3d4e5f6", "web-db-1", "203.0.113.9")
+    assert ev.payload["request_id"] == "r-1" and ev.payload["rung"] == "model"
+    assert ev.payload["answer_outcome"] == "end" and "outcome" not in ev.payload
+    assert ev.payload["output_tokens"] == 61
+    # The same record gives the same event: a redelivery replaces, it does not add.
+    assert responder.map_record(responder_record()).event_id == ev.event_id
+
+
+def test_a_responder_record_that_did_not_answer():
+    import pytest as _pytest
+
+    from mirage_schema import Outcome
+    from mirage_schema.mappings import responder
+
+    aborted = responder.map_record(responder_record(outcome="abort", reason="budget:session"))
+    assert aborted.outcome is Outcome.FAILURE and aborted.payload["reason"] == "budget:session"
+    for how in ("resync", "cancelled"):
+        assert responder.map_record(responder_record(outcome=how)).outcome is Outcome.UNKNOWN
+    with _pytest.raises(ValueError, match="not a responder record"):
+        responder.map_record(responder_record(eventid="policy.decision"))

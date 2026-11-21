@@ -111,8 +111,12 @@ def test_the_lab_network_is_internal_and_holds_only_the_lab_edge():
     net = json.loads(docker("network", "inspect", "mirage_lab").stdout)[0]
     assert net["Internal"] is True
     members = {c["Name"] for c in net["Containers"].values()}
-    # The runner joins only for the length of a run; nothing else ever does.
-    assert {m for m in members if not m.startswith("mirage-runner-run-")} == {"mirage-lab-edge-1"}
+    # The runner joins only for the length of a run. The one other member there can be is the
+    # showcase's console, while a showcase is up on a lab host (docs/08-showcase.md): it
+    # reaches the decoys the way the runner does, through the lab edge.
+    standing = {m for m in members if not m.startswith("mirage-runner-run-")}
+    assert "mirage-lab-edge-1" in standing
+    assert standing <= {"mirage-lab-edge-1", "mirage-showcase-console-1"}
 
 
 def _proxy_v1(src: str) -> bytes:

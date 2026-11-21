@@ -281,3 +281,29 @@ def test_the_depth_files_leave_the_phase_2_split_as_it_was():
     assert set(depth.of_scenario) == {sc.id for sc in depth_scenarios}
     assert not set(depth.of_scenario) & set(frozen.of_scenario)
     assert not set(depth.of_procedure) & set(frozen.of_procedure)
+
+
+def test_demo_procedures_are_in_no_split_and_are_held_against_the_test_ones():
+    from eval import split as sp
+
+    demo = cat(
+        ("h-same", "T1082", "TA0007", "uname -a"),
+        ("h-other", "T1033", "TA0007", "id"),
+    )
+    phase2 = cat(
+        ("old-train", "T1082", "TA0007", "uname -a"),
+        ("old-test", "T1082", "TA0007", "uname  -a"),
+        ("old-far", "T1083", "TA0007", "ls {{dir}}"),
+    )
+    split = sp.Split({"old-train": "train", "old-test": "test", "old-far": "test"}, {}, "x")
+    result = sp.demo_check(demo, [("phase 2", phase2, split)])
+    assert result.problems == []  # reported, not refused
+    # Only the held-out twin is listed: a training procedure may be the same command.
+    assert [(a, b, sb) for a, _sa, b, sb, _score in result.similar_pairs] == [
+        ("h-same", "old-test", "phase 2 test")
+    ]
+    assert "uname" not in str(result.similar_pairs)
+    # A split that names a demo procedure has taken demo steps in as data.
+    named = sp.Split({**split.of_procedure, "h-other": "train"}, {}, "x")
+    problems = sp.demo_check(demo, [("phase 2", phase2, named)]).problems
+    assert len(problems) == 1 and "h-other" in problems[0] and "phase 2 split" in problems[0]

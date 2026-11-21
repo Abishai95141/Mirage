@@ -1,0 +1,33 @@
+           CPU0       CPU1       
+  0:         41          0   IO-APIC   2-edge      timer
+  1:          0          9   IO-APIC   1-edge      i8042
+  4:          0        454   IO-APIC   4-edge      ttyS0
+  6:          3          0   IO-APIC   6-edge      floppy
+  8:          1          0   IO-APIC   8-edge      rtc0
+  9:          0          0   IO-APIC   9-fasteoi   acpi
+ 11:         20          0   IO-APIC  11-fasteoi   virtio0
+ 12:         15          0   IO-APIC  12-edge      i8042
+ 14:          0          0   IO-APIC  14-edge      ata_piix
+ 15:          0          0   IO-APIC  15-edge      ata_piix
+ 24:          0          0   PCI-MSI 65536-edge      virtio1-config
+ 25:       1533          0   PCI-MSI 65537-edge      virtio1-req.0
+ 26:          0        631   PCI-MSI 65538-edge      virtio1-req.1
+NMI:          0          0   Non-maskable interrupts
+LOC:       1378       1412   Local timer interrupts
+SPU:          0          0   Spurious interrupts
+PMI:          0          0   Performance monitoring interrupts
+IWI:          0          0   IRQ work interrupts
+RTR:          0          0   APIC ICR read retries
+RES:        298        283   Rescheduling interrupts
+CAL:       3735       2582   Function call interrupts
+TLB:          1          4   TLB shootdowns
+TRM:          0          0   Thermal event interrupts
+THR:          0          0   Threshold APIC interrupts
+DFR:          0          0   Deferred Error APIC interrupts
+MCE:          0          0   Machine check exceptions
+MCP:          1          1   Machine check polls
+ERR:          0
+MIS:          0
+PIN:          0          0   Posted-interrupt notification event
+NPI:          0          0   Nested posted-interrupt event
+PIW:          0          0   Posted-interrupt wakeup event

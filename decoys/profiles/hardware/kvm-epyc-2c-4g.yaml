@@ -1,0 +1,10 @@
+# A hardware class (phase 3 spec 3.2a, decision R6). See kvm-epyc-1c-2g.yaml.
+id: kvm-epyc-2c-4g
+about: A small KVM virtual server. Two virtual CPUs, 4 GB, an 80 GB virtio disk.
+vm:
+  cpu: EPYC-Rome
+  cpus: 2
+  memory_mb: 4096
+  disk_gb: 80
+  machine: pc
+  disk_bus: virtio

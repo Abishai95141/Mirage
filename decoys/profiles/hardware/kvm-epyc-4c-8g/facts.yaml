@@ -1,0 +1,45 @@
+# What this class is, read off its record. Written by `mirage-profile hardware`.
+id: kvm-epyc-4c-8g
+about: A mid-sized KVM virtual server on a newer host. Four virtual CPUs, 8 GB, a 160 GB SCSI disk.
+vm:
+  cpu: EPYC-Milan
+  cpus: 4
+  memory_mb: 8192
+  disk_gb: 160
+  machine: q35
+  disk_bus: scsi
+cpu_model: AMD EPYC-Milan Processor
+cpus: 4
+memory_kb: 8131272
+disk:
+  name: sda
+  size: 160G
+root_device: /dev/sda1
+interface: enp0s2
+virtualisation: kvm
+hardware_vendor: QEMU
+hardware_model: Standard PC _Q35 + ICH9, 2009_
+kernel_release: 6.1.0-54-amd64
+kernel_version: '#1 SMP PREEMPT_DYNAMIC Debian 6.1.190-1 (2026-10-16)'
+recorded_uptime_s: 29.58
+slots:
+  boot_id: fact
+  boot_id_hex: fact
+  broadcast: fact
+  dns: fact
+  gateway: fact
+  hostname: fact
+  ipv6_link: fact
+  mac: fact
+  machine_id: fact
+  network: fact
+  partuuid_1: uuid
+  partuuid_14: uuid
+  partuuid_15: uuid
+  private_ip: fact
+  uuid_1: uuid
+  uuid_15: fat_id
+image_sha512: ef4e6f3302cf7951f869e8e01263ee9ab69661b67dc28d45d76eb317b81cf7f87a75f85f26a3b30cbb772025f2edc27dee4f640f91d4cb3f4afe7662b6362e2a
+commands_absent:
+- dmidecode
+- lsusb

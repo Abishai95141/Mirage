@@ -108,4 +108,4 @@ procedures:
     tactic: TA0009
     source: own
     protocol: ssh
-    template: tar czf /tmp/{{word}}-s/www.tgz /var/www/html 2>/dev/null && tar tzf /tmp/{{word}}-s/www.tgz | grep -q . && echo ok$?
+    template: mkdir -p /tmp/{{word}}-s && tar czf /tmp/{{word}}-s/www.tgz /var/www/html 2>/dev/null && tar tzf /tmp/{{word}}-s/www.tgz | grep -q . && echo ok$?

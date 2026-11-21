@@ -9,6 +9,9 @@ hostnames: [web01, web02, www1, app01, srv-web1, prod-web01, wp01, site01]
 # rejected (no wildcard entries), as on a host with a weak but specific password.
 root_passwords: ["123456", "admin", "root123", "password", "P@ssw0rd", "qwerty123", "toor", "1q2w3e4r"]
 regular_users: {min: 1, max: 2}
+# The machine a deployment claims to be: one of these, by seed. Each is recorded from a real
+# Debian 12 system on that virtual hardware (decoys/profiles/hardware; phase 3 spec 3.2a).
+hardware_classes: [kvm-epyc-1c-2g, kvm-epyc-2c-4g, kvm-epyc-4c-8g]
 site:
   title_words: [Northwind, Bluepeak, Harbor, Meridian, Cedar, Atlas, Lumen, Oakridge]
   title_suffix: [Consulting, Logistics, Dental, Studio, Supplies, Partners, Systems]

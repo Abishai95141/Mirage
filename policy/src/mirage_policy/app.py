@@ -8,7 +8,7 @@ Beside the request and the decision the decoy was sent, a record carries (phase 
 
 ``context``          the features the policies saw (documented in :mod:`mirage_policy.shadow`),
                      the raw ``verb`` and its ``verb_class`` among them
-``context_version``  the feature set's version and the verb-class mapping's, as ``"2.1"``
+``context_version``  the feature set's version and the verb-class mapping's, as ``"3.1"``
 ``allowed``          the actions left by the mask, in the service's fixed order
 ``acting``           the policy that decided: ``name``, ``version``, ``action``, ``propensity``;
                      for the exploring policy also ``probs`` for every allowed action, the
@@ -53,11 +53,21 @@ from mirage_policy.explore import (
     allowed_actions,
     explore_enabled,
     is_explore,
+    v2_allowed,
 )
 from mirage_policy.fake_errors import FakeErrors
 from mirage_policy.rules import Rule, RuleSet
 from mirage_policy.shadow import FALLBACK_NAME, FallbackShadow, distribution, load_shadow
-from mirage_schema.policy import Action, DecideRequest, Decision, as_dict
+from mirage_schema.policy import (
+    MAX_OUTPUT_TOKENS,
+    MAX_RESPOND_DEADLINE_MS,
+    V2_ACTIONS,
+    Action,
+    Budget,
+    DecideRequest,
+    Decision,
+    as_dict,
+)
 
 log = logging.getLogger("mirage.policy")
 
@@ -119,7 +129,12 @@ class Settings:
         if os.environ.get("POLICY_SELFTEST") == "1":
             files.append(RULES_DIR / "selftest.yaml")
         extra = os.environ.get("POLICY_RULES")
-        files.append(Path(extra) if extra else RULES_DIR / "default.yaml")
+        # POLICY_RULESET names one of the service's own sets: `default` (phase 2's allow-all)
+        # or `v2` (phase 3's adaptive rules). POLICY_RULES, a path, comes before it.
+        name = os.environ.get("POLICY_RULESET") or "default"
+        if not extra and not (RULES_DIR / f"{name}.yaml").is_file():
+            raise SystemExit(f"POLICY_RULESET: no rule set called {name!r}")
+        files.append(Path(extra) if extra else RULES_DIR / f"{name}.yaml")
         log_path = Path(os.environ.get("POLICY_LOG", "/var/log/mirage-policy/decisions.json"))
         fake_errors = os.environ.get("POLICY_FAKE_ERRORS")
         shadow_model = os.environ.get("POLICY_SHADOW_MODEL")
@@ -173,6 +188,9 @@ def create_app(settings: Settings, rng: random.Random | None = None) -> FastAPI:
     shadow_failed = False  # a failing model is reported once, not once per decision
     tactics = TacticRules.from_env()
     explore_on = explore_enabled()
+    # A person sets this on a host whose sandbox tests have passed (spec 3.5). Without it
+    # `escalate` is masked everywhere.
+    host_ready = os.environ.get("POLICY_ESCALATE_HOST_OK") == "1"
     rng = rng or random.Random()  # noqa: S311 - exploration sampling, not cryptography
 
     app = FastAPI(docs_url=None, redoc_url=None, openapi_url=None)
@@ -226,19 +244,33 @@ def create_app(settings: Settings, rng: random.Random | None = None) -> FastAPI:
         except (ValidationError, ValueError) as exc:
             raise HTTPException(status_code=422, detail=str(exc)[:500]) from exc
 
-        rule = rules.decide(req)
         tactic = tactics.tactic(req.protocol.value, req.input_text())
         features = context.observe(req, tactic)
-        features["rule_action"] = rule.action.value
         # The mask needs the service's own count of the session's inputs: a request without a
         # ``seq`` is a first input only until the session has had one.
-        allowed = allowed_actions(req, features["inputs_so_far"])
+        allowed = allowed_actions(req, features["inputs_so_far"], context.escalated(req.session_id))
+        # Contract v2's actions (phase 3): what the mask leaves of them for this request. A
+        # version 2 rule reaches one only from this list.
+        eligible = v2_allowed(req, features, context, reserve=False, host_ready=host_ready)
+        rule = rules.decide(req, features, tactic, frozenset(eligible))
+        granted = 0
+        if rule.action is Action.RESPOND:
+            granted = context.grant(req, rule.max_tokens or MAX_OUTPUT_TOKENS)
+            if not granted:  # the budget went between the mask and here: the next rule down
+                rule = rules.decide(req, features, tactic, frozenset(eligible) - {Action.RESPOND})
+        # The v1 policies (the exploring one, the shadow) know five actions. To them a v2
+        # action is what the decoy would have done unasked: allow.
+        new_action = rule.action if rule.action in V2_ACTIONS else None
+        features["rule_action"] = Action.ALLOW.value if new_action else rule.action.value
+        features["rule_action_v2"] = new_action.value if new_action else None
         decision_id = str(uuid.uuid4())
 
         exploring = is_explore(req, explore_on)
         if exploring:
             # In the lab explore range the bandit acts and logs the probability of its choice.
-            choice = policy.sample(allowed, rule.action, rng)
+            # It explores around the rule's v1 action; the new actions are explored by the
+            # campaign of spec 3.3, with its own behaviour policy, not here.
+            choice = policy.sample(allowed, Action(features["rule_action"]), rng)
             decision = _decision_for(
                 choice.action,
                 rule,
@@ -261,12 +293,18 @@ def create_app(settings: Settings, rng: random.Random | None = None) -> FastAPI:
         else:
             # Elsewhere the rules decide; the shadow policy only says what it would have done.
             decision = _decision_for(rule.action, rule, decision_id, 1.0, rules.version)
+            if rule.action is Action.RESPOND:
+                decision.budget = Budget(
+                    max_tokens=granted,
+                    deadline_ms=rule.deadline_ms or MAX_RESPOND_DEADLINE_MS,
+                )
             acting = {
                 "name": "rules",
                 "version": rules.version,
                 "action": rule.action.value,
                 "propensity": 1.0,
             }
+        context.record(req, decision.action, granted if decision.budget else 0)
         # Asked on every decision, explored or not: the shadow never acts.
         shadowed = shadow_record(features, allowed)
 
@@ -282,6 +320,7 @@ def create_app(settings: Settings, rng: random.Random | None = None) -> FastAPI:
                 "context": features,
                 "context_version": f"{CONTEXT_VERSION}.{verbs.VERSION}",
                 "allowed": [a.value for a in allowed],
+                "eligible_v2": [a.value for a in eligible],
                 "acting": acting,
                 "shadow": shadowed,
                 "explore": exploring,

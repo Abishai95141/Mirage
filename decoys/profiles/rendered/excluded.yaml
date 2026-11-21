@@ -1,0 +1,9 @@
+# Inventory commands the render library does not answer, and why (mirage_profiles.library,
+# rule 2). Each is a reporting command a real server has, so the decoy still answers it
+# wrongly; it waits for a rung that keeps state. Edit by hand; `make render-library` reads it.
+# (`ss -ant` was here until 18 November 2026: the decoy has its own `ss` since fork patch 0021.)
+- argv: lsof -i -nP
+  why: >
+    Its answer names process IDs and the caller's own connection, which must agree with `ps`
+    and `ss`. Both now read the deployment's process list and its sockets (fork patches 0016
+    and 0021), so `lsof` can be emulated from the same two; a fixed text cannot hold it.

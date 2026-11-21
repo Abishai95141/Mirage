@@ -22,11 +22,17 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from eval.probes.net import Target
 from eval.probes.ssh_probes import probe_kexinit
 
 ROOT = Path(__file__).resolve().parents[2]
 REFERENCE = ROOT / "decoys/profiles/reference/debian-12.json"
 COWRIE_DEFAULT_HOSTNAMES = {"svr04"}
+DEV_EVERYWHERE = {
+    "null", "zero", "full", "random", "urandom", "tty", "ptmx", "console",
+    "pts", "shm", "fd", "stdin", "stdout", "stderr",
+}  # fmt: skip
+EXEC_FAILED = "<the exec channel failed"
 FRAMEWORK_STRINGS = ("uvicorn", "starlette", "fastapi", "h11", "python", "werkzeug")
 
 
@@ -39,14 +45,8 @@ class Result:
 
 
 class Shell:
-    def __init__(self, host: str, port: int, user: str, password: str) -> None:
-        import paramiko
-
-        self.client = paramiko.SSHClient()
-        self.client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-        self.client.connect(
-            host, port, user, password, look_for_keys=False, allow_agent=False, timeout=10
-        )
+    def __init__(self, target: Target | str, user: str, password: str) -> None:
+        self.client = Target.parse(target).ssh(user, password, timeout=10)
         self.chan = self.client.invoke_shell(width=250)
         time.sleep(1)
         self._drain()
@@ -69,31 +69,26 @@ class Shell:
         self.client.close()
 
 
-def ssh_login_works(host: str, port: int, user: str, password: str) -> bool:
+def ssh_login_works(target: Target | str, user: str, password: str) -> bool:
     import paramiko
 
-    c = paramiko.SSHClient()
-    c.set_missing_host_key_policy(paramiko.AutoAddPolicy())
     try:
-        c.connect(host, port, user, password, look_for_keys=False, allow_agent=False, timeout=10)
+        Target.parse(target).ssh(user, password, timeout=10).close()
         return True
     except paramiko.AuthenticationException:
         return False
-    finally:
-        c.close()
 
 
 def check_ssh(
-    target: str, password: str, ref: dict[str, Any], host_profile: dict[str, Any] | None
+    target: Target | str, password: str, ref: dict[str, Any], host_profile: dict[str, Any] | None
 ) -> list[Result]:
-    host, port_s = target.rsplit(":", 1)
-    port = int(port_s)
+    target = Target.parse(target)
     r: list[Result] = []
 
     def add(check: str, ok: bool, detail: str = "", gap: bool = False) -> None:
         r.append(Result("ssh", check, "pass" if ok else ("gap" if gap else "fail"), detail))
 
-    kex = probe_kexinit(host, port, samples=1)
+    kex = probe_kexinit(target, samples=1)
     add("banner is the reference OpenSSH", kex["banner"] == ref["ssh"]["banner"], kex["banner"])
     for name, offered in kex["algorithms"].items():
         if name.startswith("languages"):
@@ -107,14 +102,14 @@ def check_ssh(
         gap=True,
     )
 
-    rejected = [not ssh_login_works(host, port, "root", secrets.token_hex(6)) for _ in range(5)]
+    rejected = [not ssh_login_works(target, "root", secrets.token_hex(6)) for _ in range(5)]
     add("random root passwords rejected", all(rejected), f"{sum(rejected)}/5 rejected")
     add(
         "random user rejected",
-        not ssh_login_works(host, port, f"u{secrets.token_hex(3)}", secrets.token_hex(6)),
+        not ssh_login_works(target, f"u{secrets.token_hex(3)}", secrets.token_hex(6)),
     )
 
-    sh = Shell(host, port, "root", password)
+    sh = Shell(target, "root", password)
     try:
         hostname = sh.run("hostname")
         add("hostname is not a Cowrie default", hostname not in COWRIE_DEFAULT_HOSTNAMES, hostname)
@@ -133,6 +128,64 @@ def check_ssh(
             f"Debian {k['package_version']} ({k['build_date']})" in uname,
             uname,
         )
+        # The kernel's directories. The decoy's tree is built from an image, where they are
+        # empty; phase 3's depth baseline found /dev/null missing that way.
+        dev = set(sh.run("ls /dev").split())
+        lacking = sorted(DEV_EVERYWHERE - dev)
+        add("/dev has what every Linux system has", not lacking, " ".join(lacking))
+        null = sh.run("cat /dev/null")
+        add("/dev/null reads as nothing", null == "", null[:60])
+        # What the machine is: the kernel's files, and the programs that report on it, must
+        # tell one story, the profile's hardware class (phase 3 spec 3.2a).
+        cpuinfo = sh.run("cat /proc/cpuinfo", wait=1.5)
+        meminfo = sh.run("cat /proc/meminfo", wait=1.0)
+        add("/proc/cpuinfo exists", "model name" in cpuinfo, cpuinfo[:60])
+        add("/proc/meminfo exists", "MemTotal" in meminfo, meminfo[:60])
+        add("/sys is not empty", "devices" in sh.run("ls /sys").split())
+        hw = (host_profile or {}).get("hardware")
+        if hw:
+            cpus = len(re.findall(r"^processor\s*:", cpuinfo, re.M))
+            add("/proc/cpuinfo has the class's processors", cpus == hw["cpus"], str(cpus))
+            add("/proc/cpuinfo names the class's CPU", hw["cpu_model"] in cpuinfo)
+            total = re.search(r"MemTotal:\s+(\d+) kB", meminfo)
+            add(
+                "/proc/meminfo has the class's memory",
+                bool(total) and int(total.group(1)) == hw["memory_kb"],
+                total.group(1) if total else "",
+            )
+            nproc = sh.run("nproc")
+            add("nproc agrees with /proc/cpuinfo", nproc == str(hw["cpus"]), nproc)
+            lscpu = sh.run("lscpu", wait=1.5)
+            add("lscpu names the class's CPU", hw["cpu_model"] in lscpu, lscpu[:80])
+            disk = hw["disk"]["name"]
+            add("the class's disk is in /dev", disk in sh.run("ls /dev").split())
+            add("df shows the class's root device", hw["root_device"] in sh.run("df -h", wait=1.0))
+            mem_mb = hw["memory_kb"] // 1024
+            free = re.search(r"Mem:\s+(\d+)", sh.run("free -m"))
+            add(
+                "free agrees with /proc/meminfo",
+                bool(free) and abs(int(free.group(1)) - mem_mb) <= 1,
+                free.group(1) if free else "",
+            )
+        # The key the server presents is the one in its own public key file, as on any
+        # host. Stock Cowrie makes its keys up at start and shows the files of its image.
+        presented = sh.client.get_transport().get_remote_server_key()
+        kind = {"ssh-rsa": "rsa", "ssh-ed25519": "ed25519"}.get(presented.get_name(), "ecdsa")
+        shown = sh.run(f"cat /etc/ssh/ssh_host_{kind}_key.pub").split()
+        add(
+            "the host key presented is the one in /etc/ssh",
+            len(shown) >= 2 and shown[1] == presented.get_base64(),
+            f"{presented.get_name()}; the file has {len(shown)} words",
+        )
+        if host_profile and host_profile.get("private_ip"):
+            # sshd tells a session which address it was reached at. The decoy has to say
+            # its own, the profile's, not Cowrie's fallback for a host with no route out.
+            said = sh.run("echo $SSH_CONNECTION").split()
+            add(
+                "the session is told the host's own address",
+                len(said) == 4 and said[2] == host_profile["private_ip"] and said[3] == "22",
+                " ".join(said),
+            )
         osr = sh.run("cat /etc/os-release")
         add(
             "/etc/os-release is the reference's",
@@ -141,12 +194,106 @@ def check_ssh(
         )
     finally:
         sh.close()
+    # With no pty, sshd sends a command's stderr as its own stream. Stock Cowrie writes
+    # every error to stdout, which one command shows (found by phase 3's library probe).
+    out, err = exec_streams(target, "root", password, f"ls /nonexistent-{secrets.token_hex(4)}")
+    # sshd answers an exec request before the command's output; stock Cowrie runs the
+    # command inside the request and closes the channel first (found by the fleet group, on
+    # a decoy with no policy round trip to hide it).
+    add(
+        "an exec request is acknowledged before its channel closes",
+        not out.startswith(EXEC_FAILED),
+        out[:70],
+    )
+    add(
+        "an exec channel's error comes on stderr",
+        not out.strip() and "No such file or directory" in err,
+        f"stdout {out[:60]!r}",
+    )
+    if target.source is not None:
+        r += check_credential_change(target, password)
     return r
 
 
-def http_raw(target: str, raw: bytes) -> dict[str, Any]:
-    host, port = target.rsplit(":", 1)
-    s = socket.create_connection((host, int(port)), timeout=5)
+def check_credential_change(target: Target, password: str) -> list[Result]:
+    """A password an intruder sets is the one they come back with (phase 3 spec 3.1; found by
+    the depth baseline, where the decoy said a change was done and then refused the new
+    password). The change is the decoy's to remember for the address it came from, so this
+    runs only where the probe announces its source: each run takes two addresses of its own
+    from the documentation ranges, and no other login is affected."""
+    from eval.probes.net import probe_source
+
+    r: list[Result] = []
+
+    def add(check: str, ok: bool, detail: str = "") -> None:
+        r.append(Result("ssh", check, "pass" if ok else "fail", detail))
+
+    def fresh(avoid: set[str]) -> Target | None:
+        """A source this decoy has no memory of: the profile's password still works from it."""
+        for _ in range(8):
+            source = probe_source()
+            if source in avoid:
+                continue
+            candidate = Target(target.host, target.port, source)
+            if ssh_login_works(candidate, "root", password):
+                return candidate
+            avoid.add(source)
+        return None
+
+    used = {target.source or ""}
+    mine = fresh(used)
+    other = fresh(used | {mine.source or ""}) if mine else None
+    if mine is None or other is None:
+        add(
+            "a changed password works at the next login from the same source",
+            False,
+            "no fresh source",
+        )
+        return r
+    first, second = f"Rot-{secrets.token_hex(6)}", f"Rot-{secrets.token_hex(6)}"
+    out, _ = exec_streams(mine, "root", password, f"echo 'root:{first}' | chpasswd; echo $?")
+    add("chpasswd reports a change as done", out.strip() == "0", out[:60])
+    add(
+        "a changed password works at the next login from the same source",
+        ssh_login_works(mine, "root", first),
+    )
+    add(
+        "the old password no longer works from that source",
+        not ssh_login_works(mine, "root", password),
+    )
+    add(
+        "another source is not let in with the new password",
+        not ssh_login_works(other, "root", first),
+    )
+    add("another source still logs in as before", ssh_login_works(other, "root", password))
+    _, err = exec_streams(
+        mine, "root", first, f"printf '{second}\\n{second}\\n' | passwd root; echo $?"
+    )
+    add("passwd reports a change as done", "password updated successfully" in err, err[:80])
+    add(
+        "the last change is the one that holds",
+        ssh_login_works(mine, "root", second) and not ssh_login_works(mine, "root", first),
+    )
+    return r
+
+
+def exec_streams(target: Target | str, user: str, password: str, command: str) -> tuple[str, str]:
+    """What ``command`` printed on an exec channel with no pty: (stdout, stderr)."""
+    import paramiko
+
+    c = Target.parse(target).ssh(user, password, timeout=10)
+    try:
+        _stdin, out, err = c.exec_command(command, timeout=15)
+        out.channel.recv_exit_status()
+        return out.read().decode(errors="replace"), err.read().decode(errors="replace")
+    except (paramiko.SSHException, OSError, EOFError) as e:
+        return f"{EXEC_FAILED}: {e}>", ""  # an answer no real server gives
+    finally:
+        c.close()
+
+
+def http_raw(target: Target | str, raw: bytes) -> dict[str, Any]:
+    s = Target.parse(target).connect(5)
     s.sendall(raw)
     data = b""
     s.settimeout(3)
@@ -168,7 +315,7 @@ def http_raw(target: str, raw: bytes) -> dict[str, Any]:
     }
 
 
-def check_http(target: str, ref: dict[str, Any]) -> list[Result]:
+def check_http(target: Target | str, ref: dict[str, Any]) -> list[Result]:
     ng = ref["nginx"]
     r: list[Result] = []
     h = b"Host: localhost\r\nUser-Agent: probe\r\nConnection: close\r\n"
@@ -226,11 +373,6 @@ def check_http(target: str, ref: dict[str, Any]) -> list[Result]:
     return r
 
 
-def _hostport(target: str) -> tuple[str, int]:
-    host, _, port = target.rpartition(":")
-    return host, int(port)
-
-
 def _resp_cmd(sock: socket.socket, *args: str) -> bytes:
     """Send one RESP command and return its reply bytes (simple, error, integer or bulk)."""
     wire = f"*{len(args)}\r\n".encode()
@@ -254,12 +396,12 @@ def _resp_cmd(sock: socket.socket, *args: str) -> bytes:
     return buf
 
 
-def check_redis(target: str, ref: dict[str, Any]) -> list[Result]:
+def check_redis(target: Target | str, ref: dict[str, Any]) -> list[Result]:
     replies = ref["redis"]["replies"]
     version = re.search(r"v=(\S+)", ref["redis"]["version"])
     want_version = version.group(1) if version else ""
     r: list[Result] = []
-    with socket.create_connection(_hostport(target), timeout=5) as sock:
+    with Target.parse(target).connect(5) as sock:
         info = _resp_cmd(sock, "INFO", "server").decode(errors="replace")
         got = re.search(r"redis_version:(\S+)", info)
         r.append(
@@ -297,12 +439,13 @@ def check_redis(target: str, ref: dict[str, Any]) -> list[Result]:
     return r
 
 
-def check_mysql(target: str, ref: dict[str, Any]) -> list[Result]:
+def check_mysql(target: Target | str, ref: dict[str, Any]) -> list[Result]:
     import pymysql
 
+    target = Target.parse(target)
     hs = ref["mysql"]["handshake"]
     r: list[Result] = []
-    with socket.create_connection(_hostport(target), timeout=5) as sock:
+    with target.connect(5) as sock:
         header = b""
         while len(header) < 4:
             header += sock.recv(4 - len(header))
@@ -332,11 +475,13 @@ def check_mysql(target: str, ref: dict[str, Any]) -> list[Result]:
             hex(caps),
         )
     )
-    host, port = _hostport(target)
     try:
-        pymysql.connect(
-            host=host, port=port, user="root", password=secrets.token_hex(8), connect_timeout=5
-        ).close()
+        # The driver is given the connection, so that the PROXY header is already on it.
+        conn = pymysql.connect(
+            user="root", password=secrets.token_hex(8), connect_timeout=5, defer_connect=True
+        )
+        conn.connect(sock=target.connect(5))
+        conn.close()
         status, detail = "fail", "a random root password was accepted"
     except pymysql.MySQLError as e:
         ok = e.args[0] == 1045 and re.fullmatch(
@@ -348,12 +493,12 @@ def check_mysql(target: str, ref: dict[str, Any]) -> list[Result]:
 
 
 def run(
-    ssh: str | None,
-    http: str | None,
+    ssh: Target | str | None,
+    http: Target | str | None,
     password: str | None,
     profile: Path | None,
-    redis: str | None = None,
-    mysql: str | None = None,
+    redis: Target | str | None = None,
+    mysql: Target | str | None = None,
 ) -> list[Result]:
     ref = json.loads(REFERENCE.read_text())
     host_profile = (

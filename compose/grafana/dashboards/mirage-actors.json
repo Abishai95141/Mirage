@@ -218,7 +218,7 @@
   {
    "type": "table",
    "title": "Selected actor: sessions",
-   "description": "",
+   "description": "The actor's 1,000 most recent sessions. An actor in the lab can hold thousands: every run that reads the same planted credential is tied to the others.",
    "targets": [
     {
      "refId": "A",
@@ -228,7 +228,7 @@
      },
      "editorType": "sql",
      "format": 1,
-     "rawSql": "SELECT start_ts, session_id, protocol, src_ip, inputs, arrayStringConcat(arrayMap(c -> concat(c.1, ' / ', c.2), credentials), ', ') AS credentials, coalesce(nullIf(JSONExtractString(fingerprints, 'client_version'), ''), nullIf(JSONExtractString(fingerprints, 'user_agent'), ''), '') AS client, arrayStringConcat(tokens, ', ') AS honeytokens FROM mirage.session_summary FINAL WHERE actor_id = '${actor}' AND match('${actor}', '^actor-[0-9a-f]{16}$') ORDER BY start_ts"
+     "rawSql": "SELECT start_ts, session_id, protocol, src_ip, inputs, arrayStringConcat(arrayMap(c -> concat(c.1, ' / ', c.2), credentials), ', ') AS credentials, coalesce(nullIf(JSONExtractString(fingerprints, 'client_version'), ''), nullIf(JSONExtractString(fingerprints, 'user_agent'), ''), '') AS client, arrayStringConcat(tokens, ', ') AS honeytokens FROM mirage.session_summary FINAL WHERE actor_id = '${actor}' AND match('${actor}', '^actor-[0-9a-f]{16}$') ORDER BY start_ts DESC LIMIT 1000"
     }
    ],
    "fieldConfig": {
@@ -352,7 +352,7 @@
   {
    "type": "table",
    "title": "Selected actor: links",
-   "description": "",
+   "description": "The 1,000 strongest links, newest first.",
    "targets": [
     {
      "refId": "A",
@@ -362,7 +362,7 @@
      },
      "editorType": "sql",
      "format": 1,
-     "rawSql": "SELECT reason, strength, a, b, evidence, ts FROM mirage.actor_links FINAL WHERE a IN (SELECT session_id FROM mirage.session_summary FINAL WHERE actor_id = '${actor}' AND match('${actor}', '^actor-[0-9a-f]{16}$')) ORDER BY strength DESC, ts"
+     "rawSql": "SELECT reason, strength, a, b, evidence, ts FROM mirage.actor_links FINAL WHERE a IN (SELECT session_id FROM mirage.session_summary FINAL WHERE actor_id = '${actor}' AND match('${actor}', '^actor-[0-9a-f]{16}$')) ORDER BY strength DESC, ts DESC LIMIT 1000"
     }
    ],
    "fieldConfig": {

@@ -1,0 +1,52 @@
+# What the guest runs to describe itself, one command a line. Reports only: nothing here
+# changes the machine. The render library takes its hardware-dependent entries from these.
+lscpu
+nproc
+nproc --all
+arch
+uname -a
+uname -r
+free
+free -m
+free -h
+df
+df -h
+df -hT
+lsblk
+lsblk -f
+blkid
+mount
+findmnt
+swapon --show
+ip a
+ip addr
+ip link
+ip r
+ip route
+ip -br a
+uptime
+vmstat
+dmesg
+lsmod
+lspci
+lsusb
+dmidecode -t system
+hostnamectl
+systemd-detect-virt
+timedatectl
+getconf LONG_BIT
+getconf PAGE_SIZE
+getconf _NPROCESSORS_ONLN
+locale
+ps aux
+ps -ef
+top -bn1
+w
+who
+last
+id
+cat /proc/cpuinfo
+cat /proc/meminfo
+# What listens, for the decoy's `ss` (hardware/sockets.tsv is made from these two).
+ss -Htulnp
+ss -s

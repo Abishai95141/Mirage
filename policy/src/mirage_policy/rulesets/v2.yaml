@@ -1,0 +1,31 @@
+# Rules v2 (phase 3 spec 3.3, decision R11): the deterministic adaptive policy. It is the
+# baseline a learned policy has to beat, and what the capture range and the demos run under.
+# Towards a decoy that supports none of the new actions it is the allow-all set of phase 2.
+#
+# `escalate` is not here: it is decided by rule on a host whose sandbox tests have passed
+# (3.5), and no such host exists yet.
+version: 2
+rules:
+  # Once in a session, when the input is credential-seeking: put a credential where it will
+  # be found. The mask allows it only while the reserve holds a token and none has been
+  # planted in this session.
+  - id: v2.plant-on-credential-access
+    when:
+      protocol: ssh
+      tactic: [TA0006]
+      token_planted: false
+    action: plant_token
+
+  # A command the decoy has no answer of its own for, from a session that has held access:
+  # ask the responder. A scanner never gets a generated answer.
+  - id: v2.respond-to-the-unknown
+    when:
+      protocol: ssh
+      tier: [none]
+      not_actor_class: [scanner]
+    action: respond
+    max_tokens: 400
+    deadline_ms: 10000
+
+  - id: v2.allow
+    action: allow

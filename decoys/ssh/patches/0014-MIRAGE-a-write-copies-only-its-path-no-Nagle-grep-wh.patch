@@ -1,0 +1,707 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: MIRAGE <noreply@anthropic.com>
+Date: Tue, 17 Nov 2026 13:07:16 +0530
+Subject: [PATCH] MIRAGE: a write copies only its path; no Nagle; grep, which
+ and relative links
+
+What the fingerprint suite's second run still found:
+
+- A session's first write deep-copied the whole filesystem tree: 137 ms for a
+  tree built from a real image. A private tree now starts as a copy of the
+  root alone, and getfile() copies each node on the way to the one it hands
+  out, so a session owns exactly the nodes it can change.
+- Every command answered in several writes waited 40 ms for a delayed ACK.
+  TCP_NODELAY is now set when the connection is made, not only with a pty.
+- grep ignored -c, -v, -n, -l, -o, -w, -x, -r, -E and -F, did not name files
+  and read a basic expression as an extended one. It is rewritten, with
+  egrep and fgrep.
+- which printed every place along PATH; Debian's prints the first.
+- A relative symbolic link was read from the root whatever directory held
+  it. It is read from its own directory, and a loop ends as ELOOP does.
+---
+ src/cowrie/commands/__init__.py          |   1 +
+ src/cowrie/commands/mirage_coreutils.py  |   2 +-
+ src/cowrie/commands/mirage_textutils.py  | 284 +++++++++++++++++++++++
+ src/cowrie/shell/fs.py                   |  63 +++--
+ src/cowrie/ssh/transport.py              |   8 +
+ src/cowrie/test/test_mirage_coreutils.py |  74 +++++-
+ src/cowrie/test/test_mirage_fs_share.py  | 108 ++++++++-
+ 7 files changed, 520 insertions(+), 20 deletions(-)
+ create mode 100644 src/cowrie/commands/mirage_textutils.py
+
+diff --git a/src/cowrie/commands/__init__.py b/src/cowrie/commands/__init__.py
+index 86cbd28..66d39e1 100644
+--- a/src/cowrie/commands/__init__.py
++++ b/src/cowrie/commands/__init__.py
+@@ -68,4 +68,5 @@ command_modules = [
+     "yum",
+     # MIRAGE: last, so that its commands replace the stock ones of the same name.
+     "mirage_coreutils",
++    "mirage_textutils",
+ ]
+diff --git a/src/cowrie/commands/mirage_coreutils.py b/src/cowrie/commands/mirage_coreutils.py
+index 2c76eeb..7f6db80 100644
+--- a/src/cowrie/commands/mirage_coreutils.py
++++ b/src/cowrie/commands/mirage_coreutils.py
+@@ -498,7 +498,7 @@ class Command_id(HoneyPotCommand):
+         if operands:
+             entry = users.entry(operands[0])
+             if entry is None:
+-                self.errorWrite(f"id: ‘{operands[0]}’: no such user\n")
++                self.errorWrite(f"id: '{operands[0]}': no such user\n")
+                 self.exit_code = 1
+                 return
+             name, uid, gid = entry["pw_name"], int(entry["pw_uid"]), int(entry["pw_gid"])
+diff --git a/src/cowrie/commands/mirage_textutils.py b/src/cowrie/commands/mirage_textutils.py
+new file mode 100644
+index 0000000..48df771
+--- /dev/null
++++ b/src/cowrie/commands/mirage_textutils.py
+@@ -0,0 +1,284 @@
++# SPDX-License-Identifier: BSD-3-Clause
++# ABOUTME: MIRAGE: grep (with egrep and fgrep) and which, written against a real
++# ABOUTME: Debian 12 host's answers. Stock grep ignored -c, -v, -n, -l and file names.
++
++"""GNU grep 3.8 and debianutils' which, for the options they are most used with.
++See ``mirage_coreutils`` for how these were written and what declining means."""
++
++from __future__ import annotations
++
++import getopt
++import posixpath
++import re
++from typing import Any, ClassVar
++
++from cowrie.commands.mirage_coreutils import Declining, paths_of
++from cowrie.shell import fs
++from cowrie.shell.command import HoneyPotCommand
++
++commands: dict[str, Any] = {}
++
++
++class Command_which(HoneyPotCommand):
++    """The first place along PATH for each name; every place with -a."""
++
++    def call(self) -> None:
++        every = "-a" in self.args
++        for name in [a for a in self.args if a not in ("-a", "-s")]:
++            found = paths_of(self, name)
++            if not found:
++                self.exit_code = 1
++                continue
++            self.write("".join(f"{p}\n" for p in (found if every else found[:1])))
++
++
++commands["/usr/bin/which"] = Command_which
++commands["which"] = Command_which
++
++
++def basic_to_extended(pattern: str) -> str:
++    """A POSIX basic regular expression in Python's syntax. In a basic
++    expression a backslash makes ``( ) { } | + ?`` operators, and bare they are
++    themselves; Python has it the other way round."""
++    out, i = "", 0
++    while i < len(pattern):
++        c = pattern[i]
++        if c == "\\" and i + 1 < len(pattern):
++            nxt = pattern[i + 1]
++            out += nxt if nxt in "(){}|+?" else c + nxt
++            i += 2
++            continue
++        if c == "[":  # a bracket expression is copied whole
++            end = pattern.find("]", i + 2)
++            if end != -1:
++                out += pattern[i : end + 1]
++                i = end + 1
++                continue
++        out += "\\" + c if c in "(){}|+?" else c
++        i += 1
++    return out
++
++
++class Command_grep(Declining):
++    name, program = "grep", "/usr/bin/grep"
++    consumes_stdin = True
++    mode: ClassVar[str] = "G"
++    SHORT = "EFGHRchilnoqrsvwxe:m:"
++    NAMES: ClassVar[dict[str, str]] = {
++        "--extended-regexp": "E",
++        "--fixed-strings": "F",
++        "--basic-regexp": "G",
++        "--ignore-case": "i",
++        "--invert-match": "v",
++        "--count": "c",
++        "--line-number": "n",
++        "--files-with-matches": "l",
++        "--quiet": "q",
++        "--silent": "q",
++        "--recursive": "r",
++        "--no-messages": "s",
++        "--only-matching": "o",
++        "--word-regexp": "w",
++        "--line-regexp": "x",
++        "--with-filename": "H",
++        "--no-filename": "h",
++    }
++    LONG: ClassVar[list[str]] = [
++        *[n[2:] for n in NAMES],
++        "regexp=",
++        "max-count=",
++        "color",
++        "color=",
++        "colour",
++        "colour=",
++    ]
++
++    @classmethod
++    def mirage_declines(cls, args: list[str]) -> bool:
++        if not args:
++            return False  # grep's own usage error
++        try:
++            opts, rest = getopt.gnu_getopt(args, cls.SHORT, cls.LONG)
++        except getopt.GetoptError:
++            return True  # context lines, Perl expressions, pattern files, includes
++        return not rest and not any(o in ("-e", "--regexp") for o, _ in opts)
++
++    def start(self) -> None:
++        if not self.args:
++            self.errorWrite(
++                f"Usage: {self.name} [OPTION]... PATTERNS [FILE]...\n"
++                f"Try '{self.name} --help' for more information.\n"
++            )
++            self.exit(2)
++            return
++        if self.mirage_declines(self.args):
++            self.not_emulated()
++            self.exit()
++            return
++        opts, rest = getopt.gnu_getopt(self.args, self.SHORT, self.LONG)
++        self.flags = {self.NAMES.get(o, o.lstrip("-")) for o, _ in opts}
++        if "R" in self.flags:
++            self.flags.add("r")
++        patterns = [a for o, a in opts if o in ("-e", "--regexp")]
++        self.limit: int | None = None
++        for option, value in opts:
++            if option in ("-m", "--max-count"):
++                try:
++                    self.limit = int(value)
++                except ValueError:
++                    self.errorWrite(f"{self.name}: invalid max count\n")
++                    self.exit(2)
++                    return
++        if not patterns:
++            patterns, rest = [rest[0]], rest[1:]
++        kind = "E" if "E" in self.flags else "F" if "F" in self.flags else self.mode
++        parts = []
++        for pattern in "\n".join(patterns).split("\n"):
++            if kind == "F":
++                parts.append(re.escape(pattern))
++            elif kind == "E":
++                parts.append(pattern)
++            else:
++                parts.append(basic_to_extended(pattern))
++        source = "|".join(f"(?:{part})" for part in parts)
++        if "w" in self.flags:
++            source = rf"(?<!\w)(?:{source})(?!\w)"
++        if "x" in self.flags:
++            source = rf"^(?:{source})$"
++        try:
++            self.matcher = re.compile(source.encode(), re.I if "i" in self.flags else 0)
++        except re.error:
++            self.errorWrite(f"{self.name}: Unmatched [, [^, [:, [., or [=\n")
++            self.exit(2)
++            return
++        self.operands = rest
++        self.matched = self.failed = False
++        waits = not rest and "r" not in self.flags and self.input_data is None
++        if waits and not getattr(self.pp, "stdin_from_pipe", False):
++            return  # reads the terminal until end of file
++        self.finish()
++
++    def lineReceived(self, line: str) -> None:
++        self.input_data = (self.input_data or b"") + line.encode("utf8") + b"\n"
++
++    def handle_CTRL_D(self) -> None:
++        self.finish()
++
++    def eofReceived(self) -> None:
++        if not self.exited:
++            self.finish()
++
++    def _complain(self, message: str) -> None:
++        self.failed = True
++        if "s" not in self.flags:
++            self.errorWrite(message)
++
++    def _read(self, path: str) -> bytes:
++        try:
++            return bytes(self.fs.file_contents(path))
++        except Exception:
++            return b""
++
++    def _files(self) -> list[tuple[str, bytes]]:
++        """(name as printed, contents) for each input that can be read."""
++        if not self.operands and "r" not in self.flags:
++            return [("(standard input)", self.input_data or b"")]
++        out: list[tuple[str, bytes]] = []
++        for operand in self.operands or ["."]:
++            if operand == "-":
++                out.append(("(standard input)", self.input_data or b""))
++                continue
++            path = self.fs.resolve_path(operand, self.cwd)
++            if not self.fs.exists(path):
++                self._complain(f"{self.name}: {operand}: No such file or directory\n")
++            elif self.fs.isdir(path):
++                if "r" in self.flags:
++                    out.extend(self._walk(operand if self.operands else "", path))
++                else:
++                    self._complain(f"{self.name}: {operand}: Is a directory\n")
++            else:
++                out.append((operand, self._read(path)))
++        return out
++
++    def _walk(self, shown: str, path: str, depth: int = 0) -> list[tuple[str, bytes]]:
++        out: list[tuple[str, bytes]] = []
++        if depth > 12:
++            return out
++        try:
++            children = sorted(self.fs.get_path(path), key=lambda n: n[fs.A_NAME].encode())
++        except Exception:
++            return out
++        for node in children:
++            name = node[fs.A_NAME]
++            shown_child = f"{shown.rstrip('/')}/{name}" if shown else name
++            full = posixpath.join(path, name)
++            if node[fs.A_TYPE] == fs.T_DIR:
++                out.extend(self._walk(shown_child, full, depth + 1))
++            elif node[fs.A_TYPE] == fs.T_FILE and node[fs.A_SIZE] < 1_000_000:
++                out.append((shown_child, self._read(full)))
++            if len(out) > 5000:
++                break
++        return out
++
++    def finish(self) -> None:
++        files = self._files()
++        several = len(self.operands) > 1 or "r" in self.flags
++        named = "H" in self.flags or ("h" not in self.flags and several)
++        silent = bool(self.flags & {"c", "l", "q"})
++        out = bytearray()
++        for name, data in files:
++            prefix = f"{name}:".encode() if named else b""
++            if b"\0" in data[:4096] and not silent:
++                if self.matcher.search(data):
++                    self.matched = True
++                    out += f"{self.name}: {name}: binary file matches\n".encode()
++                continue
++            count = 0
++            lines = data.split(b"\n")
++            if lines and lines[-1] == b"":
++                lines.pop()
++            for number, line in enumerate(lines, 1):
++                hits = list(self.matcher.finditer(line))
++                if bool(hits) == ("v" in self.flags):
++                    continue
++                count += 1
++                if not silent:
++                    lead = prefix + (f"{number}:".encode() if "n" in self.flags else b"")
++                    if "o" in self.flags and "v" not in self.flags:
++                        out += b"".join(lead + h.group(0) + b"\n" for h in hits if h.group(0))
++                    else:
++                        out += lead + line + b"\n"
++                if self.limit is not None and count >= self.limit:
++                    break
++            if count:
++                self.matched = True
++            if "q" in self.flags:
++                continue
++            if "l" in self.flags:
++                if count:
++                    out += f"{name}\n".encode()
++            elif "c" in self.flags:
++                out += prefix + f"{count}\n".encode()
++        self.writeBytes(bytes(out))
++        if self.matched and "q" in self.flags:
++            self.exit(0)
++        elif self.failed:
++            self.exit(2)
++        else:
++            self.exit(0 if self.matched else 1)
++
++
++class Command_egrep(Command_grep):
++    name, program, mode = "egrep", "/usr/bin/egrep", "E"
++
++
++class Command_fgrep(Command_grep):
++    name, program, mode = "fgrep", "/usr/bin/fgrep", "F"
++
++
++for _name in ("/bin/grep", "/usr/bin/grep", "grep"):
++    commands[_name] = Command_grep
++for _name in ("/bin/egrep", "/usr/bin/egrep", "egrep"):
++    commands[_name] = Command_egrep
++for _name in ("/bin/fgrep", "/usr/bin/fgrep", "fgrep"):
++    commands[_name] = Command_fgrep
+diff --git a/src/cowrie/shell/fs.py b/src/cowrie/shell/fs.py
+index 4b9d4ba..80b73b7 100644
+--- a/src/cowrie/shell/fs.py
++++ b/src/cowrie/shell/fs.py
+@@ -140,6 +140,9 @@ class HoneyPotFilesystem:
+             self._log.failure("ERROR: Failed to load filesystem")
+             sys.exit(2)
+         self._private_fs: bool = False
++        # MIRAGE: the nodes this session has copied for itself, by identity
++        # (see _ensure_private_fs). Holding them keeps their ids from reuse.
++        self._owned: dict[int, Node] = {}
+ 
+         # Keep track of arch so we can return appropriate binary
+         self.arch: str = arch
+@@ -176,11 +179,12 @@ class HoneyPotFilesystem:
+             if known is base and path == contents_path:
+                 self.fs = marked
+                 return
+-        self.init_honeyfs(contents_path)  # copies the base tree and marks the copy
++        self.init_honeyfs(contents_path)  # marks its own copies of the nodes
+         _marked_trees.append((base, contents_path, self.fs))
+-        # That copy is now what later sessions share, so this session too must
+-        # copy before it writes.
++        # That tree is now what later sessions share, so this session owns
++        # none of it and must copy before it writes, as any other.
+         self._private_fs = False
++        self._owned = {}
+ 
+     def _mirage_change(self, op: str, path: str, **fields: Any) -> None:
+         """MIRAGE: report a change to the emulated filesystem (``cowrie.fs.change``).
+@@ -201,16 +205,32 @@ class HoneyPotFilesystem:
+         )
+ 
+     def _ensure_private_fs(self) -> None:
+-        """Copy the shared base tree the first time this session mutates it.
++        """Make this session's tree its own, the first time it writes.
+ 
+         Every mutating method calls this before fetching the node it will
+-        change, so writes land on a private copy and the base tree stays
++        change, so writes land on private nodes and the shared tree stays
+         pristine for other sessions. Read-only sessions never copy.
++
++        MIRAGE: upstream deep-copied the whole tree here, 137 ms for a
++        filesystem built from a real image (50,000 nodes), paid by a session's
++        first write. Now only the root is copied, and from then on getfile()
++        copies each node on the way to the one it returns. A session owns the
++        nodes it can reach to change, and shares every other with the rest.
+         """
+         if not self._private_fs:
+-            self.fs = copy.deepcopy(self.fs)
++            self.fs = self._own(self.fs)
+             self._private_fs = True
+ 
++    def _own(self, node: Node) -> Node:
++        """A copy of ``node`` that this session may change: the node and, for a
++        directory, its list of entries. The entries themselves stay shared
++        until they are fetched in their turn."""
++        mine: Node = node[:]
++        if isinstance(mine[A_CONTENTS], list):
++            mine[A_CONTENTS] = mine[A_CONTENTS][:]
++        self._owned[id(mine)] = mine
++        return mine
++
+     def init_honeyfs(self, honeyfs_path: str) -> None:
+         """
+         Explore the honeyfs at 'honeyfs_path' and set all A_REALFILE attributes on
+@@ -316,8 +336,14 @@ class HoneyPotFilesystem:
+                 return None
+             if piece not in [x[A_NAME] for x in p[A_CONTENTS]]:
+                 return None
+-            for x in p[A_CONTENTS]:
++            for index, x in enumerate(p[A_CONTENTS]):
+                 if x[A_NAME] == piece:
++                    if self._private_fs and id(x) not in self._owned:
++                        # MIRAGE: a private tree hands out only nodes of its
++                        # own, so whatever the caller changes stays here. `p`
++                        # is one of them already, so its entry can be swapped.
++                        x = self._own(x)
++                        p[A_CONTENTS][index] = x
+                     if piece == pieces[-1] and not follow_symlinks:
+                         p = x
+                     elif x[A_TYPE] == T_LINK:
+@@ -325,24 +351,31 @@ class HoneyPotFilesystem:
+                             # Empty target (e.g. a /proc/<pid>/cwd link
+                             # captured with no destination): a broken link.
+                             return None
++                        # MIRAGE: a relative link is read from the directory
++                        # that holds it. Upstream read every one from the
++                        # root, which is right only for a link in the root.
+                         if x[A_TARGET][0] == "/":
+-                            # Absolute link
+-                            fileobj = self.getfile(
+-                                x[A_TARGET], follow_symlinks=follow_symlinks
+-                            )
++                            cwd = posixpath.normpath(x[A_TARGET])
+                         else:
+-                            # Relative link
++                            cwd = posixpath.normpath(f"{cwd}/{x[A_TARGET]}")
++                        depth = getattr(self, "_link_depth", 0)
++                        if depth >= 40:  # ELOOP, as the kernel has it
++                            return None
++                        self._link_depth = depth + 1
++                        try:
+                             fileobj = self.getfile(
+-                                "/".join((cwd, x[A_TARGET])),
+-                                follow_symlinks=follow_symlinks,
++                                cwd, follow_symlinks=follow_symlinks
+                             )
++                        finally:
++                            self._link_depth = depth
+                         if not fileobj:
+                             # Broken link
+                             return None
+                         p = fileobj
+                     else:
+                         p = x
+-            # cwd = '/'.join((cwd, piece))
++                        cwd = f"{cwd}/{piece}"
++                    break
+         return p
+ 
+     def file_contents(self, target: str) -> bytes:
+diff --git a/src/cowrie/ssh/transport.py b/src/cowrie/ssh/transport.py
+index 6437200..dfb3b6e 100644
+--- a/src/cowrie/ssh/transport.py
++++ b/src/cowrie/ssh/transport.py
+@@ -88,6 +88,14 @@ class HoneyPotSSHTransport(KexMessageTransport, TimeoutMixin):
+         else:
+             self._emit_connect()
+ 
++        # MIRAGE: no Nagle on any connection. The emulator answers a command in
++        # several writes over several reactor turns, and each after the first
++        # waited for the peer's delayed ACK: 40 ms a command without a pty,
++        # where a real host answers in 5.
++        from cowrie import mirage_gate
++
++        mirage_gate.set_tcp_nodelay(self)
++
+         self.transport.write(self.ourVersionString + b"\r\n")
+         self.currentEncryptions = transport.SSHCiphers(
+             b"none", b"none", b"none", b"none"
+diff --git a/src/cowrie/test/test_mirage_coreutils.py b/src/cowrie/test/test_mirage_coreutils.py
+index d2e9961..a3432de 100644
+--- a/src/cowrie/test/test_mirage_coreutils.py
++++ b/src/cowrie/test/test_mirage_coreutils.py
+@@ -170,7 +170,7 @@ class SmallCommandTests(Base):
+         self.assertEqual(self.out("id -G"), "0\n")
+         self.assertEqual(self.out("id -gn"), "root\n")
+         text = self.out("id nosuchuser; echo status=$?")
+-        self.assertEqual(text, "id: \u2018nosuchuser\u2019: no such user\nstatus=1\n")
++        self.assertEqual(text, "id: 'nosuchuser': no such user\nstatus=1\n")
+ 
+     def test_wc_counts_files_and_standard_input_as_gnu_wc_prints_them(self) -> None:
+         self.assertEqual(self.out("wc /tmp/t/c.txt"), "1 1 6 /tmp/t/c.txt\n")
+@@ -278,3 +278,75 @@ class TierTests(Base):
+         self.assertFalse(mirage_render._is_script(shell, "/tmp/program"))
+         self.assertEqual(self.tier("/tmp/program"), "none")
+         self.assertEqual(self.tier("nosuchprogram"), "none")
++
++
++class GrepTests(Base):
++    def setUp(self) -> None:
++        super().setUp()
++        self.out("printf 'alpha one\\nBeta two\\nalpha three\\ngamma\\n' > /tmp/g")
++        self.out("printf 'alpha in sub\\n' > /tmp/t/sub/h")
++
++    def test_matching_lines_and_the_exit_status(self) -> None:
++        self.assertEqual(self.out("grep alpha /tmp/g"), "alpha one\nalpha three\n")
++        self.assertEqual(self.out("grep alpha /tmp/g; echo $?").splitlines()[-1], "0")
++        self.assertEqual(self.out("grep nothing /tmp/g; echo $?"), "1\n")
++        self.assertEqual(
++            self.out("grep alpha /nonexistent-x; echo $?"),
++            "grep: /nonexistent-x: No such file or directory\n2\n",
++        )
++
++    def test_count_invert_number_and_case(self) -> None:
++        self.assertEqual(self.out("grep -c alpha /tmp/g"), "2\n")
++        self.assertEqual(self.out("grep -v alpha /tmp/g"), "Beta two\ngamma\n")
++        self.assertEqual(self.out("grep -n gamma /tmp/g"), "4:gamma\n")
++        self.assertEqual(self.out("grep -i beta /tmp/g"), "Beta two\n")
++        self.assertEqual(self.out("grep -ci ALPHA /tmp/g"), "2\n")
++        self.assertEqual(self.out("grep -m 1 alpha /tmp/g"), "alpha one\n")
++
++    def test_several_files_are_named_and_l_lists_them(self) -> None:
++        self.assertEqual(
++            self.out("grep alpha /tmp/g /tmp/t/sub/h"),
++            "/tmp/g:alpha one\n/tmp/g:alpha three\n/tmp/t/sub/h:alpha in sub\n",
++        )
++        self.assertEqual(self.out("grep -c alpha /tmp/g /tmp/t/sub/h"), "/tmp/g:2\n/tmp/t/sub/h:1\n")
++        self.assertEqual(self.out("grep -l alpha /tmp/g /tmp/t/c.txt"), "/tmp/g\n")
++        self.assertEqual(self.out("grep -h alpha /tmp/g /tmp/t/sub/h").splitlines()[0], "alpha one")
++
++    def test_recursion_names_every_file_under_the_directory(self) -> None:
++        self.assertEqual(self.out("grep -r alpha /tmp/t"), "/tmp/t/sub/h:alpha in sub\n")
++        self.assertEqual(self.out("grep alpha /tmp/t; echo $?"), "grep: /tmp/t: Is a directory\n2\n")
++
++    def test_standard_input_and_quiet(self) -> None:
++        self.assertEqual(self.out("cat /tmp/g | grep two"), "Beta two\n")
++        self.assertEqual(self.out("cat /tmp/g | grep -c a"), "4\n")
++        self.assertEqual(self.out("grep -q alpha /tmp/g && echo found"), "found\n")
++        self.assertEqual(self.out("grep -q nothing /tmp/g || echo absent"), "absent\n")
++
++    def test_basic_extended_and_fixed_patterns(self) -> None:
++        self.assertEqual(self.out("grep 'one\\|gamma' /tmp/g"), "alpha one\ngamma\n")
++        self.assertEqual(self.out("grep -E 'one|gamma' /tmp/g"), "alpha one\ngamma\n")
++        self.assertEqual(self.out("egrep '(one|gamma)$' /tmp/g"), "alpha one\ngamma\n")
++        self.assertEqual(self.out("grep 'a+' /tmp/g; echo $?"), "1\n")  # + is itself in a basic one
++        self.assertEqual(self.out("grep -F 'a.' /tmp/g; echo $?"), "1\n")
++        self.assertEqual(self.out("grep -o 'alpha' /tmp/g"), "alpha\nalpha\n")
++        self.assertEqual(self.out("grep -w alph /tmp/g; echo $?"), "1\n")
++        self.assertEqual(self.out("grep -x gamma /tmp/g"), "gamma\n")
++        self.assertEqual(self.out("grep '^alpha' /tmp/g | wc -l"), "2\n")
++
++    def test_what_grep_does_not_take_is_declined(self) -> None:
++        self.gate.requests.clear()
++        self.run_line("grep -A 2 alpha /tmp/g")
++        self.assertEqual(self.gate.requests[-1]["tier"], "none")
++        self.gate.requests.clear()
++        self.run_line("grep -c alpha /tmp/g")
++        self.assertEqual(self.gate.requests[-1]["tier"], "emulated")
++
++
++class WhichTests(Base):
++    def test_the_first_place_along_path_and_every_place_with_a(self) -> None:
++        first = self.out("which ls")
++        self.assertRegex(first, r"^/(usr/)?bin/ls\n$")
++        self.assertEqual(self.out("which nosuchprogram; echo $?"), "1\n")
++        every = self.out("which -a ls").splitlines()
++        self.assertEqual(every[0] + "\n", first)
++        self.assertGreaterEqual(len(every), 1)
+diff --git a/src/cowrie/test/test_mirage_fs_share.py b/src/cowrie/test/test_mirage_fs_share.py
+index c4a6878..4988a05 100644
+--- a/src/cowrie/test/test_mirage_fs_share.py
++++ b/src/cowrie/test/test_mirage_fs_share.py
+@@ -52,9 +52,8 @@ class SharedMarkedTreeTests(unittest.TestCase):
+ 
+     def test_later_sessions_share_the_marked_tree_without_copying(self) -> None:
+         first = self.make()
+-        with patch.object(copy, "deepcopy", side_effect=AssertionError("copied")):
+-            with patch.object(os, "walk", side_effect=AssertionError("walked")):
+-                second = self.make()
++        with patch.object(os, "walk", side_effect=AssertionError("walked")):
++            second = self.make()
+         self.assertIs(first.fs, second.fs)
+         self.assertFalse(first._private_fs)
+         self.assertFalse(second._private_fs)
+@@ -69,6 +68,60 @@ class SharedMarkedTreeTests(unittest.TestCase):
+         self.assertFalse(third.exists("/tmp/mirage-one"))
+         self.assertIs(third.fs, second.fs)
+ 
++    def test_a_write_copies_the_path_to_it_and_nothing_else(self) -> None:
++        first = self.make()
++        shared_root = first.fs
++        with patch.object(copy, "deepcopy", side_effect=AssertionError("copied the tree")):
++            first.mkfile("/tmp/mirage-two", 0, 0, 3, 0o100644)
++        self.assertIsNot(first.fs, shared_root)
++        # Only the root and /tmp were copied; every other directory is still
++        # the shared one.
++        self.assertEqual(len(first._owned), 2)
++        etc_mine = next(n for n in first.fs[fs.A_CONTENTS] if n[fs.A_NAME] == "etc")
++        etc_shared = next(n for n in shared_root[fs.A_CONTENTS] if n[fs.A_NAME] == "etc")
++        self.assertIs(etc_mine, etc_shared)
++
++    def test_changing_a_node_never_reaches_the_shared_one(self) -> None:
++        first, second = self.make(), self.make()
++        before = second.getfile("/etc/passwd")
++        assert before is not None
++        mode, when = before[fs.A_MODE], before[fs.A_CTIME]
++        first.chmod("/etc/passwd", 0o600)
++        first.chown("/etc/passwd", 7, 7)
++        first.utime("/etc/passwd", 0, 12345.0)
++        first.update_size("/etc/passwd", 99999)
++        first.rename("/etc/passwd", "/etc/passwd.moved")
++        after = second.getfile("/etc/passwd")
++        self.assertIs(after, before)
++        assert after is not None
++        self.assertEqual((after[fs.A_MODE], after[fs.A_CTIME]), (mode, when))
++        self.assertNotEqual(after[fs.A_SIZE], 99999)
++        self.assertEqual(after[fs.A_UID], 0)
++        self.assertFalse(second.exists("/etc/passwd.moved"))
++        self.assertTrue(first.exists("/etc/passwd.moved"))
++        self.assertFalse(first.exists("/etc/passwd"))
++
++    def test_a_removed_directory_is_removed_for_its_session_only(self) -> None:
++        first, second = self.make(), self.make()
++        first.mkdir("/tmp/mirage-gone", 0, 0, 4096, 0o40755)
++        self.assertTrue(first.rmdir("/tmp/mirage-gone"))
++        first.remove("/etc/passwd")
++        self.assertFalse(first.exists("/etc/passwd"))
++        self.assertTrue(second.exists("/etc/passwd"))
++
++    def test_a_change_through_a_link_is_private_too(self) -> None:
++        first, second = self.make(), self.make()
++        linked = next(
++            (n for n in first.fs[fs.A_CONTENTS] if n[fs.A_TYPE] == fs.T_LINK and n[fs.A_TARGET]),
++            None,
++        )
++        if linked is None:
++            self.skipTest("the stock tree has no link at its root")
++        through = "/" + linked[fs.A_NAME] + "/mirage-linked"
++        first.mkfile(through, 0, 0, 1, 0o100644)
++        self.assertTrue(first.exists(through))
++        self.assertFalse(second.exists(through))
++
+     def test_the_first_session_of_all_cannot_write_to_the_shared_tree(self) -> None:
+         first = self.make()
+         shared = first.fs
+@@ -86,3 +139,52 @@ class _Bare:
+     get_path = fs.HoneyPotFilesystem.get_path
+     resolve_path = fs.HoneyPotFilesystem.resolve_path
+     home = "/root"
++    _private_fs = False
++
++
++class RelativeLinkTests(unittest.TestCase):
++    """A relative link is read from the directory that holds it."""
++
++    def setUp(self) -> None:
++        fs._marked_trees.clear()
++        self.fs = fs.HoneyPotFilesystem("linux-x64-lsb", "/root")
++        self.fs.mkdir("/tmp/d", 0, 0, 4096, 0o40755)
++        self.fs.mkdir("/tmp/d/e", 0, 0, 4096, 0o40755)
++        self.fs.mkfile("/tmp/d/real.txt", 0, 0, 5, 0o100644)
++        for where, name, target in (
++            ("/tmp/d", "beside", "real.txt"),
++            ("/tmp/d/e", "above", "../real.txt"),
++            ("/tmp", "below", "d/real.txt"),
++            ("/tmp", "absolute", "/tmp/d/real.txt"),
++            ("/tmp", "dir", "d"),
++            ("/tmp", "chain", "d/e/above"),
++            ("/tmp", "broken", "d/missing"),
++            ("/tmp", "loop", "loop"),
++        ):
++            self.fs.get_path(where).append(
++                [name, fs.T_LINK, 0, 0, len(target), 0o120777, 0, [], target, None]
++            )
++
++    def test_every_form_of_link_reaches_the_file(self) -> None:
++        real = self.fs.getfile("/tmp/d/real.txt")
++        for path in (
++            "/tmp/d/beside",
++            "/tmp/d/e/above",
++            "/tmp/below",
++            "/tmp/absolute",
++            "/tmp/dir/real.txt",
++            "/tmp/dir/e/above",
++            "/tmp/chain",
++        ):
++            with self.subTest(path=path):
++                self.assertIs(self.fs.getfile(path), real)
++
++    def test_a_broken_link_and_a_loop_reach_nothing(self) -> None:
++        self.assertIsNone(self.fs.getfile("/tmp/broken"))
++        self.assertIsNone(self.fs.getfile("/tmp/loop"))
++        self.assertFalse(self.fs.exists("/tmp/loop"))
++
++    def test_the_link_itself_is_returned_when_it_is_not_followed(self) -> None:
++        node = self.fs.getfile("/tmp/d/e/above", follow_symlinks=False)
++        assert node is not None
++        self.assertEqual((node[fs.A_TYPE], node[fs.A_TARGET]), (fs.T_LINK, "../real.txt"))
+-- 
+2.50.1 (Apple Git-155)
+

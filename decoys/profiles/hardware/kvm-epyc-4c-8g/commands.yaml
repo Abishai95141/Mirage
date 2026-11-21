@@ -1,0 +1,1379 @@
+# What the class's reporting commands printed, with the recorded machine's own values
+# as slots. Written by `mirage-profile hardware`; do not edit.
+- argv: lscpu
+  exit_code: 0
+  ms: 11
+  stdout: 'Architecture:                            x86_64
+
+    CPU op-mode(s):                          32-bit, 64-bit
+
+    Address sizes:                           40 bits physical, 48 bits virtual
+
+    Byte Order:                              Little Endian
+
+    CPU(s):                                  4
+
+    On-line CPU(s) list:                     0-3
+
+    Vendor ID:                               AuthenticAMD
+
+    BIOS Vendor ID:                          QEMU
+
+    Model name:                              AMD EPYC-Milan Processor
+
+    BIOS Model name:                         pc-q35-7.2  CPU @ 2.0GHz
+
+    BIOS CPU family:                         1
+
+    CPU family:                              25
+
+    Model:                                   1
+
+    Thread(s) per core:                      1
+
+    Core(s) per socket:                      4
+
+    Socket(s):                               1
+
+    Stepping:                                1
+
+    BogoMIPS:                                6986.86
+
+    Flags:                                   fpu vme de pse tsc msr pae mce cx8 apic sep mtrr pge mca cmov pat pse36 clflush mmx fxsr sse sse2 ht syscall nx mmxext fxsr_opt pdpe1gb rdtscp lm rep_good nopl cpuid extd_apicid tsc_known_freq pni pclmulqdq ssse3 fma cx16 sse4_1 sse4_2 x2apic movbe popcnt aes xsave avx f16c rdrand hypervisor lahf_lm cmp_legacy cr8_legacy abm sse4a misalignsse 3dnowprefetch osvw topoext perfctr_core ssbd ibrs ibpb stibp vmmcall fsgsbase bmi1 avx2 smep bmi2 erms invpcid rdseed adx smap clflushopt clwb sha_ni xsaveopt xsavec xgetbv1 xsaves clzero xsaveerptr wbnoinvd arat umip pku ospke rdpid fsrm
+
+    Hypervisor vendor:                       KVM
+
+    Virtualization type:                     full
+
+    L1d cache:                               128 KiB (4 instances)
+
+    L1i cache:                               128 KiB (4 instances)
+
+    L2 cache:                                2 MiB (4 instances)
+
+    L3 cache:                                32 MiB (1 instance)
+
+    NUMA node(s):                            1
+
+    NUMA node0 CPU(s):                       0-3
+
+    Vulnerability Gather data sampling:      Not affected
+
+    Vulnerability Indirect target selection: Not affected
+
+    Vulnerability Itlb multihit:             Not affected
+
+    Vulnerability L1tf:                      Not affected
+
+    Vulnerability Mds:                       Not affected
+
+    Vulnerability Meltdown:                  Not affected
+
+    Vulnerability Mmio stale data:           Not affected
+
+    Vulnerability Reg file data sampling:    Not affected
+
+    Vulnerability Retbleed:                  Not affected
+
+    Vulnerability Spec rstack overflow:      Mitigation; safe RET
+
+    Vulnerability Spec store bypass:         Mitigation; Speculative Store Bypass disabled via prctl
+
+    Vulnerability Spectre v1:                Mitigation; usercopy/swapgs barriers and __user pointer sanitization
+
+    Vulnerability Spectre v2:                Mitigation; Retpolines; IBPB conditional; IBRS_FW; STIBP disabled; RSB filling; PBRSB-eIBRS Not affected; BHI Not affected
+
+    Vulnerability Srbds:                     Not affected
+
+    Vulnerability Tsa:                       Vulnerable: Clear CPU buffers attempted, no microcode
+
+    Vulnerability Tsx async abort:           Not affected
+
+    Vulnerability Vmscape:                   Not affected
+
+    '
+  stderr: ''
+  volatile: false
+- argv: nproc
+  exit_code: 0
+  ms: 7
+  stdout: '4
+
+    '
+  stderr: ''
+  volatile: false
+- argv: nproc --all
+  exit_code: 0
+  ms: 1
+  stdout: '4
+
+    '
+  stderr: ''
+  volatile: false
+- argv: arch
+  exit_code: 0
+  ms: 6
+  stdout: 'x86_64
+
+    '
+  stderr: ''
+  volatile: false
+- argv: uname -a
+  exit_code: 0
+  ms: 2
+  stdout: 'Linux {{hostname}} 6.1.0-54-amd64 #1 SMP PREEMPT_DYNAMIC Debian 6.1.190-1 (2026-10-16) x86_64 GNU/Linux
+
+    '
+  stderr: ''
+  volatile: false
+- argv: uname -r
+  exit_code: 0
+  ms: 1
+  stdout: '6.1.0-54-amd64
+
+    '
+  stderr: ''
+  volatile: false
+- argv: free
+  exit_code: 0
+  ms: 7
+  stdout: '               total        used        free      shared  buff/cache   available
+
+    Mem:         8131272      313884     7899168         496      117596     7817388
+
+    Swap:              0           0           0
+
+    '
+  stderr: ''
+  volatile: true
+- argv: free -m
+  exit_code: 0
+  ms: 2
+  stdout: '               total        used        free      shared  buff/cache   available
+
+    Mem:            7940         306        7713           0         115        7634
+
+    Swap:              0           0           0
+
+    '
+  stderr: ''
+  volatile: true
+- argv: free -h
+  exit_code: 0
+  ms: 2
+  stdout: '               total        used        free      shared  buff/cache   available
+
+    Mem:           7.8Gi       306Mi       7.5Gi       496Ki       115Mi       7.5Gi
+
+    Swap:             0B          0B          0B
+
+    '
+  stderr: ''
+  volatile: true
+- argv: df
+  exit_code: 0
+  ms: 5
+  stdout: 'Filesystem     1K-blocks    Used Available Use% Mounted on
+
+    udev             4046280       0   4046280   0% /dev
+
+    tmpfs             813128     496    812632   1% /run
+
+    /dev/sda1      164923768 1025760 157146052   1% /
+
+    tmpfs            4065636       0   4065636   0% /dev/shm
+
+    tmpfs               5120       0      5120   0% /run/lock
+
+    /dev/sda15        126678   12064    114614  10% /boot/efi
+
+    '
+  stderr: ''
+  volatile: false
+- argv: df -h
+  exit_code: 0
+  ms: 1
+  stdout: 'Filesystem      Size  Used Avail Use% Mounted on
+
+    udev            3.9G     0  3.9G   0% /dev
+
+    tmpfs           795M  496K  794M   1% /run
+
+    /dev/sda1       158G 1002M  150G   1% /
+
+    tmpfs           3.9G     0  3.9G   0% /dev/shm
+
+    tmpfs           5.0M     0  5.0M   0% /run/lock
+
+    /dev/sda15      124M   12M  112M  10% /boot/efi
+
+    '
+  stderr: ''
+  volatile: false
+- argv: df -hT
+  exit_code: 0
+  ms: 2
+  stdout: 'Filesystem     Type      Size  Used Avail Use% Mounted on
+
+    udev           devtmpfs  3.9G     0  3.9G   0% /dev
+
+    tmpfs          tmpfs     795M  496K  794M   1% /run
+
+    /dev/sda1      ext4      158G 1002M  150G   1% /
+
+    tmpfs          tmpfs     3.9G     0  3.9G   0% /dev/shm
+
+    tmpfs          tmpfs     5.0M     0  5.0M   0% /run/lock
+
+    /dev/sda15     vfat      124M   12M  112M  10% /boot/efi
+
+    '
+  stderr: ''
+  volatile: false
+- argv: lsblk
+  exit_code: 0
+  ms: 6
+  stdout: "NAME    MAJ:MIN RM   SIZE RO TYPE MOUNTPOINTS\nsda       8:0    0   160G  0 disk \n|-sda1    8:1    0 159.9G  0 part /\n|-sda14   8:14   0     3M  0 part \n`-sda15   8:15   0   124M  0 part /boot/efi\n"
+  stderr: ''
+  volatile: false
+- argv: lsblk -f
+  exit_code: 0
+  ms: 4
+  stdout: "NAME    FSTYPE FSVER LABEL UUID                                 FSAVAIL FSUSE% MOUNTPOINTS\nsda                                                                            \n|-sda1  ext4   1.0         {{uuid_1}}  149.9G     1% /\n|-sda14                                                                        \n`-sda15 vfat   FAT16       {{uuid_15}}                             111.9M    10% /boot/efi\n"
+  stderr: ''
+  volatile: false
+- argv: blkid
+  exit_code: 0
+  ms: 11
+  stdout: '/dev/sda15: SEC_TYPE="msdos" UUID="{{uuid_15}}" BLOCK_SIZE="512" TYPE="vfat" PARTUUID="{{partuuid_15}}"
+
+    /dev/sda1: UUID="{{uuid_1}}" BLOCK_SIZE="4096" TYPE="ext4" PARTUUID="{{partuuid_1}}"
+
+    /dev/sda14: PARTUUID="{{partuuid_14}}"
+
+    '
+  stderr: ''
+  volatile: false
+- argv: mount
+  exit_code: 0
+  ms: 2
+  stdout: 'sysfs on /sys type sysfs (rw,nosuid,nodev,noexec,relatime)
+
+    proc on /proc type proc (rw,nosuid,nodev,noexec,relatime)
+
+    udev on /dev type devtmpfs (rw,nosuid,relatime,size=4046280k,nr_inodes=1011570,mode=755,inode64)
+
+    devpts on /dev/pts type devpts (rw,nosuid,noexec,relatime,gid=5,mode=620,ptmxmode=000)
+
+    tmpfs on /run type tmpfs (rw,nosuid,nodev,noexec,relatime,size=813128k,mode=755,inode64)
+
+    /dev/sda1 on / type ext4 (rw,relatime,discard,errors=remount-ro)
+
+    securityfs on /sys/kernel/security type securityfs (rw,nosuid,nodev,noexec,relatime)
+
+    tmpfs on /dev/shm type tmpfs (rw,nosuid,nodev,inode64)
+
+    tmpfs on /run/lock type tmpfs (rw,nosuid,nodev,noexec,relatime,size=5120k,inode64)
+
+    cgroup2 on /sys/fs/cgroup type cgroup2 (rw,nosuid,nodev,noexec,relatime,nsdelegate,memory_recursiveprot)
+
+    pstore on /sys/fs/pstore type pstore (rw,nosuid,nodev,noexec,relatime)
+
+    bpf on /sys/fs/bpf type bpf (rw,nosuid,nodev,noexec,relatime,mode=700)
+
+    systemd-1 on /proc/sys/fs/binfmt_misc type autofs (rw,relatime,fd=30,pgrp=1,timeout=0,minproto=5,maxproto=5,direct,pipe_ino=15180)
+
+    hugetlbfs on /dev/hugepages type hugetlbfs (rw,relatime,pagesize=2M)
+
+    mqueue on /dev/mqueue type mqueue (rw,nosuid,nodev,noexec,relatime)
+
+    debugfs on /sys/kernel/debug type debugfs (rw,nosuid,nodev,noexec,relatime)
+
+    tracefs on /sys/kernel/tracing type tracefs (rw,nosuid,nodev,noexec,relatime)
+
+    fusectl on /sys/fs/fuse/connections type fusectl (rw,nosuid,nodev,noexec,relatime)
+
+    configfs on /sys/kernel/config type configfs (rw,nosuid,nodev,noexec,relatime)
+
+    ramfs on /run/credentials/systemd-sysctl.service type ramfs (ro,nosuid,nodev,noexec,relatime,mode=700)
+
+    ramfs on /run/credentials/systemd-sysusers.service type ramfs (ro,nosuid,nodev,noexec,relatime,mode=700)
+
+    ramfs on /run/credentials/systemd-tmpfiles-setup-dev.service type ramfs (ro,nosuid,nodev,noexec,relatime,mode=700)
+
+    /dev/sda15 on /boot/efi type vfat (rw,relatime,fmask=0022,dmask=0022,codepage=437,iocharset=ascii,shortname=mixed,utf8,errors=remount-ro)
+
+    ramfs on /run/credentials/systemd-tmpfiles-setup.service type ramfs (ro,nosuid,nodev,noexec,relatime,mode=700)
+
+    binfmt_misc on /proc/sys/fs/binfmt_misc type binfmt_misc (rw,nosuid,nodev,noexec,relatime)
+
+    tracefs on /sys/kernel/debug/tracing type tracefs (rw,nosuid,nodev,noexec,relatime)
+
+    '
+  stderr: ''
+  volatile: false
+- argv: findmnt
+  exit_code: 0
+  ms: 10
+  stdout: 'TARGET                                                  SOURCE      FSTYPE      OPTIONS
+
+    /                                                       /dev/sda1   ext4        rw,relatime,discard,errors=remount-ro
+
+    |-/sys                                                  sysfs       sysfs       rw,nosuid,nodev,noexec,relatime
+
+    | |-/sys/kernel/security                                securityfs  securityfs  rw,nosuid,nodev,noexec,relatime
+
+    | |-/sys/fs/cgroup                                      cgroup2     cgroup2     rw,nosuid,nodev,noexec,relatime,nsdelegate,memory_recursiveprot
+
+    | |-/sys/fs/pstore                                      pstore      pstore      rw,nosuid,nodev,noexec,relatime
+
+    | |-/sys/fs/bpf                                         bpf         bpf         rw,nosuid,nodev,noexec,relatime,mode=700
+
+    | |-/sys/kernel/debug                                   debugfs     debugfs     rw,nosuid,nodev,noexec,relatime
+
+    | | `-/sys/kernel/debug/tracing                         tracefs     tracefs     rw,nosuid,nodev,noexec,relatime
+
+    | |-/sys/kernel/tracing                                 tracefs     tracefs     rw,nosuid,nodev,noexec,relatime
+
+    | |-/sys/fs/fuse/connections                            fusectl     fusectl     rw,nosuid,nodev,noexec,relatime
+
+    | `-/sys/kernel/config                                  configfs    configfs    rw,nosuid,nodev,noexec,relatime
+
+    |-/proc                                                 proc        proc        rw,nosuid,nodev,noexec,relatime
+
+    | `-/proc/sys/fs/binfmt_misc                            systemd-1   autofs      rw,relatime,fd=30,pgrp=1,timeout=0,minproto=5,maxproto=5,direct,pipe_ino=15180
+
+    |   `-/proc/sys/fs/binfmt_misc                          binfmt_misc binfmt_misc rw,nosuid,nodev,noexec,relatime
+
+    |-/dev                                                  udev        devtmpfs    rw,nosuid,relatime,size=4046280k,nr_inodes=1011570,mode=755,inode64
+
+    | |-/dev/pts                                            devpts      devpts      rw,nosuid,noexec,relatime,gid=5,mode=620,ptmxmode=000
+
+    | |-/dev/shm                                            tmpfs       tmpfs       rw,nosuid,nodev,inode64
+
+    | |-/dev/hugepages                                      hugetlbfs   hugetlbfs   rw,relatime,pagesize=2M
+
+    | `-/dev/mqueue                                         mqueue      mqueue      rw,nosuid,nodev,noexec,relatime
+
+    |-/run                                                  tmpfs       tmpfs       rw,nosuid,nodev,noexec,relatime,size=813128k,mode=755,inode64
+
+    | |-/run/lock                                           tmpfs       tmpfs       rw,nosuid,nodev,noexec,relatime,size=5120k,inode64
+
+    | |-/run/credentials/systemd-sysctl.service             ramfs       ramfs       ro,nosuid,nodev,noexec,relatime,mode=700
+
+    | |-/run/credentials/systemd-sysusers.service           ramfs       ramfs       ro,nosuid,nodev,noexec,relatime,mode=700
+
+    | |-/run/credentials/systemd-tmpfiles-setup-dev.service ramfs       ramfs       ro,nosuid,nodev,noexec,relatime,mode=700
+
+    | `-/run/credentials/systemd-tmpfiles-setup.service     ramfs       ramfs       ro,nosuid,nodev,noexec,relatime,mode=700
+
+    `-/boot/efi                                             /dev/sda15  vfat        rw,relatime,fmask=0022,dmask=0022,codepage=437,iocharset=ascii,shortname=mixed,utf8,errors=remount-ro
+
+    '
+  stderr: ''
+  volatile: false
+- argv: swapon --show
+  exit_code: 0
+  ms: 2
+  stdout: ''
+  stderr: ''
+  volatile: false
+- argv: ip a
+  exit_code: 0
+  ms: 9
+  stdout: "1: lo: <LOOPBACK,UP,LOWER_UP> mtu 65536 qdisc noqueue state UNKNOWN group default qlen 1000\n    link/loopback 00:00:00:00:00:00 brd 00:00:00:00:00:00\n    inet 127.0.0.1/8 scope host lo\n       valid_lft forever preferred_lft forever\n    inet6 ::1/128 scope host noprefixroute \n       valid_lft forever preferred_lft forever\n2: enp0s2: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc fq_codel state UP group default qlen 1000\n    link/ether {{mac}} brd ff:ff:ff:ff:ff:ff\n    inet {{private_ip}}/24 metric 100 brd {{broadcast}} scope global dynamic enp0s2\n       valid_lft 86374sec preferred_lft 86374sec\n    inet6 {{ipv6_link}}/64 scope link \n       valid_lft forever preferred_lft forever\n"
+  stderr: ''
+  volatile: false
+- argv: ip addr
+  exit_code: 0
+  ms: 2
+  stdout: "1: lo: <LOOPBACK,UP,LOWER_UP> mtu 65536 qdisc noqueue state UNKNOWN group default qlen 1000\n    link/loopback 00:00:00:00:00:00 brd 00:00:00:00:00:00\n    inet 127.0.0.1/8 scope host lo\n       valid_lft forever preferred_lft forever\n    inet6 ::1/128 scope host noprefixroute \n       valid_lft forever preferred_lft forever\n2: enp0s2: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc fq_codel state UP group default qlen 1000\n    link/ether {{mac}} brd ff:ff:ff:ff:ff:ff\n    inet {{private_ip}}/24 metric 100 brd {{broadcast}} scope global dynamic enp0s2\n       valid_lft 86374sec preferred_lft 86374sec\n    inet6 {{ipv6_link}}/64 scope link \n       valid_lft forever preferred_lft forever\n"
+  stderr: ''
+  volatile: false
+- argv: ip link
+  exit_code: 0
+  ms: 2
+  stdout: "1: lo: <LOOPBACK,UP,LOWER_UP> mtu 65536 qdisc noqueue state UNKNOWN mode DEFAULT group default qlen 1000\n    link/loopback 00:00:00:00:00:00 brd 00:00:00:00:00:00\n2: enp0s2: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc fq_codel state UP mode DEFAULT group default qlen 1000\n    link/ether {{mac}} brd ff:ff:ff:ff:ff:ff\n"
+  stderr: ''
+  volatile: false
+- argv: ip r
+  exit_code: 0
+  ms: 2
+  stdout: "{{network}}/24 dev enp0s2 proto kernel scope link src {{private_ip}} metric 100 \n"
+  stderr: ''
+  volatile: false
+- argv: ip route
+  exit_code: 0
+  ms: 5
+  stdout: "{{network}}/24 dev enp0s2 proto kernel scope link src {{private_ip}} metric 100 \n"
+  stderr: ''
+  volatile: false
+- argv: ip -br a
+  exit_code: 0
+  ms: 2
+  stdout: "lo               UNKNOWN        127.0.0.1/8 ::1/128 \nenp0s2           UP             {{private_ip}}/24 metric 100 {{ipv6_link}}/64 \n"
+  stderr: ''
+  volatile: false
+- argv: uptime
+  exit_code: 0
+  ms: 2
+  stdout: ' 16:14:25 up 0 min,  0 user,  load average: 0.00, 0.00, 0.00
+
+    '
+  stderr: ''
+  volatile: true
+- argv: vmstat
+  exit_code: 0
+  ms: 4
+  stdout: "procs -----------memory---------- ---swap-- -----io---- -system-- ------cpu-----\n r  b   swpd   free   buff  cache   si   so    bi    bo   in   cs us sy id wa st\n 1  0      0 7893128  11816 109236    0    0   749    24  268  205  0  4 95  1  0\n"
+  stderr: ''
+  volatile: true
+- argv: dmesg
+  exit_code: 0
+  ms: 4
+  stdout: "[    0.000000] Linux version 6.1.0-54-amd64 (debian-kernel@lists.debian.org) (gcc-12 (Debian 12.2.0-14+deb12u1) 12.2.0, GNU ld (GNU Binutils for Debian) 2.40) #1 SMP PREEMPT_DYNAMIC Debian 6.1.190-1 (2026-10-16)\n[    0.000000] Command line: BOOT_IMAGE=/boot/vmlinuz-6.1.0-54-amd64 root=PARTUUID={{partuuid_1}} ro console=tty0 console=ttyS0,115200 earlyprintk=ttyS0,115200 consoleblank=0\n[    0.000000] BIOS-provided physical RAM map:\n[    0.000000] BIOS-e820: [mem 0x0000000000000000-0x000000000009fbff] usable\n[    0.000000] BIOS-e820: [mem 0x000000000009fc00-0x000000000009ffff] reserved\n[    0.000000] BIOS-e820: [mem 0x00000000000f0000-0x00000000000fffff] reserved\n[    0.000000] BIOS-e820: [mem 0x0000000000100000-0x000000007ffdcfff] usable\n[    0.000000] BIOS-e820: [mem 0x000000007ffdd000-0x000000007fffffff] reserved\n[    0.000000] BIOS-e820: [mem 0x00000000b0000000-0x00000000bfffffff] reserved\n[    0.000000] BIOS-e820: [mem 0x00000000fed1c000-0x00000000fed1ffff] reserved\n\
+    [    0.000000] BIOS-e820: [mem 0x00000000feffc000-0x00000000feffffff] reserved\n[    0.000000] BIOS-e820: [mem 0x00000000fffc0000-0x00000000ffffffff] reserved\n[    0.000000] BIOS-e820: [mem 0x0000000100000000-0x000000027fffffff] usable\n[    0.000000] BIOS-e820: [mem 0x000000fd00000000-0x000000ffffffffff] reserved\n[    0.000000] printk: bootconsole [earlyser0] enabled\n[    0.000000] NX (Execute Disable) protection: active\n[    0.000000] SMBIOS 2.8 present.\n[    0.000000] DMI: QEMU Standard PC (Q35 + ICH9, 2009), BIOS 1.16.2-debian-1.16.2-1 04/01/2014\n[    0.000000] Hypervisor detected: KVM\n[    0.000000] kvm-clock: Using msrs 4b564d01 and 4b564d00\n[    0.000002] kvm-clock: using sched offset of 1448214652 cycles\n[    0.001298] clocksource: kvm-clock: mask: 0xffffffffffffffff max_cycles: 0x1cd42e4dffb, max_idle_ns: 881590591483 ns\n[    0.005158] tsc: Detected 3493.430 MHz processor\n[    0.006796] e820: update [mem 0x00000000-0x00000fff] usable ==> reserved\n[    0.006803] e820:\
+    \ remove [mem 0x000a0000-0x000fffff] usable\n[    0.006808] last_pfn = 0x280000 max_arch_pfn = 0x400000000\n[    0.007943] x86/PAT: Configuration [0-7]: WB  WC  UC- UC  WB  WP  UC- WT  \n[    0.009955] last_pfn = 0x7ffdd max_arch_pfn = 0x400000000\n[    0.012588] found SMP MP-table at [mem 0x000f5b90-0x000f5b9f]\n[    0.013657] Using GB pages for direct mapping\n[    0.014534] RAMDISK: [mem 0x343f7000-0x361f2fff]\n[    0.015369] ACPI: Early table checksum verification disabled\n[    0.016388] ACPI: RSDP 0x00000000000F59B0 000014 (v00 BOCHS )\n[    0.017430] ACPI: RSDT 0x000000007FFE23D5 000038 (v01 BOCHS  BXPC     00000001 BXPC 00000001)\n[    0.018965] ACPI: FACP 0x000000007FFE21B5 0000F4 (v03 BOCHS  BXPC     00000001 BXPC 00000001)\n[    0.020511] ACPI: DSDT 0x000000007FFE0040 002175 (v01 BOCHS  BXPC     00000001 BXPC 00000001)\n[    0.022047] ACPI: FACS 0x000000007FFE0000 000040\n[    0.022883] ACPI: APIC 0x000000007FFE22A9 000090 (v01 BOCHS  BXPC     00000001 BXPC 00000001)\n[  \
+    \  0.024427] ACPI: HPET 0x000000007FFE2339 000038 (v01 BOCHS  BXPC     00000001 BXPC 00000001)\n[    0.025961] ACPI: MCFG 0x000000007FFE2371 00003C (v01 BOCHS  BXPC     00000001 BXPC 00000001)\n[    0.027523] ACPI: WAET 0x000000007FFE23AD 000028 (v01 BOCHS  BXPC     00000001 BXPC 00000001)\n[    0.029071] ACPI: Reserving FACP table memory at [mem 0x7ffe21b5-0x7ffe22a8]\n[    0.030347] ACPI: Reserving DSDT table memory at [mem 0x7ffe0040-0x7ffe21b4]\n[    0.031617] ACPI: Reserving FACS table memory at [mem 0x7ffe0000-0x7ffe003f]\n[    0.032879] ACPI: Reserving APIC table memory at [mem 0x7ffe22a9-0x7ffe2338]\n[    0.034150] ACPI: Reserving HPET table memory at [mem 0x7ffe2339-0x7ffe2370]\n[    0.035413] ACPI: Reserving MCFG table memory at [mem 0x7ffe2371-0x7ffe23ac]\n[    0.036675] ACPI: Reserving WAET table memory at [mem 0x7ffe23ad-0x7ffe23d4]\n[    0.038328] No NUMA configuration found\n[    0.039013] Faking a node at [mem 0x0000000000000000-0x000000027fffffff]\n[    0.040225] NODE_DATA(0)\
+    \ allocated [mem 0x27ffd5000-0x27fffffff]\n[    0.041796] Zone ranges:\n[    0.042382]   DMA      [mem 0x0000000000001000-0x0000000000ffffff]\n[    0.043740]   DMA32    [mem 0x0000000001000000-0x00000000ffffffff]\n[    0.044893]   Normal   [mem 0x0000000100000000-0x000000027fffffff]\n[    0.046044]   Device   empty\n[    0.046594] Movable zone start for each node\n[    0.047430] Early memory node ranges\n[    0.048082]   node   0: [mem 0x0000000000001000-0x000000000009efff]\n[    0.049225]   node   0: [mem 0x0000000000100000-0x000000007ffdcfff]\n[    0.050356]   node   0: [mem 0x0000000100000000-0x000000027fffffff]\n[    0.051515] Initmem setup node 0 [mem 0x0000000000001000-0x000000027fffffff]\n[    0.052984] On node 0, zone DMA: 1 pages in unavailable ranges\n[    0.053008] On node 0, zone DMA: 97 pages in unavailable ranges\n[    0.060266] On node 0, zone Normal: 35 pages in unavailable ranges\n[    0.061868] ACPI: PM-Timer IO Port: 0x608\n[    0.063774] ACPI: LAPIC_NMI (acpi_id[0xff]\
+    \ dfl dfl lint[0x1])\n[    0.064839] IOAPIC[0]: apic_id 0, version 17, address 0xfec00000, GSI 0-23\n[    0.066083] ACPI: INT_SRC_OVR (bus 0 bus_irq 0 global_irq 2 dfl dfl)\n[    0.067292] ACPI: INT_SRC_OVR (bus 0 bus_irq 5 global_irq 5 high level)\n[    0.068499] ACPI: INT_SRC_OVR (bus 0 bus_irq 9 global_irq 9 high level)\n[    0.069746] ACPI: INT_SRC_OVR (bus 0 bus_irq 10 global_irq 10 high level)\n[    0.070971] ACPI: INT_SRC_OVR (bus 0 bus_irq 11 global_irq 11 high level)\n[    0.072202] ACPI: Using ACPI (MADT) for SMP configuration information\n[    0.073365] ACPI: HPET id: 0x8086a201 base: 0xfed00000\n[    0.074300] smpboot: Allowing 4 CPUs, 0 hotplug CPUs\n[    0.075221] PM: hibernation: Registered nosave memory: [mem 0x00000000-0x00000fff]\n[    0.076584] PM: hibernation: Registered nosave memory: [mem 0x0009f000-0x000fffff]\n[    0.077941] PM: hibernation: Registered nosave memory: [mem 0x7ffdd000-0xffffffff]\n[    0.079306] [mem 0xc0000000-0xfed1bfff] available for PCI devices\n\
+    [    0.080399] Booting paravirtualized kernel on KVM\n[    0.081247] clocksource: refined-jiffies: mask: 0xffffffff max_cycles: 0xffffffff, max_idle_ns: 7645519600211568 ns\n[    0.086006] setup_percpu: NR_CPUS:8192 nr_cpumask_bits:4 nr_cpu_ids:4 nr_node_ids:1\n[    0.087866] percpu: Embedded 62 pages/cpu s217088 r8192 d28672 u524288\n[    0.089092] pcpu-alloc: s217088 r8192 d28672 u524288 alloc=1*2097152\n[    0.089102] pcpu-alloc: [0] 0 1 2 3 \n[    0.089127] kvm-guest: PV spinlocks disabled, no host support\n[    0.090175] Fallback order for Node 0: 0 \n[    0.090178] Built 1 zonelists, mobility grouping on.  Total pages: 2064093\n[    0.092151] Policy zone: Normal\n[    0.092716] Kernel command line: BOOT_IMAGE=/boot/vmlinuz-6.1.0-54-amd64 root=PARTUUID={{partuuid_1}} ro console=tty0 console=ttyS0,115200 earlyprintk=ttyS0,115200 consoleblank=0\n[    0.095999] random: crng init done\n[    0.097628] Dentry cache hash table entries: 1048576 (order: 11, 8388608 bytes, linear)\n[    0.099569]\
+    \ Inode-cache hash table entries: 524288 (order: 10, 4194304 bytes, linear)\n[    0.101014] mem auto-init: stack:all(zero), heap alloc:on, heap free:off\n[    0.102545] software IO TLB: area num 4.\n[    0.125327] Memory: 2130560K/8388076K available (14343K kernel code, 2338K rwdata, 9124K rodata, 2816K init, 17356K bss, 295552K reserved, 0K cma-reserved)\n[    0.127965] SLUB: HWalign=64, Order=0-3, MinObjects=0, CPUs=4, Nodes=1\n[    0.129765] ftrace: allocating 40482 entries in 159 pages\n[    0.137337] ftrace: allocated 159 pages with 6 groups\n[    0.138735] Dynamic Preempt: voluntary\n[    0.139666] rcu: Preemptible hierarchical RCU implementation.\n[    0.140732] rcu: \tRCU restricting CPUs from NR_CPUS=8192 to nr_cpu_ids=4.\n[    0.141959] \tTrampoline variant of Tasks RCU enabled.\n[    0.142874] \tRude variant of Tasks RCU enabled.\n[    0.143705] \tTracing variant of Tasks RCU enabled.\n[    0.144616] rcu: RCU calculated value of scheduler-enlistment delay is 25 jiffies.\n\
+    [    0.145989] rcu: Adjusting geometry for rcu_fanout_leaf=16, nr_cpu_ids=4\n[    0.149991] NR_IRQS: 524544, nr_irqs: 456, preallocated irqs: 16\n[    0.151255] rcu: srcu_init: Setting srcu_struct sizes based on contention.\n[    0.169416] Console: colour VGA+ 80x25\n[    0.200871] printk: console [tty0] enabled\n[    0.201919] printk: console [ttyS0] enabled\n[    0.203738] printk: bootconsole [earlyser0] disabled\n[    0.206057] ACPI: Core revision 20220331\n[    0.207184] clocksource: hpet: mask: 0xffffffff max_cycles: 0xffffffff, max_idle_ns: 19112604467 ns\n[    0.209357] APIC: Switch to symmetric I/O mode setup\n[    0.210688] x2apic enabled\n[    0.211604] Switched APIC routing to physical x2apic.\n[    0.213666] ..TIMER: vector=0x30 apic1=0 pin1=2 apic2=-1 pin2=-1\n[    0.215089] tsc: Marking TSC unstable due to TSCs unsynchronized\n[    0.216477] Calibrating delay loop (skipped) preset value.. 6986.86 BogoMIPS (lpj=13973720)\n[    0.220922] x86/cpu: User Mode Instruction Prevention\
+    \ (UMIP) activated\n[    0.222463] Last level iTLB entries: 4KB 512, 2MB 255, 4MB 127\n[    0.224475] Last level dTLB entries: 4KB 512, 2MB 255, 4MB 127, 1GB 0\n[    0.225944] Spectre V1 : Mitigation: usercopy/swapgs barriers and __user pointer sanitization\n[    0.227890] Spectre V2 : Mitigation: Retpolines\n[    0.228717] Spectre V2 : Spectre v2 / SpectreRSB: Filling RSB on context switch and VMEXIT\n[    0.230606] Spectre V2 : Enabling Restricted Speculation for firmware calls\n[    0.232476] Spectre V2 : mitigation: Enabling conditional Indirect Branch Prediction Barrier\n[    0.234399] Speculative Store Bypass: Mitigation: Speculative Store Bypass disabled via prctl\n[    0.236372] active return thunk: srso_alias_return_thunk\n[    0.236729] Speculative Return Stack Overflow: Mitigation: safe RET\n[    0.238156] Transient Scheduler Attacks: Forcing mitigation on in a VM\n[    0.240475] Transient Scheduler Attacks: Vulnerable: Clear CPU buffers attempted, no microcode\n[    0.242442]\
+    \ x86/fpu: Supporting XSAVE feature 0x001: 'x87 floating point registers'\n[    0.244250] x86/fpu: Supporting XSAVE feature 0x002: 'SSE registers'\n[    0.244752] x86/fpu: Supporting XSAVE feature 0x004: 'AVX registers'\n[    0.246214] x86/fpu: Supporting XSAVE feature 0x200: 'Protection Keys User registers'\n[    0.248839] x86/fpu: xstate_offset[2]:  576, xstate_sizes[2]:  256\n[    0.250272] x86/fpu: xstate_offset[9]:  832, xstate_sizes[9]:    8\n[    0.251694] x86/fpu: Enabled xstate features 0x207, context size is 840 bytes, using 'compacted' format.\n[    0.267171] Freeing SMP alternatives memory: 36K\n[    0.268297] pid_max: default: 32768 minimum: 301\n[    0.268757] LSM: Security Framework initializing\n[    0.269901] landlock: Up and running.\n[    0.270843] Yama: disabled by default; enable with sysctl kernel.yama.*\n[    0.272782] AppArmor: AppArmor initialized\n[    0.273799] TOMOYO Linux initialized\n[    0.274721] LSM support for eBPF active\n[    0.275730] Mount-cache\
+    \ hash table entries: 16384 (order: 5, 131072 bytes, linear)\n[    0.277004] Mountpoint-cache hash table entries: 16384 (order: 5, 131072 bytes, linear)\n[    0.388254] smpboot: CPU0: AMD EPYC-Milan Processor (family: 0x19, model: 0x1, stepping: 0x1)\n[    0.388473] cblist_init_generic: Setting adjustable number of callback queues.\n[    0.388473] cblist_init_generic: Setting shift to 2 and lim to 1.\n[    0.388771] cblist_init_generic: Setting adjustable number of callback queues.\n[    0.390476] cblist_init_generic: Setting shift to 2 and lim to 1.\n[    0.392774] cblist_init_generic: Setting adjustable number of callback queues.\n[    0.394484] cblist_init_generic: Setting shift to 2 and lim to 1.\n[    0.395928] Performance Events: Fam17h+ core perfctr, AMD PMU driver.\n[    0.396773] ... version:                0\n[    0.397871] ... bit width:              48\n[    0.398883] ... generic registers:      6\n[    0.400774] ... value mask:             0000ffffffffffff\n[    0.404475]\
+    \ ... max period:             00007fffffffffff\n[    0.408737] ... fixed-purpose events:   0\n[    0.409731] ... event mask:             000000000000003f\n[    0.411075] signal: max sigframe size: 3376\n[    0.412499] rcu: Hierarchical SRCU implementation.\n[    0.413661] rcu: \tMax phase no-delay instances is 1000.\n[    0.415211] smp: Bringing up secondary CPUs ...\n[    0.416479] x86: Booting SMP configuration:\n[    0.417521] .... node  #0, CPUs:      #1 #2 #3\n[    0.417942] smp: Brought up 1 node, 4 CPUs\n[    0.420716] smpboot: Max logical packages: 1\n[    0.421763] smpboot: Total of 4 processors activated (27947.44 BogoMIPS)\n[    0.433955] node 0 deferred pages initialised in 12ms\n[    0.436723] devtmpfs: initialized\n[    0.437402] x86/mm: Memory block size: 128MB\n[    0.440809] clocksource: jiffies: mask: 0xffffffff max_cycles: 0xffffffff, max_idle_ns: 7645041785100000 ns\n[    0.443305] futex hash table entries: 1024 (order: 4, 65536 bytes, linear)\n[    0.444833] pinctrl\
+    \ core: initialized pinctrl subsystem\n[    0.446829] NET: Registered PF_NETLINK/PF_ROUTE protocol family\n[    0.449032] DMA: preallocated 1024 KiB GFP_KERNEL pool for atomic allocations\n[    0.450833] DMA: preallocated 1024 KiB GFP_KERNEL|GFP_DMA pool for atomic allocations\n[    0.452934] DMA: preallocated 1024 KiB GFP_KERNEL|GFP_DMA32 pool for atomic allocations\n[    0.454880] audit: initializing netlink subsys (disabled)\n[    0.456210] audit: type=2000 audit(1794845637.320:1): state=initialized audit_enabled=0 res=1\n[    0.456210] thermal_sys: Registered thermal governor 'fair_share'\n[    0.456882] thermal_sys: Registered thermal governor 'bang_bang'\n[    0.458351] thermal_sys: Registered thermal governor 'step_wise'\n[    0.460763] thermal_sys: Registered thermal governor 'user_space'\n[    0.462209] thermal_sys: Registered thermal governor 'power_allocator'\n[    0.464486] cpuidle: using governor ladder\n[    0.467091] cpuidle: using governor menu\n[    0.469092] acpiphp:\
+    \ ACPI Hot Plug PCI Controller Driver version: 0.5\n[    0.470232] PCI: MMCONFIG for domain 0000 [bus 00-ff] at [mem 0xb0000000-0xbfffffff] (base 0xb0000000)\n[    0.472879] PCI: MMCONFIG at [mem 0xb0000000-0xbfffffff] reserved in E820\n[    0.474510] PCI: Using configuration type 1 for base access\n[    0.477193] kprobes: kprobe jump-optimization is enabled. All kprobes are optimized if possible.\n[    0.479288] HugeTLB: registered 1.00 GiB page size, pre-allocated 0 pages\n[    0.479288] HugeTLB: 16380 KiB vmemmap can be freed for a 1.00 GiB page\n[    0.480846] HugeTLB: registered 2.00 MiB page size, pre-allocated 0 pages\n[    0.482599] HugeTLB: 28 KiB vmemmap can be freed for a 2.00 MiB page\n[    0.485085] ACPI: Added _OSI(Module Device)\n[    0.485618] ACPI: Added _OSI(Processor Device)\n[    0.486732] ACPI: Added _OSI(Processor Aggregator Device)\n[    0.490036] ACPI: 1 ACPI AML tables successfully acquired and loaded\n[    0.493075] ACPI: Interpreter enabled\n[    0.493588]\
+    \ ACPI: PM: (supports S0 S3 S4 S5)\n[    0.494668] ACPI: Using IOAPIC for interrupt routing\n[    0.496494] PCI: Using host bridge windows from ACPI; if necessary, use \"pci=nocrs\" and report a bug\n[    0.499120] PCI: Using E820 reservations for host bridge windows\n[    0.500983] ACPI: Enabled 2 GPEs in block 00 to 3F\n[    0.505739] ACPI: PCI Root Bridge [PCI0] (domain 0000 [bus 00-ff])\n[    0.507684] acpi PNP0A08:00: _OSC: OS supports [ExtendedConfig ASPM ClockPM Segments MSI HPX-Type3]\n[    0.508910] acpi PNP0A08:00: _OSC: platform does not support [PCIeHotplug LTR]\n[    0.510693] acpi PNP0A08:00: _OSC: OS now controls [SHPCHotplug PME AER PCIeCapability]\n[    0.513015] PCI host bridge to bus 0000:00\n[    0.514028] pci_bus 0000:00: root bus resource [io  0x0000-0x0cf7 window]\n[    0.515583] pci_bus 0000:00: root bus resource [io  0x0d00-0xffff window]\n[    0.516762] pci_bus 0000:00: root bus resource [mem 0x000a0000-0x000bffff window]\n[    0.518519] pci_bus 0000:00: root\
+    \ bus resource [mem 0x80000000-0xafffffff window]\n[    0.520842] pci_bus 0000:00: root bus resource [mem 0xc0000000-0xfebfffff window]\n[    0.522595] pci_bus 0000:00: root bus resource [mem 0x280000000-0xa7fffffff window]\n[    0.524838] pci_bus 0000:00: root bus resource [bus 00-ff]\n[    0.526201] pci 0000:00:00.0: [8086:29c0] type 00 class 0x060000\n[    0.528179] pci 0000:00:01.0: [1234:1111] type 00 class 0x030000\n[    0.530138] pci 0000:00:01.0: BAR 0 [mem 0xfd000000-0xfdffffff pref]\n[    0.534400] pci 0000:00:01.0: BAR 2 [mem 0xfebd0000-0xfebd0fff]\n[    0.539435] pci 0000:00:01.0: ROM [mem 0xfebc0000-0xfebcffff pref]\n[    0.540823] pci 0000:00:01.0: Video device with shadowed ROM at [mem 0x000c0000-0x000dffff]\n[    0.543353] pci 0000:00:02.0: [1af4:1000] type 00 class 0x020000\n[    0.545191] pci 0000:00:02.0: BAR 0 [io  0xc080-0xc09f]\n[    0.548475] pci 0000:00:02.0: BAR 4 [mem 0xfe000000-0xfe003fff 64bit pref]\n[    0.550466] pci 0000:00:02.0: ROM [mem 0xfeb80000-0xfebbffff\
+    \ pref]\n[    0.552813] pci 0000:00:03.0: [1af4:1004] type 00 class 0x010000\n[    0.555166] pci 0000:00:03.0: BAR 0 [io  0xc000-0xc03f]\n[    0.556901] pci 0000:00:03.0: BAR 1 [mem 0xfebd1000-0xfebd1fff]\n[    0.561776] pci 0000:00:03.0: BAR 4 [mem 0xfe004000-0xfe007fff 64bit pref]\n[    0.565502] pci 0000:00:1f.0: [8086:2918] type 00 class 0x060100\n[    0.567525] pci 0000:00:1f.0: quirk: [io  0x0600-0x067f] claimed by ICH6 ACPI/GPIO/TCO\n[    0.569163] pci 0000:00:1f.2: [8086:2922] type 00 class 0x010601\n[    0.573013] pci 0000:00:1f.2: BAR 4 [io  0xc0a0-0xc0bf]\n[    0.574561] pci 0000:00:1f.2: BAR 5 [mem 0xfebd2000-0xfebd2fff]\n[    0.576668] pci 0000:00:1f.3: [8086:2930] type 00 class 0x0c0500\n[    0.579118] pci 0000:00:1f.3: BAR 4 [io  0x0700-0x073f]\n[    0.581209] ACPI: PCI: Interrupt link LNKA configured for IRQ 10\n[    0.582705] ACPI: PCI: Interrupt link LNKB configured for IRQ 10\n[    0.584209] ACPI: PCI: Interrupt link LNKC configured for IRQ 11\n[    0.584845] ACPI:\
+    \ PCI: Interrupt link LNKD configured for IRQ 11\n[    0.586346] ACPI: PCI: Interrupt link LNKE configured for IRQ 10\n[    0.588847] ACPI: PCI: Interrupt link LNKF configured for IRQ 10\n[    0.590348] ACPI: PCI: Interrupt link LNKG configured for IRQ 11\n[    0.591840] ACPI: PCI: Interrupt link LNKH configured for IRQ 11\n[    0.592788] ACPI: PCI: Interrupt link GSIA configured for IRQ 16\n[    0.594193] ACPI: PCI: Interrupt link GSIB configured for IRQ 17\n[    0.595603] ACPI: PCI: Interrupt link GSIC configured for IRQ 18\n[    0.596758] ACPI: PCI: Interrupt link GSID configured for IRQ 19\n[    0.598169] ACPI: PCI: Interrupt link GSIE configured for IRQ 20\n[    0.599575] ACPI: PCI: Interrupt link GSIF configured for IRQ 21\n[    0.600760] ACPI: PCI: Interrupt link GSIG configured for IRQ 22\n[    0.602174] ACPI: PCI: Interrupt link GSIH configured for IRQ 23\n[    0.604874] iommu: Default domain type: Translated \n[    0.605656] iommu: DMA domain TLB invalidation policy: lazy mode\
+    \ \n[    0.607135] pps_core: LinuxPPS API ver. 1 registered\n[    0.608737] pps_core: Software ver. 5.3.6 - Copyright 2005-2007 Rodolfo Giometti <giometti@linux.it>\n[    0.610826] PTP clock support registered\n[    0.611814] EDAC MC: Ver: 3.0.0\n[    0.612884] NetLabel: Initializing\n[    0.613521] NetLabel:  domain hash size = 128\n[    0.614586] NetLabel:  protocols = UNLABELED CIPSOv4 CALIPSO\n[    0.616490] NetLabel:  unlabeled traffic allowed by default\n[    0.617799] PCI: Using ACPI for IRQ routing\n[    0.701771] PCI: pci_cache_line_size set to 64 bytes\n[    0.701935] e820: reserve RAM buffer [mem 0x0009fc00-0x0009ffff]\n[    0.701939] e820: reserve RAM buffer [mem 0x7ffdd000-0x7fffffff]\n[    0.701977] pci 0000:00:01.0: vgaarb: setting as boot VGA device\n[    0.701977] pci 0000:00:01.0: vgaarb: bridge control possible\n[    0.703294] pci 0000:00:01.0: vgaarb: VGA device added: decodes=io+mem,owns=io+mem,locks=none\n[    0.704476] vgaarb: loaded\n[    0.705267] hpet0: at MMIO\
+    \ 0xfed00000, IRQs 2, 8, 0\n[    0.708729] hpet0: 3 comparators, 64-bit 100.000000 MHz counter\n[    0.716474] clocksource: Switched to clocksource kvm-clock\n[    0.717974] VFS: Disk quotas dquot_6.6.0\n[    0.718964] VFS: Dquot-cache hash table entries: 512 (order 0, 4096 bytes)\n[    0.720767] AppArmor: AppArmor Filesystem Enabled\n[    0.721922] pnp: PnP ACPI init\n[    0.722883] system 00:04: [mem 0xb0000000-0xbfffffff window] has been reserved\n[    0.724888] pnp: PnP ACPI: found 5 devices\n[    0.732406] clocksource: acpi_pm: mask: 0xffffff max_cycles: 0xffffff, max_idle_ns: 2085701024 ns\n[    0.734557] NET: Registered PF_INET protocol family\n[    0.735825] IP idents hash table entries: 131072 (order: 8, 1048576 bytes, linear)\n[    0.738778] tcp_listen_portaddr_hash hash table entries: 4096 (order: 4, 65536 bytes, linear)\n[    0.740796] Table-perturb hash table entries: 65536 (order: 6, 262144 bytes, linear)\n[    0.742630] TCP established hash table entries: 65536 (order:\
+    \ 7, 524288 bytes, linear)\n[    0.744712] TCP bind hash table entries: 65536 (order: 9, 2097152 bytes, linear)\n[    0.746537] TCP: Hash tables configured (established 65536 bind 65536)\n[    0.748260] MPTCP token hash table entries: 8192 (order: 6, 196608 bytes, linear)\n[    0.750053] UDP hash table entries: 4096 (order: 5, 131072 bytes, linear)\n[    0.751642] UDP-Lite hash table entries: 4096 (order: 5, 131072 bytes, linear)\n[    0.753403] NET: Registered PF_UNIX/PF_LOCAL protocol family\n[    0.754741] NET: Registered PF_XDP protocol family\n[    0.755901] pci_bus 0000:00: resource 4 [io  0x0000-0x0cf7 window]\n[    0.757349] pci_bus 0000:00: resource 5 [io  0x0d00-0xffff window]\n[    0.758781] pci_bus 0000:00: resource 6 [mem 0x000a0000-0x000bffff window]\n[    0.760366] pci_bus 0000:00: resource 7 [mem 0x80000000-0xafffffff window]\n[    0.761938] pci_bus 0000:00: resource 8 [mem 0xc0000000-0xfebfffff window]\n[    0.763513] pci_bus 0000:00: resource 9 [mem 0x280000000-0xa7fffffff\
+    \ window]\n[    0.765284] PCI: CLS 0 bytes, default 64\n[    0.766326] PCI-DMA: Using software bounce buffering for IO (SWIOTLB)\n[    0.766412] Trying to unpack rootfs image as initramfs...\n[    0.767643] software IO TLB: mapped [mem 0x000000007bfdd000-0x000000007ffdd000] (64MB)\n[    0.772452] Initialise system trusted keyrings\n[    0.773878] Key type blacklist registered\n[    0.775290] workingset: timestamp_bits=36 max_order=21 bucket_order=0\n[    0.778601] zbud: loaded\n[    0.779614] integrity: Platform Keyring initialized\n[    0.780837] integrity: Machine keyring initialized\n[    0.791823] Key type asymmetric registered\n[    0.792902] Asymmetric key parser 'x509' registered\n[    0.926801] Freeing initrd memory: 30704K\n[    0.932627] alg: self-tests for CTR-KDF (hmac(sha256)) passed\n[    0.934211] Block layer SCSI generic (bsg) driver version 0.4 loaded (major 248)\n[    0.936166] io scheduler mq-deadline registered\n[    0.937994] shpchp: Standard Hot Plug PCI Controller\
+    \ Driver version: 0.4\n[    0.940304] Serial: 8250/16550 driver, 4 ports, IRQ sharing enabled\n[    0.942319] 00:02: ttyS0 at I/O 0x3f8 (irq = 4, base_baud = 115200) is a 16550A\n[    0.944760] Linux agpgart interface v0.103\n[    0.945857] AMD-Vi: AMD IOMMUv2 functionality not available on this system - This is not a bug.\n[    0.948214] i8042: PNP: PS/2 Controller [PNP0303:KBD,PNP0f13:MOU] at 0x60,0x64 irq 1,12\n[    0.950836] serio: i8042 KBD port at 0x60,0x64 irq 1\n[    0.952055] serio: i8042 AUX port at 0x60,0x64 irq 12\n[    0.953376] mousedev: PS/2 mouse device common for all mice\n[    0.954731] rtc_cmos 00:03: RTC can wake from S4\n[    0.956634] input: AT Translated Set 2 keyboard as /devices/platform/i8042/serio0/input/input0\n[    0.958827] rtc_cmos 00:03: registered as rtc0\n[    0.960088] rtc_cmos 00:03: setting system clock to 2026-11-16T16:13:57 UTC (1794845637)\n[    0.962304] rtc_cmos 00:03: alarms up to one day, y3k, 242 bytes nvram, hpet irqs\n[    0.964219] ledtrig-cpu:\
+    \ registered to indicate activity on CPUs\n[    0.973776] NET: Registered PF_INET6 protocol family\n[    0.978704] Segment Routing with IPv6\n[    0.980007] In-situ OAM (IOAM) with IPv6\n[    0.981129] mip6: Mobile IPv6\n[    0.981979] NET: Registered PF_PACKET protocol family\n[    0.983289] mpls_gso: MPLS GSO support\n[    0.984562] IPI shorthand broadcast: enabled\n[    0.985679] sched_clock: Marking stable (924555473, 59960795)->(989561816, -5045548)\n[    0.987737] registered taskstats version 1\n[    0.988825] Loading compiled-in X.509 certificates\n[    1.000715] Loaded X.509 cert 'Build time autogenerated kernel key: fc405883341a8944a6c6f2b9ec2bcb864fa2632f'\n[    1.003737] zswap: loaded using pool lzo/zbud\n[    1.005135] Key type .fscrypt registered\n[    1.006165] Key type fscrypt-provisioning registered\n[    1.010150] Key type encrypted registered\n[    1.011196] AppArmor: AppArmor sha1 policy hashing enabled\n[    1.012571] ima: No TPM chip found, activating TPM-bypass!\n\
+    [    1.013910] ima: Allocated hash algorithm: sha256\n[    1.015097] ima: No architecture policies found\n[    1.016262] evm: Initialising EVM extended attributes:\n[    1.017528] evm: security.selinux\n[    1.018415] evm: security.SMACK64 (disabled)\n[    1.019501] evm: security.SMACK64EXEC (disabled)\n[    1.020677] evm: security.SMACK64TRANSMUTE (disabled)\n[    1.021925] evm: security.SMACK64MMAP (disabled)\n[    1.023086] evm: security.apparmor\n[    1.024013] evm: security.ima\n[    1.024823] evm: security.capability\n[    1.025765] evm: HMAC attrs: 0x1\n[    1.078577] clk: Disabling unused clocks\n[    1.080791] Freeing unused decrypted memory: 2036K\n[    1.082141] Freeing unused kernel image (initmem) memory: 2816K\n[    1.083244] Write protecting the kernel read-only data: 26624k\n[    1.084870] Freeing unused kernel image (text/rodata gap) memory: 2040K\n[    1.086265] Freeing unused kernel image (rodata/data gap) memory: 1116K\n[    1.126330] x86/mm: Checked W+X mappings:\
+    \ passed, no W+X pages found.\n[    1.127513] Run /init as init process\n[    1.128285]   with arguments:\n[    1.128287]     /init\n[    1.128288]   with environment:\n[    1.128289]     HOME=/\n[    1.128290]     TERM=linux\n[    1.179167] lpc_ich 0000:00:1f.0: I/O space for GPIO uninitialized\n[    1.182377] ACPI: \\_SB_.GSIA: Enabled at IRQ 16\n[    1.183445] i801_smbus 0000:00:1f.3: SMBus using PCI interrupt\n[    1.183693] ACPI: \\_SB_.GSIG: Enabled at IRQ 22\n[    1.184452] i2c i2c-0: 1/1 memory slots populated (from DMI)\n[    1.187085] ACPI: \\_SB_.GSIH: Enabled at IRQ 23\n[    1.187138] i2c i2c-0: Memory type 0x07 not supported yet, not instantiating SPD\n[    1.190267] SCSI subsystem initialized\n[    1.191827] input: VirtualPS/2 VMware VMMouse as /devices/platform/i8042/serio1/input/input3\n[    1.196297] input: VirtualPS/2 VMware VMMouse as /devices/platform/i8042/serio1/input/input2\n[    1.201707] libata version 3.00 loaded.\n[    1.204466] ahci 0000:00:1f.2: version 3.0\n\
+    [    1.205615] ahci 0000:00:1f.2: AHCI 0001.0000 32 slots 6 ports 1.5 Gbps 0x3f impl SATA mode\n[    1.207341] ahci 0000:00:1f.2: flags: 64bit ncq only \n[    1.213318] scsi host1: ahci\n[    1.214339] scsi host2: ahci\n[    1.214646] scsi host0: Virtio SCSI HBA\n[    1.214915] scsi host3: ahci\n[    1.216209] scsi 0:0:0:0: Direct-Access     QEMU     QEMU HARDDISK    2.5+ PQ: 0 ANSI: 5\n[    1.218750] scsi host4: ahci\n[    1.219822] scsi host5: ahci\n[    1.220798] scsi host6: ahci\n[    1.221618] ata1: SATA max UDMA/133 abar m4096@0xfebd2000 port 0xfebd2100 irq 24\n[    1.223260] ata2: SATA max UDMA/133 abar m4096@0xfebd2000 port 0xfebd2180 irq 24\n[    1.224888] ata3: SATA max UDMA/133 abar m4096@0xfebd2000 port 0xfebd2200 irq 24\n[    1.226639] ata4: SATA max UDMA/133 abar m4096@0xfebd2000 port 0xfebd2280 irq 24\n[    1.228404] ata5: SATA max UDMA/133 abar m4096@0xfebd2000 port 0xfebd2300 irq 24\n[    1.228435] virtio_net virtio0 enp0s2: renamed from eth0\n[    1.229450] ata6: SATA\
+    \ max UDMA/133 abar m4096@0xfebd2000 port 0xfebd2380 irq 24\n[    1.546993] ata2: SATA link down (SStatus 0 SControl 300)\n[    1.548593] ata3: SATA link down (SStatus 0 SControl 300)\n[    1.549925] ata5: SATA link down (SStatus 0 SControl 300)\n[    1.551214] ata1: SATA link down (SStatus 0 SControl 300)\n[    1.552493] ata6: SATA link down (SStatus 0 SControl 300)\n[    1.553950] ata4: SATA link down (SStatus 0 SControl 300)\n[    1.564538] sd 0:0:0:0: Power-on or device reset occurred\n[    1.565918] sd 0:0:0:0: [sda] 335544320 512-byte logical blocks: (172 GB/160 GiB)\n[    1.567723] sd 0:0:0:0: [sda] Write Protect is off\n[    1.568780] sd 0:0:0:0: [sda] Mode Sense: 63 00 00 08\n[    1.568829] sd 0:0:0:0: [sda] Write cache: enabled, read cache: enabled, doesn't support DPO or FUA\n[    1.572316]  sda: sda1 sda14 sda15\n[    1.573391] sd 0:0:0:0: [sda] Attached SCSI disk\n[    1.685320] EXT4-fs (sda1): mounted filesystem with ordered data mode. Quota mode: none.\n[    1.735434]\
+    \ Not activating Mandatory Access Control as /sbin/tomoyo-init does not exist.\n[    1.800789] systemd[1]: Inserted module 'autofs4'\n[    1.821256] systemd[1]: systemd 252.39-1~deb12u2 running in system mode (+PAM +AUDIT +SELINUX +APPARMOR +IMA +SMACK +SECCOMP +GCRYPT -GNUTLS +OPENSSL +ACL +BLKID +CURL +ELFUTILS +FIDO2 +IDN2 -IDN +IPTC +KMOD +LIBCRYPTSETUP +LIBFDISK +PCRE2 -PWQUALITY +P11KIT +QRENCODE +TPM2 +BZIP2 +LZ4 +XZ +ZLIB +ZSTD -BPF_FRAMEWORK -XKBCOMMON +UTMP +SYSVINIT default-hierarchy=unified)\n[    1.827217] systemd[1]: Detected virtualization kvm.\n[    1.828248] systemd[1]: Detected architecture x86-64.\n[    1.831336] systemd[1]: Hostname set to <{{hostname}}>.\n[    1.965187] systemd[1]: Queued start job for default target graphical.target.\n[    1.980861] systemd[1]: Created slice system-getty.slice - Slice /system/getty.\n[    1.984609] systemd[1]: Created slice system-modprobe.slice - Slice /system/modprobe.\n[    1.988147] systemd[1]: Created slice system-serial\\\
+    x2dgetty.slice - Slice /system/serial-getty.\n[    1.992516] systemd[1]: Created slice system-systemd\\x2dgrowfs.slice - Slice /system/systemd-growfs.\n[    1.996303] systemd[1]: Created slice user.slice - User and Session Slice.\n[    1.998976] systemd[1]: Started systemd-ask-password-console.path - Dispatch Password Requests to Console Directory Watch.\n[    2.002641] systemd[1]: Started systemd-ask-password-wall.path - Forward Password Requests to Wall Directory Watch.\n[    2.006293] systemd[1]: Set up automount proc-sys-fs-binfmt_misc.automount - Arbitrary Executable File Formats File System Automount Point.\n[    2.010391] systemd[1]: Expecting device dev-disk-by\\x2dpartuuid-22bd1d88\\x2d1039\\x2d4dfa\\x2db688\\x2db3c344c5b123.device - /dev/disk/by-partuuid/{{partuuid_15}}...\n[    2.015495] systemd[1]: Expecting device dev-ttyS0.device - /dev/ttyS0...\n[    2.018390] systemd[1]: Reached target cryptsetup.target - Local Encrypted Volumes.\n[    2.021750] systemd[1]: Reached target\
+    \ integritysetup.target - Local Integrity Protected Volumes.\n[    2.025029] systemd[1]: Reached target paths.target - Path Units.\n[    2.027831] systemd[1]: Reached target remote-fs.target - Remote File Systems.\n[    2.031151] systemd[1]: Reached target slices.target - Slice Units.\n[    2.034039] systemd[1]: Reached target swap.target - Swaps.\n[    2.036714] systemd[1]: Reached target veritysetup.target - Local Verity Protected Volumes.\n[    2.040254] systemd[1]: Listening on systemd-fsckd.socket - fsck to fsckd communication Socket.\n[    2.043596] systemd[1]: Listening on systemd-initctl.socket - initctl Compatibility Named Pipe.\n[    2.047421] systemd[1]: Listening on systemd-journald-audit.socket - Journal Audit Socket.\n[    2.050837] systemd[1]: Listening on systemd-journald-dev-log.socket - Journal Socket (/dev/log).\n[    2.054804] systemd[1]: Listening on systemd-journald.socket - Journal Socket.\n[    2.058313] systemd[1]: Listening on systemd-networkd.socket - Network\
+    \ Service Netlink Socket.\n[    2.062069] systemd[1]: Listening on systemd-udevd-control.socket - udev Control Socket.\n[    2.065688] systemd[1]: Listening on systemd-udevd-kernel.socket - udev Kernel Socket.\n[    2.104092] systemd[1]: Mounting dev-hugepages.mount - Huge Pages File System...\n[    2.119018] systemd[1]: Mounting dev-mqueue.mount - POSIX Message Queue File System...\n[    2.122702] systemd[1]: Mounting sys-kernel-debug.mount - Kernel Debug File System...\n[    2.126326] systemd[1]: Mounting sys-kernel-tracing.mount - Kernel Trace File System...\n[    2.130495] systemd[1]: Starting kmod-static-nodes.service - Create List of Static Device Nodes...\n[    2.134391] systemd[1]: Starting modprobe@configfs.service - Load Kernel Module configfs...\n[    2.138218] systemd[1]: Starting modprobe@dm_mod.service - Load Kernel Module dm_mod...\n[    2.142677] systemd[1]: Starting modprobe@drm.service - Load Kernel Module drm...\n[    2.146154] systemd[1]: Starting modprobe@efi_pstore.service\
+    \ - Load Kernel Module efi_pstore...\n[    2.150963] systemd[1]: Starting modprobe@fuse.service - Load Kernel Module fuse...\n[    2.154834] device-mapper: core: CONFIG_IMA_DISABLE_HTABLE is disabled. Duplicate IMA measurements will not be recorded in the IMA log.\n[    2.155419] systemd[1]: Starting modprobe@loop.service - Load Kernel Module loop...\n[    2.156770] device-mapper: uevent: version 1.0.3\n[    2.160315] device-mapper: ioctl: 4.47.0-ioctl (2022-07-28) initialised: dm-devel@redhat.com\n[    2.162925] systemd[1]: netplan-ovs-cleanup.service - OpenVSwitch configuration for cleanup was skipped because of an unmet condition check (ConditionFileIsExecutable=/usr/bin/ovs-vsctl).\n[    2.167405] systemd[1]: Starting systemd-fsck-root.service - File System Check on Root Device...\n[    2.168727] loop: module loaded\n[    2.174376] systemd[1]: Starting systemd-journald.service - Journal Service...\n[    2.177180] systemd[1]: Starting systemd-modules-load.service - Load Kernel Modules...\n\
+    [    2.180141] systemd[1]: Starting systemd-network-generator.service - Generate network units from Kernel command line...\n[    2.183314] systemd[1]: Starting systemd-udev-trigger.service - Coldplug All udev Devices...\n[    2.187279] fuse: init (API version 7.38)\n[    2.188456] systemd[1]: Mounted dev-hugepages.mount - Huge Pages File System.\n[    2.188610] ACPI: bus type drm_connector registered\n[    2.190966] systemd[1]: Mounted dev-mqueue.mount - POSIX Message Queue File System.\n[    2.193139] systemd[1]: Mounted sys-kernel-debug.mount - Kernel Debug File System.\n[    2.195073] systemd[1]: Mounted sys-kernel-tracing.mount - Kernel Trace File System.\n[    2.197162] systemd[1]: Finished kmod-static-nodes.service - Create List of Static Device Nodes.\n[    2.199494] systemd[1]: modprobe@configfs.service: Deactivated successfully.\n[    2.201463] systemd[1]: Finished modprobe@configfs.service - Load Kernel Module configfs.\n[    2.203389] systemd[1]: Started systemd-journald.service\
+    \ - Journal Service.\n[    2.251195] EXT4-fs (sda1): re-mounted. Quota mode: none.\n[    2.281943] systemd-journald[262]: Received client request to flush runtime journal.\n[    2.289525] EXT4-fs (sda1): resizing filesystem from 41910267 to 41910267 blocks\n[    2.371358] sd 0:0:0:0: Attached scsi generic sg0 type 0\n[    2.420490] cryptd: max_cpu_qlen set to 1000\n[    2.423019] input: Power Button as /devices/LNXSYSTM:00/LNXPWRBN:00/input/input4\n[    2.431908] AVX2 version of gcm_enc/dec engaged.\n[    2.433255] AES CTR mode by8 optimization enabled\n[    2.444498] ACPI: button: Power Button [PWRF]\n[    2.447545] bochs-drm 0000:00:01.0: vgaarb: deactivate vga console\n[    2.458548] Console: switching to colour dummy device 80x25\n[    2.459447] [drm] Found bochs VGA, ID 0xb0c5.\n[    2.460078] [drm] Framebuffer size 16384 kB @ 0xfd000000, mmio @ 0xfebd0000.\n[    2.462819] [drm] Found EDID data blob.\n[    2.463470] [drm] Initialized bochs-drm 1.0.0 20130925 for 0000:00:01.0 on\
+    \ minor 0\n[    2.465263] fbcon: bochs-drmdrmfb (fb0) is primary device\n[    2.917249] Console: switching to colour frame buffer device 160x50\n[    2.921132] bochs-drm 0000:00:01.0: [drm] fb0: bochs-drmdrmfb frame buffer device\n[    2.960571] cfg80211: Loading compiled-in X.509 certificates for regulatory database\n[    2.961760] cfg80211: Loaded X.509 cert 'benh@debian.org: 577e021cb980e0e820821ba7b54b4961b8b4fadf'\n[    2.963159] iTCO_vendor_support: vendor-support=0\n[    2.963202] cfg80211: Loaded X.509 cert 'romain.perier@gmail.com: 3abbc6ec146e09d1b6016ab9d6cf71dd233f0328'\n[    2.965654] cfg80211: Loaded X.509 cert 'sforshee: 00b28ddf47aef9cea7'\n[    2.966880] cfg80211: Loaded X.509 cert 'wens: 61c038651aabdcf94bd0ac7ff06c7248db18c600'\n[    2.968060] platform regulatory.0: firmware: failed to load regulatory.db (-2)\n[    2.969162] firmware_class: See https://wiki.debian.org/Firmware for information about missing firmware\n[    2.970478] platform regulatory.0: firmware: failed\
+    \ to load regulatory.db (-2)\n[    2.971486] platform regulatory.0: Direct firmware load for regulatory.db failed with error -2\n[    2.972693] cfg80211: failed to load regulatory.db\n[    2.978483] iTCO_wdt iTCO_wdt.1.auto: Found a ICH9 TCO device (Version=2, TCOBASE=0x0660)\n[    2.980211] iTCO_wdt iTCO_wdt.1.auto: initialized. heartbeat=30 sec (nowayout=0)\n[    3.263158] audit: type=1400 audit(1794845639.800:2): apparmor=\"STATUS\" operation=\"profile_load\" profile=\"unconfined\" name=\"nvidia_modprobe\" pid=412 comm=\"apparmor_parser\"\n[    3.270033] audit: type=1400 audit(1794845639.800:3): apparmor=\"STATUS\" operation=\"profile_load\" profile=\"unconfined\" name=\"nvidia_modprobe//kmod\" pid=412 comm=\"apparmor_parser\"\n[    3.272269] audit: type=1400 audit(1794845639.800:4): apparmor=\"STATUS\" operation=\"profile_load\" profile=\"unconfined\" name=\"lsb_release\" pid=411 comm=\"apparmor_parser\"\n[    3.274316] audit: type=1400 audit(1794845639.800:5): apparmor=\"STATUS\"\
+    \ operation=\"profile_load\" profile=\"unconfined\" name=\"/usr/bin/man\" pid=414 comm=\"apparmor_parser\"\n[    3.279417] audit: type=1400 audit(1794845639.800:6): apparmor=\"STATUS\" operation=\"profile_load\" profile=\"unconfined\" name=\"man_filter\" pid=414 comm=\"apparmor_parser\"\n[    3.281887] audit: type=1400 audit(1794845639.800:7): apparmor=\"STATUS\" operation=\"profile_load\" profile=\"unconfined\" name=\"man_groff\" pid=414 comm=\"apparmor_parser\"\n[    3.285047] audit: type=1400 audit(1794845639.804:8): apparmor=\"STATUS\" operation=\"profile_load\" profile=\"unconfined\" name=\"tcpdump\" pid=418 comm=\"apparmor_parser\"\n[    3.288386] audit: type=1400 audit(1794845639.804:9): apparmor=\"STATUS\" operation=\"profile_load\" profile=\"unconfined\" name=\"/usr/lib/NetworkManager/nm-dhcp-client.action\" pid=413 comm=\"apparmor_parser\"\n[    3.291602] audit: type=1400 audit(1794845639.804:10): apparmor=\"STATUS\" operation=\"profile_load\" profile=\"unconfined\" name=\"\
+    /usr/lib/NetworkManager/nm-dhcp-helper\" pid=413 comm=\"apparmor_parser\"\n"
+  stderr: ''
+  volatile: false
+- argv: lsmod
+  exit_code: 0
+  ms: 4
+  stdout: 'Module                  Size  Used by
+
+    binfmt_misc            28672  1
+
+    nls_ascii              16384  1
+
+    nls_cp437              20480  1
+
+    vfat                   24576  1
+
+    fat                    90112  1 vfat
+
+    intel_rapl_msr         20480  0
+
+    intel_rapl_common      32768  1 intel_rapl_msr
+
+    ghash_clmulni_intel    16384  0
+
+    iTCO_wdt               16384  1
+
+    sha512_ssse3           49152  0
+
+    intel_pmc_bxt          16384  1 iTCO_wdt
+
+    sha512_generic         16384  1 sha512_ssse3
+
+    sha256_ssse3           32768  0
+
+    iTCO_vendor_support    16384  1 iTCO_wdt
+
+    sha1_ssse3             32768  0
+
+    watchdog               45056  1 iTCO_wdt
+
+    cfg80211             1155072  0
+
+    bochs                  16384  0
+
+    drm_vram_helper        20480  1 bochs
+
+    drm_ttm_helper         16384  2 bochs,drm_vram_helper
+
+    ttm                    94208  2 drm_vram_helper,drm_ttm_helper
+
+    joydev                 28672  0
+
+    aesni_intel           393216  0
+
+    evdev                  28672  2
+
+    crypto_simd            16384  1 aesni_intel
+
+    rfkill                 40960  2 cfg80211
+
+    cryptd                 28672  2 crypto_simd,ghash_clmulni_intel
+
+    drm_kms_helper        212992  4 bochs,drm_vram_helper
+
+    button                 24576  0
+
+    serio_raw              20480  0
+
+    sg                     40960  0
+
+    fuse                  176128  1
+
+    drm                   618496  6 drm_kms_helper,bochs,drm_vram_helper,drm_ttm_helper,ttm
+
+    loop                   32768  0
+
+    efi_pstore             16384  0
+
+    dm_mod                184320  0
+
+    configfs               57344  1
+
+    qemu_fw_cfg            20480  0
+
+    ip_tables              36864  0
+
+    x_tables               61440  1 ip_tables
+
+    autofs4                53248  2
+
+    ext4                  991232  1
+
+    crc16                  16384  1 ext4
+
+    mbcache                16384  1 ext4
+
+    jbd2                  167936  1 ext4
+
+    crc32c_generic         16384  0
+
+    sd_mod                 65536  2
+
+    t10_pi                 16384  1 sd_mod
+
+    crc64_rocksoft         20480  1 t10_pi
+
+    crc64                  20480  1 crc64_rocksoft
+
+    crc_t10dif             20480  1 t10_pi
+
+    crct10dif_generic      16384  0
+
+    virtio_net             73728  0
+
+    net_failover           24576  1 virtio_net
+
+    virtio_scsi            28672  2
+
+    failover               16384  1 net_failover
+
+    ahci                   49152  0
+
+    libahci                49152  1 ahci
+
+    crct10dif_pclmul       16384  1
+
+    libata                401408  2 libahci,ahci
+
+    crct10dif_common       16384  3 crct10dif_generic,crc_t10dif,crct10dif_pclmul
+
+    crc32_pclmul           16384  0
+
+    crc32c_intel           24576  2
+
+    psmouse               184320  0
+
+    virtio_pci             24576  0
+
+    scsi_mod              286720  4 virtio_scsi,sd_mod,libata,sg
+
+    virtio_pci_legacy_dev    16384  1 virtio_pci
+
+    i2c_i801               36864  0
+
+    virtio_pci_modern_dev    20480  1 virtio_pci
+
+    i2c_smbus              20480  1 i2c_i801
+
+    virtio                 20480  3 virtio_scsi,virtio_pci,virtio_net
+
+    lpc_ich                28672  0
+
+    scsi_common            16384  3 scsi_mod,libata,sg
+
+    virtio_ring            49152  3 virtio_scsi,virtio_pci,virtio_net
+
+    '
+  stderr: ''
+  volatile: false
+- argv: lspci
+  exit_code: 0
+  ms: 37
+  stdout: '00:00.0 Host bridge: Intel Corporation 82G33/G31/P35/P31 Express DRAM Controller
+
+    00:01.0 VGA compatible controller: Device 1234:1111 (rev 02)
+
+    00:02.0 Ethernet controller: Red Hat, Inc. Virtio network device
+
+    00:03.0 SCSI storage controller: Red Hat, Inc. Virtio SCSI
+
+    00:1f.0 ISA bridge: Intel Corporation 82801IB (ICH9) LPC Interface Controller (rev 02)
+
+    00:1f.2 SATA controller: Intel Corporation 82801IR/IO/IH (ICH9R/DO/DH) 6 port SATA Controller [AHCI mode] (rev 02)
+
+    00:1f.3 SMBus: Intel Corporation 82801I (ICH9 Family) SMBus Controller (rev 02)
+
+    '
+  stderr: ''
+  volatile: false
+- argv: hostnamectl
+  exit_code: 0
+  ms: 75
+  stdout: " Static hostname: {{hostname}}\n       Icon name: computer-vm\n         Chassis: vm \U0001F5B4\n      Machine ID: {{machine_id}}\n         Boot ID: {{boot_id_hex}}\n  Virtualization: kvm\nOperating System: Debian GNU/Linux 12 (bookworm)\n          Kernel: Linux 6.1.0-54-amd64\n    Architecture: x86-64\n Hardware Vendor: QEMU\n  Hardware Model: Standard PC _Q35 + ICH9, 2009_\nFirmware Version: 1.16.2-debian-1.16.2-1\n"
+  stderr: ''
+  volatile: false
+- argv: systemd-detect-virt
+  exit_code: 0
+  ms: 5
+  stdout: 'kvm
+
+    '
+  stderr: ''
+  volatile: false
+- argv: timedatectl
+  exit_code: 0
+  ms: 58
+  stdout: "               Local time: Mon 2026-11-16 16:14:25 UTC\n           Universal time: Mon 2026-11-16 16:14:25 UTC\n                 RTC time: Mon 2026-11-16 16:14:25\n                Time zone: Etc/UTC (UTC, +0000)\nSystem clock synchronized: no\n              NTP service: active\n          RTC in local TZ: no\n"
+  stderr: ''
+  volatile: true
+- argv: getconf LONG_BIT
+  exit_code: 0
+  ms: 2
+  stdout: '64
+
+    '
+  stderr: ''
+  volatile: false
+- argv: getconf PAGE_SIZE
+  exit_code: 0
+  ms: 1
+  stdout: '4096
+
+    '
+  stderr: ''
+  volatile: false
+- argv: getconf _NPROCESSORS_ONLN
+  exit_code: 0
+  ms: 1
+  stdout: '4
+
+    '
+  stderr: ''
+  volatile: false
+- argv: locale
+  exit_code: 0
+  ms: 2
+  stdout: 'LANG=C.UTF-8
+
+    LANGUAGE=
+
+    LC_CTYPE="C"
+
+    LC_NUMERIC="C"
+
+    LC_TIME="C"
+
+    LC_COLLATE="C"
+
+    LC_MONETARY="C"
+
+    LC_MESSAGES="C"
+
+    LC_PAPER="C"
+
+    LC_NAME="C"
+
+    LC_ADDRESS="C"
+
+    LC_TELEPHONE="C"
+
+    LC_MEASUREMENT="C"
+
+    LC_IDENTIFICATION="C"
+
+    LC_ALL=C
+
+    '
+  stderr: ''
+  volatile: false
+- argv: ps aux
+  exit_code: 0
+  ms: 12
+  stdout: 'USER         PID %CPU %MEM    VSZ   RSS TTY      STAT START   TIME COMMAND
+
+    root           1  3.5  0.1 167496 12000 ?        Ss   16:13   0:01 /sbin/init
+
+    root           2  0.0  0.0      0     0 ?        S    16:13   0:00 [kthreadd]
+
+    root           3  0.0  0.0      0     0 ?        I<   16:13   0:00 [rcu_gp]
+
+    root           4  0.0  0.0      0     0 ?        I<   16:13   0:00 [rcu_par_gp]
+
+    root           5  0.0  0.0      0     0 ?        I<   16:13   0:00 [slub_flushwq]
+
+    root           6  0.0  0.0      0     0 ?        I<   16:13   0:00 [netns]
+
+    root           7  0.0  0.0      0     0 ?        I    16:13   0:00 [kworker/0:0-rcu_gp]
+
+    root           8  0.0  0.0      0     0 ?        I<   16:13   0:00 [kworker/0:0H-events_highpri]
+
+    root           9  0.1  0.0      0     0 ?        I    16:13   0:00 [kworker/u8:0-flush-8:0]
+
+    root          10  0.0  0.0      0     0 ?        I<   16:13   0:00 [mm_percpu_wq]
+
+    root          11  0.0  0.0      0     0 ?        I    16:13   0:00 [rcu_tasks_kthread]
+
+    root          12  0.0  0.0      0     0 ?        I    16:13   0:00 [rcu_tasks_rude_kthread]
+
+    root          13  0.0  0.0      0     0 ?        I    16:13   0:00 [rcu_tasks_trace_kthread]
+
+    root          14  0.0  0.0      0     0 ?        S    16:13   0:00 [ksoftirqd/0]
+
+    root          15  0.0  0.0      0     0 ?        I    16:13   0:00 [rcu_preempt]
+
+    root          16  0.0  0.0      0     0 ?        S    16:13   0:00 [migration/0]
+
+    root          17  0.0  0.0      0     0 ?        I    16:13   0:00 [kworker/0:1-events]
+
+    root          18  0.0  0.0      0     0 ?        S    16:13   0:00 [cpuhp/0]
+
+    root          19  0.0  0.0      0     0 ?        S    16:13   0:00 [cpuhp/1]
+
+    root          20  1.2  0.0      0     0 ?        S    16:13   0:00 [migration/1]
+
+    root          21  0.0  0.0      0     0 ?        S    16:13   0:00 [ksoftirqd/1]
+
+    root          22  0.4  0.0      0     0 ?        I    16:13   0:00 [kworker/1:0-rcu_gp]
+
+    root          23  0.0  0.0      0     0 ?        I<   16:13   0:00 [kworker/1:0H-events_highpri]
+
+    root          24  0.0  0.0      0     0 ?        S    16:13   0:00 [cpuhp/2]
+
+    root          25  1.2  0.0      0     0 ?        S    16:13   0:00 [migration/2]
+
+    root          26  0.0  0.0      0     0 ?        S    16:13   0:00 [ksoftirqd/2]
+
+    root          27  0.0  0.0      0     0 ?        I    16:13   0:00 [kworker/2:0-events]
+
+    root          28  0.0  0.0      0     0 ?        I<   16:13   0:00 [kworker/2:0H-events_highpri]
+
+    root          29  0.0  0.0      0     0 ?        S    16:13   0:00 [cpuhp/3]
+
+    root          30  1.2  0.0      0     0 ?        S    16:13   0:00 [migration/3]
+
+    root          31  0.0  0.0      0     0 ?        S    16:13   0:00 [ksoftirqd/3]
+
+    root          32  0.0  0.0      0     0 ?        I    16:13   0:00 [kworker/3:0-events]
+
+    root          33  0.0  0.0      0     0 ?        I<   16:13   0:00 [kworker/3:0H-events_highpri]
+
+    root          35  0.6  0.0      0     0 ?        I    16:13   0:00 [kworker/u8:1-events_unbound]
+
+    root          36  0.0  0.0      0     0 ?        I    16:13   0:00 [kworker/u8:2-ext4-rsv-conversion]
+
+    root          37  0.0  0.0      0     0 ?        I    16:13   0:00 [kworker/u8:3-events_unbound]
+
+    root          38  0.0  0.0      0     0 ?        S    16:13   0:00 [kdevtmpfs]
+
+    root          39  0.0  0.0      0     0 ?        I<   16:13   0:00 [inet_frag_wq]
+
+    root          40  0.0  0.0      0     0 ?        S    16:13   0:00 [kauditd]
+
+    root          41  0.0  0.0      0     0 ?        S    16:13   0:00 [khungtaskd]
+
+    root          42  0.0  0.0      0     0 ?        S    16:13   0:00 [oom_reaper]
+
+    root          43  0.0  0.0      0     0 ?        I<   16:13   0:00 [writeback]
+
+    root          44  0.0  0.0      0     0 ?        S    16:13   0:00 [kcompactd0]
+
+    root          45  0.0  0.0      0     0 ?        SN   16:13   0:00 [ksmd]
+
+    root          46  0.0  0.0      0     0 ?        I    16:13   0:00 [kworker/1:1]
+
+    root          47  0.0  0.0      0     0 ?        SN   16:13   0:00 [khugepaged]
+
+    root          48  0.0  0.0      0     0 ?        I<   16:13   0:00 [kintegrityd]
+
+    root          49  0.0  0.0      0     0 ?        I<   16:13   0:00 [kblockd]
+
+    root          50  0.0  0.0      0     0 ?        I<   16:13   0:00 [blkcg_punt_bio]
+
+    root          51  0.0  0.0      0     0 ?        I<   16:13   0:00 [tpm_dev_wq]
+
+    root          52  0.0  0.0      0     0 ?        I<   16:13   0:00 [edac-poller]
+
+    root          53  0.0  0.0      0     0 ?        I<   16:13   0:00 [devfreq_wq]
+
+    root          54  0.0  0.0      0     0 ?        I<   16:13   0:00 [quota_events_un]
+
+    root          55  0.0  0.0      0     0 ?        I<   16:13   0:00 [kworker/1:1H-kblockd]
+
+    root          56  0.0  0.0      0     0 ?        S    16:13   0:00 [kswapd0]
+
+    root          57  0.0  0.0      0     0 ?        I    16:13   0:00 [kworker/2:1-cgroup_release]
+
+    root          63  0.0  0.0      0     0 ?        I<   16:13   0:00 [kthrotld]
+
+    root          65  0.0  0.0      0     0 ?        I<   16:13   0:00 [acpi_thermal_pm]
+
+    root          66  0.0  0.0      0     0 ?        I    16:13   0:00 [kworker/0:2-rcu_gp]
+
+    root          67  0.0  0.0      0     0 ?        I<   16:13   0:00 [mld]
+
+    root          68  0.0  0.0      0     0 ?        I<   16:13   0:00 [ipv6_addrconf]
+
+    root          73  0.0  0.0      0     0 ?        I<   16:13   0:00 [kstrp]
+
+    root          78  0.0  0.0      0     0 ?        I<   16:13   0:00 [zswap-shrink]
+
+    root          79  0.0  0.0      0     0 ?        I<   16:13   0:00 [kworker/u9:0]
+
+    root          98  0.0  0.0      0     0 ?        I    16:13   0:00 [kworker/3:1-cgroup_free]
+
+    root         133  0.0  0.0      0     0 ?        I<   16:13   0:00 [kworker/3:1H-kblockd]
+
+    root         134  0.0  0.0      0     0 ?        I<   16:13   0:00 [kworker/0:1H-kblockd]
+
+    root         135  0.0  0.0      0     0 ?        I<   16:13   0:00 [kworker/2:1H-kblockd]
+
+    root         142  0.0  0.0      0     0 ?        I    16:13   0:00 [kworker/3:2-events]
+
+    root         146  0.0  0.0      0     0 ?        I<   16:13   0:00 [ata_sff]
+
+    root         147  0.0  0.0      0     0 ?        S    16:13   0:00 [scsi_eh_0]
+
+    root         148  0.0  0.0      0     0 ?        I<   16:13   0:00 [scsi_tmf_0]
+
+    root         149  0.0  0.0      0     0 ?        S    16:13   0:00 [scsi_eh_1]
+
+    root         150  0.0  0.0      0     0 ?        I<   16:13   0:00 [scsi_tmf_1]
+
+    root         151  0.0  0.0      0     0 ?        S    16:13   0:00 [scsi_eh_2]
+
+    root         152  0.0  0.0      0     0 ?        I<   16:13   0:00 [scsi_tmf_2]
+
+    root         153  0.0  0.0      0     0 ?        S    16:13   0:00 [scsi_eh_3]
+
+    root         154  0.0  0.0      0     0 ?        I<   16:13   0:00 [scsi_tmf_3]
+
+    root         155  0.0  0.0      0     0 ?        S    16:13   0:00 [scsi_eh_4]
+
+    root         156  0.0  0.0      0     0 ?        I<   16:13   0:00 [scsi_tmf_4]
+
+    root         157  0.0  0.0      0     0 ?        S    16:13   0:00 [scsi_eh_5]
+
+    root         158  0.0  0.0      0     0 ?        I<   16:13   0:00 [scsi_tmf_5]
+
+    root         159  0.0  0.0      0     0 ?        S    16:13   0:00 [scsi_eh_6]
+
+    root         160  0.0  0.0      0     0 ?        I<   16:13   0:00 [scsi_tmf_6]
+
+    root         161  0.0  0.0      0     0 ?        I    16:13   0:00 [kworker/u8:4-writeback]
+
+    root         162  0.0  0.0      0     0 ?        I    16:13   0:00 [kworker/u8:5-events_unbound]
+
+    root         163  0.0  0.0      0     0 ?        I    16:13   0:00 [kworker/u8:6-events_unbound]
+
+    root         164  0.0  0.0      0     0 ?        I    16:13   0:00 [kworker/u8:7]
+
+    root         197  0.9  0.0      0     0 ?        I    16:13   0:00 [kworker/2:2-events]
+
+    root         198  0.0  0.0      0     0 ?        S    16:13   0:00 [jbd2/sda1-8]
+
+    root         199  0.0  0.0      0     0 ?        I<   16:13   0:00 [ext4-rsv-conver]
+
+    root         228  0.6  0.0      0     0 ?        I    16:13   0:00 [kworker/1:2-cgroup_bpf_destroy]
+
+    root         262  0.1  0.1  33292 11944 ?        Ss   16:13   0:00 /lib/systemd/systemd-journald
+
+    root         270  0.0  0.0  16772  6440 ?        Ss   16:13   0:00 /lib/systemd/systemd-fsckd
+
+    root         275  0.0  0.0      0     0 ?        S    16:13   0:00 [ext4lazyinit]
+
+    root         283  0.1  0.0  26664  6092 ?        Ss   16:13   0:00 /lib/systemd/systemd-udevd
+
+    systemd+     292  0.0  0.1  18060  8656 ?        Ss   16:13   0:00 /lib/systemd/systemd-networkd
+
+    root         314  0.0  0.0      0     0 ?        I<   16:13   0:00 [cryptd]
+
+    root         366  0.0  0.0      0     0 ?        S    16:13   0:00 [watchdogd]
+
+    root         370  0.0  0.0      0     0 ?        I<   16:13   0:00 [cfg80211]
+
+    systemd+     415  0.1  0.1  20780 12540 ?        Ss   16:13   0:00 /lib/systemd/systemd-resolved
+
+    systemd+     416  0.1  0.0  90256  6916 ?        Ssl  16:13   0:00 /lib/systemd/systemd-timesyncd
+
+    message+     420  0.0  0.0   8096  4296 ?        Ss   16:13   0:00 /usr/bin/dbus-daemon --system --address=systemd: --nofork --nopidfile --systemd-activation --syslog-only
+
+    root         423  0.0  0.0  16704  6808 ?        Ss   16:13   0:00 /lib/systemd/systemd-logind
+
+    root         425  0.0  0.0   2900  1024 tty1     Ss+  16:13   0:00 /sbin/agetty -o -p -- \u --noclear - linux
+
+    root         426  0.0  0.0   2944  1032 ttyS0    Ss+  16:13   0:00 /sbin/agetty -o -p -- \u --keep-baud 115200,57600,38400,9600 - vt220
+
+    root         427  0.0  0.1  15460  8748 ?        Ss   16:13   0:00 sshd: /usr/sbin/sshd -D [listener] 0 of 10-100 startups
+
+    root         431  0.1  0.2  28732 18752 ?        Ss   16:13   0:00 /usr/bin/python3 /usr/share/unattended-upgrades/unattended-upgrade-shutdown --wait-for-signal
+
+    root         437  0.0  0.0      0     0 ?        I    16:13   0:00 [kworker/3:3]
+
+    root         443  0.0  0.0  26668  3740 ?        S    16:14   0:00 (udev-worker)
+
+    root        1177 13.3  0.0  16372  6728 ?        Ss   16:14   0:00 /lib/systemd/systemd-hostnamed
+
+    root        1188 28.5  0.0  16368  6732 ?        Ss   16:14   0:00 /lib/systemd/systemd-timedated
+
+    root        1212  0.0  0.0   2584   896 ?        S    16:14   0:00 sh -c ps aux
+
+    root        1213  0.0  0.0   8108  4000 ?        R    16:14   0:00 ps aux
+
+    '
+  stderr: ''
+  volatile: true
+- argv: ps -ef
+  exit_code: 0
+  ms: 8
+  stdout: 'UID          PID    PPID  C STIME TTY          TIME CMD
+
+    root           1       0  3 16:13 ?        00:00:01 /sbin/init
+
+    root           2       0  0 16:13 ?        00:00:00 [kthreadd]
+
+    root           3       2  0 16:13 ?        00:00:00 [rcu_gp]
+
+    root           4       2  0 16:13 ?        00:00:00 [rcu_par_gp]
+
+    root           5       2  0 16:13 ?        00:00:00 [slub_flushwq]
+
+    root           6       2  0 16:13 ?        00:00:00 [netns]
+
+    root           7       2  0 16:13 ?        00:00:00 [kworker/0:0-rcu_gp]
+
+    root           8       2  0 16:13 ?        00:00:00 [kworker/0:0H-events_highpri]
+
+    root           9       2  0 16:13 ?        00:00:00 [kworker/u8:0-flush-8:0]
+
+    root          10       2  0 16:13 ?        00:00:00 [mm_percpu_wq]
+
+    root          11       2  0 16:13 ?        00:00:00 [rcu_tasks_kthread]
+
+    root          12       2  0 16:13 ?        00:00:00 [rcu_tasks_rude_kthread]
+
+    root          13       2  0 16:13 ?        00:00:00 [rcu_tasks_trace_kthread]
+
+    root          14       2  0 16:13 ?        00:00:00 [ksoftirqd/0]
+
+    root          15       2  0 16:13 ?        00:00:00 [rcu_preempt]
+
+    root          16       2  0 16:13 ?        00:00:00 [migration/0]
+
+    root          17       2  0 16:13 ?        00:00:00 [kworker/0:1-events]
+
+    root          18       2  0 16:13 ?        00:00:00 [cpuhp/0]
+
+    root          19       2  0 16:13 ?        00:00:00 [cpuhp/1]
+
+    root          20       2  1 16:13 ?        00:00:00 [migration/1]
+
+    root          21       2  0 16:13 ?        00:00:00 [ksoftirqd/1]
+
+    root          22       2  0 16:13 ?        00:00:00 [kworker/1:0-events]
+
+    root          23       2  0 16:13 ?        00:00:00 [kworker/1:0H-events_highpri]
+
+    root          24       2  0 16:13 ?        00:00:00 [cpuhp/2]
+
+    root          25       2  1 16:13 ?        00:00:00 [migration/2]
+
+    root          26       2  0 16:13 ?        00:00:00 [ksoftirqd/2]
+
+    root          27       2  0 16:13 ?        00:00:00 [kworker/2:0-events]
+
+    root          28       2  0 16:13 ?        00:00:00 [kworker/2:0H-events_highpri]
+
+    root          29       2  0 16:13 ?        00:00:00 [cpuhp/3]
+
+    root          30       2  1 16:13 ?        00:00:00 [migration/3]
+
+    root          31       2  0 16:13 ?        00:00:00 [ksoftirqd/3]
+
+    root          32       2  0 16:13 ?        00:00:00 [kworker/3:0-events]
+
+    root          33       2  0 16:13 ?        00:00:00 [kworker/3:0H-events_highpri]
+
+    root          35       2  0 16:13 ?        00:00:00 [kworker/u8:1-events_unbound]
+
+    root          36       2  0 16:13 ?        00:00:00 [kworker/u8:2-ext4-rsv-conversion]
+
+    root          37       2  0 16:13 ?        00:00:00 [kworker/u8:3-events_unbound]
+
+    root          38       2  0 16:13 ?        00:00:00 [kdevtmpfs]
+
+    root          39       2  0 16:13 ?        00:00:00 [inet_frag_wq]
+
+    root          40       2  0 16:13 ?        00:00:00 [kauditd]
+
+    root          41       2  0 16:13 ?        00:00:00 [khungtaskd]
+
+    root          42       2  0 16:13 ?        00:00:00 [oom_reaper]
+
+    root          43       2  0 16:13 ?        00:00:00 [writeback]
+
+    root          44       2  0 16:13 ?        00:00:00 [kcompactd0]
+
+    root          45       2  0 16:13 ?        00:00:00 [ksmd]
+
+    root          46       2  0 16:13 ?        00:00:00 [kworker/1:1]
+
+    root          47       2  0 16:13 ?        00:00:00 [khugepaged]
+
+    root          48       2  0 16:13 ?        00:00:00 [kintegrityd]
+
+    root          49       2  0 16:13 ?        00:00:00 [kblockd]
+
+    root          50       2  0 16:13 ?        00:00:00 [blkcg_punt_bio]
+
+    root          51       2  0 16:13 ?        00:00:00 [tpm_dev_wq]
+
+    root          52       2  0 16:13 ?        00:00:00 [edac-poller]
+
+    root          53       2  0 16:13 ?        00:00:00 [devfreq_wq]
+
+    root          54       2  0 16:13 ?        00:00:00 [quota_events_un]
+
+    root          55       2  0 16:13 ?        00:00:00 [kworker/1:1H-kblockd]
+
+    root          56       2  0 16:13 ?        00:00:00 [kswapd0]
+
+    root          57       2  0 16:13 ?        00:00:00 [kworker/2:1-cgroup_release]
+
+    root          63       2  0 16:13 ?        00:00:00 [kthrotld]
+
+    root          65       2  0 16:13 ?        00:00:00 [acpi_thermal_pm]
+
+    root          66       2  0 16:13 ?        00:00:00 [kworker/0:2-rcu_gp]
+
+    root          67       2  0 16:13 ?        00:00:00 [mld]
+
+    root          68       2  0 16:13 ?        00:00:00 [ipv6_addrconf]
+
+    root          73       2  0 16:13 ?        00:00:00 [kstrp]
+
+    root          78       2  0 16:13 ?        00:00:00 [zswap-shrink]
+
+    root          79       2  0 16:13 ?        00:00:00 [kworker/u9:0]
+
+    root          98       2  0 16:13 ?        00:00:00 [kworker/3:1-cgroup_free]
+
+    root         133       2  0 16:13 ?        00:00:00 [kworker/3:1H-kblockd]
+
+    root         134       2  0 16:13 ?        00:00:00 [kworker/0:1H-kblockd]
+
+    root         135       2  0 16:13 ?        00:00:00 [kworker/2:1H-kblockd]
+
+    root         142       2  0 16:13 ?        00:00:00 [kworker/3:2-events]
+
+    root         146       2  0 16:13 ?        00:00:00 [ata_sff]
+
+    root         147       2  0 16:13 ?        00:00:00 [scsi_eh_0]
+
+    root         148       2  0 16:13 ?        00:00:00 [scsi_tmf_0]
+
+    root         149       2  0 16:13 ?        00:00:00 [scsi_eh_1]
+
+    root         150       2  0 16:13 ?        00:00:00 [scsi_tmf_1]
+
+    root         151       2  0 16:13 ?        00:00:00 [scsi_eh_2]
+
+    root         152       2  0 16:13 ?        00:00:00 [scsi_tmf_2]
+
+    root         153       2  0 16:13 ?        00:00:00 [scsi_eh_3]
+
+    root         154       2  0 16:13 ?        00:00:00 [scsi_tmf_3]
+
+    root         155       2  0 16:13 ?        00:00:00 [scsi_eh_4]
+
+    root         156       2  0 16:13 ?        00:00:00 [scsi_tmf_4]
+
+    root         157       2  0 16:13 ?        00:00:00 [scsi_eh_5]
+
+    root         158       2  0 16:13 ?        00:00:00 [scsi_tmf_5]
+
+    root         159       2  0 16:13 ?        00:00:00 [scsi_eh_6]
+
+    root         160       2  0 16:13 ?        00:00:00 [scsi_tmf_6]
+
+    root         161       2  0 16:13 ?        00:00:00 [kworker/u8:4-writeback]
+
+    root         162       2  0 16:13 ?        00:00:00 [kworker/u8:5-events_unbound]
+
+    root         163       2  0 16:13 ?        00:00:00 [kworker/u8:6-events_unbound]
+
+    root         164       2  0 16:13 ?        00:00:00 [kworker/u8:7]
+
+    root         197       2  0 16:13 ?        00:00:00 [kworker/2:2-events]
+
+    root         198       2  0 16:13 ?        00:00:00 [jbd2/sda1-8]
+
+    root         199       2  0 16:13 ?        00:00:00 [ext4-rsv-conver]
+
+    root         228       2  0 16:13 ?        00:00:00 [kworker/1:2-cgroup_bpf_destroy]
+
+    root         262       1  0 16:13 ?        00:00:00 /lib/systemd/systemd-journald
+
+    root         270       1  0 16:13 ?        00:00:00 /lib/systemd/systemd-fsckd
+
+    root         275       2  0 16:13 ?        00:00:00 [ext4lazyinit]
+
+    root         283       1  0 16:13 ?        00:00:00 /lib/systemd/systemd-udevd
+
+    systemd+     292       1  0 16:13 ?        00:00:00 /lib/systemd/systemd-networkd
+
+    root         314       2  0 16:13 ?        00:00:00 [cryptd]
+
+    root         366       2  0 16:13 ?        00:00:00 [watchdogd]
+
+    root         370       2  0 16:13 ?        00:00:00 [cfg80211]
+
+    systemd+     415       1  0 16:13 ?        00:00:00 /lib/systemd/systemd-resolved
+
+    systemd+     416       1  0 16:13 ?        00:00:00 /lib/systemd/systemd-timesyncd
+
+    message+     420       1  0 16:13 ?        00:00:00 /usr/bin/dbus-daemon --system --address=systemd: --nofork --nopidfile --systemd-activation --syslog-only
+
+    root         423       1  0 16:13 ?        00:00:00 /lib/systemd/systemd-logind
+
+    root         425       1  0 16:13 tty1     00:00:00 /sbin/agetty -o -p -- \u --noclear - linux
+
+    root         426       1  0 16:13 ttyS0    00:00:00 /sbin/agetty -o -p -- \u --keep-baud 115200,57600,38400,9600 - vt220
+
+    root         427       1  0 16:13 ?        00:00:00 sshd: /usr/sbin/sshd -D [listener] 0 of 10-100 startups
+
+    root         431       1  0 16:13 ?        00:00:00 /usr/bin/python3 /usr/share/unattended-upgrades/unattended-upgrade-shutdown --wait-for-signal
+
+    root         437       2  0 16:13 ?        00:00:00 [kworker/3:3]
+
+    root         443     283  0 16:14 ?        00:00:00 (udev-worker)
+
+    root        1177       1 12 16:14 ?        00:00:00 /lib/systemd/systemd-hostnamed
+
+    root        1188       1 25 16:14 ?        00:00:00 /lib/systemd/systemd-timedated
+
+    root        1217    1019  0 16:14 ?        00:00:00 sh -c ps -ef
+
+    root        1218    1217  0 16:14 ?        00:00:00 ps -ef
+
+    '
+  stderr: ''
+  volatile: true
+- argv: top -bn1
+  exit_code: 0
+  ms: 195
+  stdout: "top - 16:14:26 up 0 min,  0 user,  load average: 0.00, 0.00, 0.00\nTasks: 116 total,   1 running, 115 sleeping,   0 stopped,   0 zombie\n%Cpu(s):  0.0 us,  0.0 sy,  0.0 ni, 72.7 id, 27.3 wa,  0.0 hi,  0.0 si,  0.0 st \nMiB Mem :   7940.7 total,   7704.5 free,    313.2 used,    120.5 buff/cache     \nMiB Swap:      0.0 total,      0.0 free,      0.0 used.   7627.5 avail Mem \n\n    PID USER      PR  NI    VIRT    RES    SHR S  %CPU  %MEM     TIME+ COMMAND\n      1 root      20   0  167496  12000   9176 S   0.0   0.1   0:01.02 systemd\n      2 root      20   0       0      0      0 S   0.0   0.0   0:00.00 kthreadd\n      3 root       0 -20       0      0      0 I   0.0   0.0   0:00.00 rcu_gp\n      4 root       0 -20       0      0      0 I   0.0   0.0   0:00.00 rcu_par+\n      5 root       0 -20       0      0      0 I   0.0   0.0   0:00.00 slub_fl+\n      6 root       0 -20       0      0      0 I   0.0   0.0   0:00.00 netns\n      7 root      20   0       0      0      0 I  \
+    \ 0.0   0.0   0:00.00 kworker+\n      8 root       0 -20       0      0      0 I   0.0   0.0   0:00.00 kworker+\n      9 root      20   0       0      0      0 I   0.0   0.0   0:00.03 kworker+\n     10 root       0 -20       0      0      0 I   0.0   0.0   0:00.00 mm_perc+\n     11 root      20   0       0      0      0 I   0.0   0.0   0:00.00 rcu_tas+\n     12 root      20   0       0      0      0 I   0.0   0.0   0:00.00 rcu_tas+\n     13 root      20   0       0      0      0 I   0.0   0.0   0:00.00 rcu_tas+\n     14 root      20   0       0      0      0 S   0.0   0.0   0:00.00 ksoftir+\n     15 root      20   0       0      0      0 I   0.0   0.0   0:00.00 rcu_pre+\n     16 root      rt   0       0      0      0 S   0.0   0.0   0:00.00 migrati+\n     17 root      20   0       0      0      0 I   0.0   0.0   0:00.01 kworker+\n     18 root      20   0       0      0      0 S   0.0   0.0   0:00.00 cpuhp/0\n     19 root      20   0       0      0      0 S   0.0   0.0   0:00.00 cpuhp/1\n\
+    \     20 root      rt   0       0      0      0 S   0.0   0.0   0:00.35 migrati+\n     21 root      20   0       0      0      0 S   0.0   0.0   0:00.00 ksoftir+\n     22 root      20   0       0      0      0 I   0.0   0.0   0:00.12 kworker+\n     23 root       0 -20       0      0      0 I   0.0   0.0   0:00.00 kworker+\n     24 root      20   0       0      0      0 S   0.0   0.0   0:00.00 cpuhp/2\n     25 root      rt   0       0      0      0 S   0.0   0.0   0:00.35 migrati+\n     26 root      20   0       0      0      0 S   0.0   0.0   0:00.01 ksoftir+\n     27 root      20   0       0      0      0 I   0.0   0.0   0:00.00 kworker+\n     28 root       0 -20       0      0      0 I   0.0   0.0   0:00.00 kworker+\n     29 root      20   0       0      0      0 S   0.0   0.0   0:00.00 cpuhp/3\n     30 root      rt   0       0      0      0 S   0.0   0.0   0:00.35 migrati+\n     31 root      20   0       0      0      0 S   0.0   0.0   0:00.00 ksoftir+\n     32 root      20   0  \
+    \     0      0      0 I   0.0   0.0   0:00.00 kworker+\n     33 root       0 -20       0      0      0 I   0.0   0.0   0:00.00 kworker+\n     35 root      20   0       0      0      0 I   0.0   0.0   0:00.19 kworker+\n     36 root      20   0       0      0      0 I   0.0   0.0   0:00.00 kworker+\n     37 root      20   0       0      0      0 I   0.0   0.0   0:00.00 kworker+\n     38 root      20   0       0      0      0 S   0.0   0.0   0:00.00 kdevtmp+\n     39 root       0 -20       0      0      0 I   0.0   0.0   0:00.00 inet_fr+\n     40 root      20   0       0      0      0 S   0.0   0.0   0:00.02 kauditd\n     41 root      20   0       0      0      0 S   0.0   0.0   0:00.00 khungta+\n     42 root      20   0       0      0      0 S   0.0   0.0   0:00.00 oom_rea+\n     43 root       0 -20       0      0      0 I   0.0   0.0   0:00.00 writeba+\n     44 root      20   0       0      0      0 S   0.0   0.0   0:00.00 kcompac+\n     45 root      25   5       0      0      0 S   0.0\
+    \   0.0   0:00.00 ksmd\n     46 root      20   0       0      0      0 I   0.0   0.0   0:00.00 kworker+\n     47 root      39  19       0      0      0 S   0.0   0.0   0:00.00 khugepa+\n     48 root       0 -20       0      0      0 I   0.0   0.0   0:00.00 kintegr+\n     49 root       0 -20       0      0      0 I   0.0   0.0   0:00.00 kblockd\n     50 root       0 -20       0      0      0 I   0.0   0.0   0:00.00 blkcg_p+\n     51 root       0 -20       0      0      0 I   0.0   0.0   0:00.00 tpm_dev+\n     52 root       0 -20       0      0      0 I   0.0   0.0   0:00.00 edac-po+\n     53 root       0 -20       0      0      0 I   0.0   0.0   0:00.00 devfreq+\n     54 root       0 -20       0      0      0 I   0.0   0.0   0:00.00 quota_e+\n     55 root       0 -20       0      0      0 I   0.0   0.0   0:00.00 kworker+\n     56 root      20   0       0      0      0 S   0.0   0.0   0:00.00 kswapd0\n     57 root      20   0       0      0      0 I   0.0   0.0   0:00.00 kworker+\n   \
+    \  63 root       0 -20       0      0      0 I   0.0   0.0   0:00.00 kthrotld\n     65 root       0 -20       0      0      0 I   0.0   0.0   0:00.00 acpi_th+\n     66 root      20   0       0      0      0 I   0.0   0.0   0:00.00 kworker+\n     67 root       0 -20       0      0      0 I   0.0   0.0   0:00.00 mld\n     68 root       0 -20       0      0      0 I   0.0   0.0   0:00.00 ipv6_ad+\n     73 root       0 -20       0      0      0 I   0.0   0.0   0:00.00 kstrp\n     78 root       0 -20       0      0      0 I   0.0   0.0   0:00.00 zswap-s+\n     79 root       0 -20       0      0      0 I   0.0   0.0   0:00.00 kworker+\n     98 root      20   0       0      0      0 I   0.0   0.0   0:00.02 kworker+\n    133 root       0 -20       0      0      0 I   0.0   0.0   0:00.00 kworker+\n    134 root       0 -20       0      0      0 I   0.0   0.0   0:00.00 kworker+\n    135 root       0 -20       0      0      0 I   0.0   0.0   0:00.00 kworker+\n    142 root      20   0       0   \
+    \   0      0 I   0.0   0.0   0:00.00 kworker+\n    146 root       0 -20       0      0      0 I   0.0   0.0   0:00.00 ata_sff\n    147 root      20   0       0      0      0 S   0.0   0.0   0:00.00 scsi_eh+\n    148 root       0 -20       0      0      0 I   0.0   0.0   0:00.00 scsi_tm+\n    149 root      20   0       0      0      0 S   0.0   0.0   0:00.00 scsi_eh+\n    150 root       0 -20       0      0      0 I   0.0   0.0   0:00.00 scsi_tm+\n    151 root      20   0       0      0      0 S   0.0   0.0   0:00.00 scsi_eh+\n    152 root       0 -20       0      0      0 I   0.0   0.0   0:00.00 scsi_tm+\n    153 root      20   0       0      0      0 S   0.0   0.0   0:00.00 scsi_eh+\n    154 root       0 -20       0      0      0 I   0.0   0.0   0:00.00 scsi_tm+\n    155 root      20   0       0      0      0 S   0.0   0.0   0:00.00 scsi_eh+\n    156 root       0 -20       0      0      0 I   0.0   0.0   0:00.00 scsi_tm+\n    157 root      20   0       0      0      0 S   0.0   0.0\
+    \   0:00.00 scsi_eh+\n    158 root       0 -20       0      0      0 I   0.0   0.0   0:00.00 scsi_tm+\n    159 root      20   0       0      0      0 S   0.0   0.0   0:00.00 scsi_eh+\n    160 root       0 -20       0      0      0 I   0.0   0.0   0:00.00 scsi_tm+\n    161 root      20   0       0      0      0 I   0.0   0.0   0:00.00 kworker+\n    162 root      20   0       0      0      0 I   0.0   0.0   0:00.00 kworker+\n    163 root      20   0       0      0      0 I   0.0   0.0   0:00.00 kworker+\n    164 root      20   0       0      0      0 I   0.0   0.0   0:00.00 kworker+\n    197 root      20   0       0      0      0 I   0.0   0.0   0:00.26 kworker+\n    198 root      20   0       0      0      0 S   0.0   0.0   0:00.00 jbd2/sd+\n    199 root       0 -20       0      0      0 I   0.0   0.0   0:00.00 ext4-rs+\n    228 root      20   0       0      0      0 I   0.0   0.0   0:00.17 kworker+\n    262 root      20   0   33292  11944   8836 S   0.0   0.1   0:00.05 systemd+\n   \
+    \ 270 root      20   0   16772   6440   5556 S   0.0   0.1   0:00.00 systemd+\n    275 root      20   0       0      0      0 S   0.0   0.0   0:00.00 ext4laz+\n    283 root      20   0   26664   6092   4732 S   0.0   0.1   0:00.05 systemd+\n    292 systemd+  20   0   18060   8656   7528 S   0.0   0.1   0:00.02 systemd+\n    314 root       0 -20       0      0      0 I   0.0   0.0   0:00.00 cryptd\n    366 root     -51   0       0      0      0 S   0.0   0.0   0:00.00 watchdo+\n    370 root       0 -20       0      0      0 I   0.0   0.0   0:00.00 cfg80211\n    415 systemd+  20   0   20780  12540  10216 S   0.0   0.2   0:00.04 systemd+\n    416 systemd+  20   0   90256   6916   5976 S   0.0   0.1   0:00.03 systemd+\n    420 message+  20   0    8096   4296   3732 S   0.0   0.1   0:00.01 dbus-da+\n    423 root      20   0   16704   6808   5912 S   0.0   0.1   0:00.01 systemd+\n    425 root      20   0    2900   1024    936 S   0.0   0.0   0:00.00 agetty\n    426 root      20   0    2944\
+    \   1032    944 S   0.0   0.0   0:00.00 agetty\n    427 root      20   0   15460   8748   7500 S   0.0   0.1   0:00.00 sshd\n    431 root      20   0   28732  18752  10856 S   0.0   0.2   0:00.05 unatten+\n    432 root      20   0    2584   1628   1488 S   0.0   0.0   0:00.02 sh\n    437 root      20   0       0      0      0 I   0.0   0.0   0:00.00 kworker+\n    443 root      20   0   26668   3740   2356 S   0.0   0.0   0:00.00 (udev-w+\n   1019 root      20   0    2584   1084    944 S   0.0   0.0   0:00.02 sh\n   1177 root      20   0   16372   6728   5848 S   0.0   0.1   0:00.02 systemd+\n   1188 root      20   0   16368   6732   5848 S   0.0   0.1   0:00.02 systemd+\n   1222 root      20   0    2584    928    836 S   0.0   0.0   0:00.00 sh\n   1223 root      20   0    8648   4780   2908 R   0.0   0.1   0:00.00 top\n"
+  stderr: ''
+  volatile: true
+- argv: w
+  exit_code: 0
+  ms: 3
+  stdout: ' 16:14:26 up 0 min,  0 user,  load average: 0.00, 0.00, 0.00
+
+    USER     TTY      FROM             LOGIN@   IDLE   JCPU   PCPU WHAT
+
+    '
+  stderr: ''
+  volatile: true
+- argv: who
+  exit_code: 0
+  ms: 3
+  stdout: ''
+  stderr: ''
+  volatile: true
+- argv: last
+  exit_code: 0
+  ms: 2
+  stdout: 'reboot   system boot  6.1.0-54-amd64   Mon Nov 16 16:13   still running
+
+    reboot   system boot  6.1.0-54-amd64   Mon Nov 16 16:13 - 16:13  (00:00)
+
+
+    wtmp begins Mon Nov 16 16:13:34 2026
+
+    '
+  stderr: ''
+  volatile: true
+- argv: id
+  exit_code: 0
+  ms: 15
+  stdout: 'uid=0(root) gid=0(root) groups=0(root)
+
+    '
+  stderr: ''
+  volatile: false
+- argv: cat /proc/cpuinfo
+  exit_code: 0
+  ms: 1
+  stdout: "processor\t: 0\nvendor_id\t: AuthenticAMD\ncpu family\t: 25\nmodel\t\t: 1\nmodel name\t: AMD EPYC-Milan Processor\nstepping\t: 1\nmicrocode\t: 0x1000065\ncpu MHz\t\t: 3493.430\ncache size\t: 512 KB\nphysical id\t: 0\nsiblings\t: 4\ncore id\t\t: 0\ncpu cores\t: 4\napicid\t\t: 0\ninitial apicid\t: 0\nfpu\t\t: yes\nfpu_exception\t: yes\ncpuid level\t: 13\nwp\t\t: yes\nflags\t\t: fpu vme de pse tsc msr pae mce cx8 apic sep mtrr pge mca cmov pat pse36 clflush mmx fxsr sse sse2 ht syscall nx mmxext fxsr_opt pdpe1gb rdtscp lm rep_good nopl cpuid extd_apicid tsc_known_freq pni pclmulqdq ssse3 fma cx16 sse4_1 sse4_2 x2apic movbe popcnt aes xsave avx f16c rdrand hypervisor lahf_lm cmp_legacy cr8_legacy abm sse4a misalignsse 3dnowprefetch osvw topoext perfctr_core ssbd ibrs ibpb stibp vmmcall fsgsbase bmi1 avx2 smep bmi2 erms invpcid rdseed adx smap clflushopt clwb sha_ni xsaveopt xsavec xgetbv1 xsaves clzero xsaveerptr wbnoinvd arat umip pku ospke rdpid fsrm\nbugs\t\t: sysret_ss_attrs null_seg\
+    \ spectre_v1 spectre_v2 spec_store_bypass srso ibpb_no_ret tsa\nbogomips\t: 6986.86\nTLB size\t: 1024 4K pages\nclflush size\t: 64\ncache_alignment\t: 64\naddress sizes\t: 40 bits physical, 48 bits virtual\npower management:\n\nprocessor\t: 1\nvendor_id\t: AuthenticAMD\ncpu family\t: 25\nmodel\t\t: 1\nmodel name\t: AMD EPYC-Milan Processor\nstepping\t: 1\nmicrocode\t: 0x1000065\ncpu MHz\t\t: 3493.430\ncache size\t: 512 KB\nphysical id\t: 0\nsiblings\t: 4\ncore id\t\t: 1\ncpu cores\t: 4\napicid\t\t: 1\ninitial apicid\t: 1\nfpu\t\t: yes\nfpu_exception\t: yes\ncpuid level\t: 13\nwp\t\t: yes\nflags\t\t: fpu vme de pse tsc msr pae mce cx8 apic sep mtrr pge mca cmov pat pse36 clflush mmx fxsr sse sse2 ht syscall nx mmxext fxsr_opt pdpe1gb rdtscp lm rep_good nopl cpuid extd_apicid tsc_known_freq pni pclmulqdq ssse3 fma cx16 sse4_1 sse4_2 x2apic movbe popcnt aes xsave avx f16c rdrand hypervisor lahf_lm cmp_legacy cr8_legacy abm sse4a misalignsse 3dnowprefetch osvw topoext perfctr_core ssbd ibrs\
+    \ ibpb stibp vmmcall fsgsbase bmi1 avx2 smep bmi2 erms invpcid rdseed adx smap clflushopt clwb sha_ni xsaveopt xsavec xgetbv1 xsaves clzero xsaveerptr wbnoinvd arat umip pku ospke rdpid fsrm\nbugs\t\t: sysret_ss_attrs null_seg spectre_v1 spectre_v2 spec_store_bypass srso ibpb_no_ret tsa\nbogomips\t: 6986.86\nTLB size\t: 1024 4K pages\nclflush size\t: 64\ncache_alignment\t: 64\naddress sizes\t: 40 bits physical, 48 bits virtual\npower management:\n\nprocessor\t: 2\nvendor_id\t: AuthenticAMD\ncpu family\t: 25\nmodel\t\t: 1\nmodel name\t: AMD EPYC-Milan Processor\nstepping\t: 1\nmicrocode\t: 0x1000065\ncpu MHz\t\t: 3493.430\ncache size\t: 512 KB\nphysical id\t: 0\nsiblings\t: 4\ncore id\t\t: 2\ncpu cores\t: 4\napicid\t\t: 2\ninitial apicid\t: 2\nfpu\t\t: yes\nfpu_exception\t: yes\ncpuid level\t: 13\nwp\t\t: yes\nflags\t\t: fpu vme de pse tsc msr pae mce cx8 apic sep mtrr pge mca cmov pat pse36 clflush mmx fxsr sse sse2 ht syscall nx mmxext fxsr_opt pdpe1gb rdtscp lm rep_good nopl cpuid\
+    \ extd_apicid tsc_known_freq pni pclmulqdq ssse3 fma cx16 sse4_1 sse4_2 x2apic movbe popcnt aes xsave avx f16c rdrand hypervisor lahf_lm cmp_legacy cr8_legacy abm sse4a misalignsse 3dnowprefetch osvw topoext perfctr_core ssbd ibrs ibpb stibp vmmcall fsgsbase bmi1 avx2 smep bmi2 erms invpcid rdseed adx smap clflushopt clwb sha_ni xsaveopt xsavec xgetbv1 xsaves clzero xsaveerptr wbnoinvd arat umip pku ospke rdpid fsrm\nbugs\t\t: sysret_ss_attrs null_seg spectre_v1 spectre_v2 spec_store_bypass srso ibpb_no_ret tsa\nbogomips\t: 6986.86\nTLB size\t: 1024 4K pages\nclflush size\t: 64\ncache_alignment\t: 64\naddress sizes\t: 40 bits physical, 48 bits virtual\npower management:\n\nprocessor\t: 3\nvendor_id\t: AuthenticAMD\ncpu family\t: 25\nmodel\t\t: 1\nmodel name\t: AMD EPYC-Milan Processor\nstepping\t: 1\nmicrocode\t: 0x1000065\ncpu MHz\t\t: 3493.430\ncache size\t: 512 KB\nphysical id\t: 0\nsiblings\t: 4\ncore id\t\t: 3\ncpu cores\t: 4\napicid\t\t: 3\ninitial apicid\t: 3\nfpu\t\t: yes\nfpu_exception\t\
+    : yes\ncpuid level\t: 13\nwp\t\t: yes\nflags\t\t: fpu vme de pse tsc msr pae mce cx8 apic sep mtrr pge mca cmov pat pse36 clflush mmx fxsr sse sse2 ht syscall nx mmxext fxsr_opt pdpe1gb rdtscp lm rep_good nopl cpuid extd_apicid tsc_known_freq pni pclmulqdq ssse3 fma cx16 sse4_1 sse4_2 x2apic movbe popcnt aes xsave avx f16c rdrand hypervisor lahf_lm cmp_legacy cr8_legacy abm sse4a misalignsse 3dnowprefetch osvw topoext perfctr_core ssbd ibrs ibpb stibp vmmcall fsgsbase bmi1 avx2 smep bmi2 erms invpcid rdseed adx smap clflushopt clwb sha_ni xsaveopt xsavec xgetbv1 xsaves clzero xsaveerptr wbnoinvd arat umip pku ospke rdpid fsrm\nbugs\t\t: sysret_ss_attrs null_seg spectre_v1 spectre_v2 spec_store_bypass srso ibpb_no_ret tsa\nbogomips\t: 6986.86\nTLB size\t: 1024 4K pages\nclflush size\t: 64\ncache_alignment\t: 64\naddress sizes\t: 40 bits physical, 48 bits virtual\npower management:\n\n"
+  stderr: ''
+  volatile: false
+- argv: cat /proc/meminfo
+  exit_code: 0
+  ms: 1
+  stdout: 'MemTotal:        8131272 kB
+
+    MemFree:         7887908 kB
+
+    MemAvailable:    7809396 kB
+
+    Buffers:           11888 kB
+
+    Cached:            70680 kB
+
+    SwapCached:            0 kB
+
+    Active:            30344 kB
+
+    Inactive:          78800 kB
+
+    Active(anon):        296 kB
+
+    Inactive(anon):    26784 kB
+
+    Active(file):      30048 kB
+
+    Inactive(file):    52016 kB
+
+    Unevictable:           0 kB
+
+    Mlocked:               0 kB
+
+    SwapTotal:             0 kB
+
+    SwapFree:              0 kB
+
+    Zswap:                 0 kB
+
+    Zswapped:              0 kB
+
+    Dirty:              1664 kB
+
+    Writeback:             0 kB
+
+    AnonPages:         26464 kB
+
+    Mapped:            29276 kB
+
+    Shmem:               504 kB
+
+    KReclaimable:      41572 kB
+
+    Slab:              64184 kB
+
+    SReclaimable:      41572 kB
+
+    SUnreclaim:        22612 kB
+
+    KernelStack:        1920 kB
+
+    PageTables:         1192 kB
+
+    SecPageTables:         0 kB
+
+    NFS_Unstable:          0 kB
+
+    Bounce:                0 kB
+
+    WritebackTmp:          0 kB
+
+    CommitLimit:     4065636 kB
+
+    Committed_AS:      66676 kB
+
+    VmallocTotal:   34359738367 kB
+
+    VmallocUsed:       17828 kB
+
+    VmallocChunk:          0 kB
+
+    Percpu:             1712 kB
+
+    HardwareCorrupted:     0 kB
+
+    AnonHugePages:      4096 kB
+
+    ShmemHugePages:        0 kB
+
+    ShmemPmdMapped:        0 kB
+
+    FileHugePages:         0 kB
+
+    FilePmdMapped:         0 kB
+
+    HugePages_Total:       0
+
+    HugePages_Free:        0
+
+    HugePages_Rsvd:        0
+
+    HugePages_Surp:        0
+
+    Hugepagesize:       2048 kB
+
+    Hugetlb:               0 kB
+
+    DirectMap4k:       96116 kB
+
+    DirectMap2M:     4098048 kB
+
+    DirectMap1G:     6291456 kB
+
+    '
+  stderr: ''
+  volatile: false

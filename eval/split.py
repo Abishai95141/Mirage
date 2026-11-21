@@ -24,6 +24,11 @@ procedure cannot join it; depth procedures live in catalogue files of their own 
 into a dev half and a test half here, by the same component rule. That file is
 ``provisional`` until every scenario's checks have been confirmed on the reference host, and
 ``frozen`` after: a provisional split may be rebuilt, a frozen one only with ``--force``.
+
+Demo 3's procedures (phase 3 spec, 3.8) are a third set and are in **no** split: they were
+written after both splits were frozen, and their steps are neither training nor evaluation
+data. ``check`` reports them: one that a split file names is a problem, and one that is
+near-identical to a held-out procedure is listed for a person to look at.
 """
 
 from __future__ import annotations
@@ -38,7 +43,7 @@ from pathlib import Path
 
 import yaml
 
-from mirage_lab.models import DEPTH, PHASE2, Catalogue, Scenario
+from mirage_lab.models import DEMO, DEPTH, PHASE2, Catalogue, Scenario
 
 ROOT = Path(__file__).resolve().parents[1]
 SPLIT_FILE = ROOT / "eval" / "split.yaml"
@@ -414,6 +419,30 @@ def depth_check(
     return r
 
 
+def demo_check(demo: Catalogue, others: list[tuple[str, Catalogue, Split]]) -> CheckResult:
+    """Demo 3's procedures against the splits they are kept out of (``others``: a name, that
+    set's catalogue and its split). A demo procedure that a split names is a problem.
+    ``similar_pairs`` lists the demo procedures that are identical or near-identical to a
+    held-out procedure, by ID and score only. Those are reported, not refused, as in
+    ``depth_check``: an ordinary command belongs anywhere. A person reads the list, because
+    the demo is what the responder's first recordings are made for, and a recording made for
+    a command of the test half would be an answer prepared from the test."""
+    r = CheckResult()
+    toks = {pid: tokens(normalise(p.template)) for pid, p in demo.procedures.items() if p.template}
+    for name, catalogue, split in others:
+        for pid in sorted(set(demo.procedures) & set(split.of_procedure)):
+            r.problems.append(f"demo procedure {pid} is in the {name} split; the demo set has none")
+        for b, proc in sorted(catalogue.procedures.items()):
+            if not proc.template or split.of_procedure.get(b) != "test":
+                continue
+            held = tokens(normalise(proc.template))
+            for a in sorted(toks):
+                score = jaccard(toks[a], held)
+                if score >= SIM_THRESHOLD:
+                    r.similar_pairs.append((a, "demo", b, f"{name} test", round(score, 3)))
+    return r
+
+
 def extend(
     split: Split, catalogue: Catalogue, scenarios: list[Scenario]
 ) -> tuple[Split, list[str]]:
@@ -518,7 +547,9 @@ def main(argv: list[str] | None = None) -> None:
         print("PROBLEM", p)
     for a, sa, b, sb, score in result.similar_pairs[:20]:
         print(f"  similar: {a} ({sa}) ~ {b} ({sb})  {score}")
-    sys.exit(0 if result.ok and _depth_report(split) else 1)
+    depth_ok = _depth_report(split)
+    demo_ok = _demo_report(split)
+    sys.exit(0 if result.ok and depth_ok and demo_ok else 1)
 
 
 def _depth_report(phase2_split: Split) -> bool:
@@ -545,6 +576,29 @@ def _depth_report(phase2_split: Split) -> bool:
         print(
             f"  {len(result.similar_pairs)} depth test procedure(s) are near-identical to a "
             "phase 2 train or dev procedure (reported, not refused):"
+        )
+    for a, _sa, b, sb, score in result.similar_pairs[:20]:
+        print(f"    {a} ~ {b} ({sb})  {score}")
+    return result.ok
+
+
+def _demo_report(phase2_split: Split) -> bool:
+    """Check demo 3's procedures, if the catalogue has any. True when no split names one."""
+    sets = load_sets()
+    if DEMO not in sets:
+        return True
+    cat, scn = sets[DEMO]
+    others = [("phase 2", sets[PHASE2][0], phase2_split)]
+    if DEPTH in sets and DEPTH_SPLIT_FILE.exists():
+        others.append(("depth", sets[DEPTH][0], Split.load(DEPTH_SPLIT_FILE)))
+    result = demo_check(cat, others)
+    print(f"demo: {len(cat.procedures)} procedure(s) in no split, {len(scn)} scenario(s)")
+    for p in result.problems:
+        print("PROBLEM", p)
+    if result.similar_pairs:
+        print(
+            f"  {len(result.similar_pairs)} demo procedure(s) are near-identical to a held-out "
+            "procedure (reported, not refused; read each pair):"
         )
     for a, _sa, b, sb, score in result.similar_pairs[:20]:
         print(f"    {a} ~ {b} ({sb})  {score}")

@@ -88,6 +88,16 @@ TABLE: dict[str, tuple[EventClass, str, Outcome]] = {
     "cowrie.policy.decision": (C.POLICY_DECISION, "decide", U),
     # Changes to the session's emulated filesystem (MIRAGE fork, patch 0003); op in payload.
     "cowrie.fs.change": (C.FILE_ACTIVITY, "fs_change", S),
+    # How a command was answered, where it was not the emulator alone (fork patches 0009 and
+    # 0018). Neither is an input: the command's own event is. The outcome of `respond` is set
+    # from the record below (answered, or not).
+    "cowrie.render.served": (C.PROCESS_ACTIVITY, "rendered", S),
+    "cowrie.mirage.respond": (C.PROCESS_ACTIVITY, "responded", U),
+    # The policy planted a file holding a token (patch 0018); `planted` says whether it did.
+    "cowrie.mirage.plant": (C.FILE_ACTIVITY, "token_planted", U),
+    # passwd or chpasswd changed a password and said so (patch 0019). The attempt, successful
+    # or not, is cowrie.command.chpasswd above; this is the change that was kept.
+    "cowrie.mirage.credential": (C.AUTHENTICATION, "password_changed", S),
     "cowrie.direct-tcpip.request": (C.NETWORK_ACTIVITY, "tunnel_request", U),
     "cowrie.direct-tcpip.data": (C.NETWORK_ACTIVITY, "tunnel_data", U),
     "cowrie.direct-tcpip.redirect": (C.NETWORK_ACTIVITY, "tunnel_redirect", U),
@@ -135,6 +145,14 @@ def map_record(record: dict[str, Any], *, ingest_ts: datetime | None = None) -> 
         and record.get("protocol") == "ssh"
     ):
         event_class = EventClass.SSH_ACTIVITY
+
+    if eventid == "cowrie.mirage.respond":
+        # The record's own word for how it ended stays in the payload under another name:
+        # `outcome` is the envelope's.
+        payload["respond_outcome"] = payload.pop("outcome", None)
+        outcome = Outcome.SUCCESS if record.get("outcome") == "answered" else Outcome.FAILURE
+    elif eventid == "cowrie.mirage.plant":
+        outcome = Outcome.SUCCESS if record.get("planted") else Outcome.FAILURE
 
     policy = None
     if eventid == "cowrie.policy.decision":

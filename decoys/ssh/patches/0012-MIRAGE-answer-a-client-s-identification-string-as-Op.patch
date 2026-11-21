@@ -1,0 +1,104 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: MIRAGE <noreply@anthropic.com>
+Date: Tue, 17 Nov 2026 12:43:28 +0530
+Subject: [PATCH] MIRAGE: answer a client's identification string as OpenSSH
+ does
+
+OpenSSH 9.2p1 serves a client claiming any SSH-2.x, ends 'Protocol major
+versions differ.' with CRLF, and sends 'Invalid SSH identification string.'
+with no line ending. Found by the fingerprint suite's transport group
+against the reference host.
+---
+ src/cowrie/ssh/transport.py              | 11 +++---
+ src/cowrie/test/test_mirage_transport.py | 46 ++++++++++++++++++++++++
+ 2 files changed, 53 insertions(+), 4 deletions(-)
+ create mode 100644 src/cowrie/test/test_mirage_transport.py
+
+diff --git a/src/cowrie/ssh/transport.py b/src/cowrie/ssh/transport.py
+index 1ffbb40..6437200 100644
+--- a/src/cowrie/ssh/transport.py
++++ b/src/cowrie/ssh/transport.py
+@@ -134,7 +134,8 @@ class HoneyPotSSHTransport(KexMessageTransport, TimeoutMixin):
+         """
+         Change message to be like OpenSSH
+         """
+-        self.transport.write(b"Protocol major versions differ.\n")
++        # MIRAGE: OpenSSH ends this line with CRLF.
++        self.transport.write(b"Protocol major versions differ.\r\n")
+         self.transport.loseConnection()
+ 
+     def dataReceived(self, data: bytes) -> None:
+@@ -176,13 +177,15 @@ class HoneyPotSSHTransport(KexMessageTransport, TimeoutMixin):
+                     "Bad protocol version identification: {version!r}",
+                     version=self.otherVersionString,
+                 )
+-                # OpenSSH sending the same message
+-                self.transport.write(b"Invalid SSH identification string.\n")
++                # OpenSSH sends the same message. MIRAGE: with no line ending.
++                self.transport.write(b"Invalid SSH identification string.")
+                 self.transport.loseConnection()
+                 return
+             self.gotVersion = True
+             remote_version = m.group(1)
+-            if remote_version not in self.supportedVersions:
++            # MIRAGE: OpenSSH takes any 2.x, and 1.99, not only the two
++            # versions Twisted lists (a client claiming SSH-2.2 is served).
++            if not remote_version.startswith(b"2.") and remote_version != b"1.99":
+                 self._unsupportedVersionReceived(self.otherVersionString)
+                 return
+             i = self.buf.index(b"\n")
+diff --git a/src/cowrie/test/test_mirage_transport.py b/src/cowrie/test/test_mirage_transport.py
+new file mode 100644
+index 0000000..d6bbe13
+--- /dev/null
++++ b/src/cowrie/test/test_mirage_transport.py
+@@ -0,0 +1,46 @@
++# SPDX-License-Identifier: BSD-3-Clause
++# ABOUTME: Tests that the transport answers a client's identification string
++# ABOUTME: as OpenSSH 9.2p1 does: any 2.x is served, and the two errors end as its do.
++
++from __future__ import annotations
++
++import unittest
++from unittest.mock import MagicMock, patch
++
++from cowrie.ssh import transport as ssh_transport
++from cowrie.test.eventcapture import capture_events
++
++
++class IdentificationStringTests(unittest.TestCase):
++    def reply(self, line: bytes) -> tuple[bytes, bool, bool]:
++        """What is written back, whether the connection is dropped, and whether
++        key exchange starts."""
++        t = ssh_transport.HoneyPotSSHTransport()
++        t.transport = MagicMock()
++        t._emit_connect_pending = False
++        capture_events(t)
++        with patch.object(t, "sendKexInit") as kex, patch.object(t, "getPacket", return_value=None):
++            t.gotVersion = False
++            t.buf = b""
++            t.dataReceived(line)
++        written = b"".join(call.args[0] for call in t.transport.write.call_args_list)
++        return written, t.transport.loseConnection.called, kex.called
++
++    def test_version_2_0_and_1_99_start_key_exchange(self) -> None:
++        for line in (b"SSH-2.0-OpenSSH_9.6\r\n", b"SSH-1.99-OpenSSH_9.6\r\n"):
++            self.assertEqual(self.reply(line), (b"", False, True), line)
++
++    def test_any_other_2_x_is_served_as_openssh_serves_it(self) -> None:
++        self.assertEqual(self.reply(b"SSH-2.2-OpenSSH_9.6\r\n"), (b"", False, True))
++
++    def test_version_1_is_refused_with_a_crlf(self) -> None:
++        self.assertEqual(
++            self.reply(b"SSH-1.5-OpenSSH_9.6\r\n"),
++            (b"Protocol major versions differ.\r\n", True, False),
++        )
++
++    def test_what_is_no_identification_string_gets_no_line_ending(self) -> None:
++        self.assertEqual(
++            self.reply(b"GET / HTTP/1.0\r\n\r\n"),
++            (b"Invalid SSH identification string.", True, False),
++        )
+-- 
+2.50.1 (Apple Git-155)
+

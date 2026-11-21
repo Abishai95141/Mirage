@@ -1,0 +1,46 @@
+<!-- The public showcase's ClickHouse user (compose profile "showcase", `make showcase-up`).
+     Anyone who has the showcase link can make Grafana run a query as this user, and not only
+     the dashboards' own: Grafana passes on whatever SQL a visitor sends. So this user can
+     read the mirage database and do nothing else, and every limit below is a ceiling the
+     visitor cannot raise (readonly=2 lets a client change settings; the constraints stop it
+     changing these). The quota bounds what all visitors together can cost the machine. -->
+<clickhouse>
+    <profiles>
+        <showcase_readonly>
+            <readonly>2</readonly>
+            <max_execution_time>10</max_execution_time>
+            <max_memory_usage>200000000</max_memory_usage>
+            <max_result_rows>100000</max_result_rows>
+            <result_overflow_mode>break</result_overflow_mode>
+            <max_threads>2</max_threads>
+            <constraints>
+                <max_execution_time><max>10</max></max_execution_time>
+                <max_memory_usage><max>200000000</max></max_memory_usage>
+                <max_result_rows><max>100000</max></max_result_rows>
+                <max_threads><max>2</max></max_threads>
+                <result_overflow_mode><readonly/></result_overflow_mode>
+            </constraints>
+        </showcase_readonly>
+    </profiles>
+    <quotas>
+        <showcase>
+            <interval>
+                <duration>60</duration>
+                <queries>600</queries>
+                <errors>200</errors>
+                <execution_time>120</execution_time>
+            </interval>
+        </showcase>
+    </quotas>
+    <users>
+        <showcase>
+            <password from_env="CLICKHOUSE_SHOWCASE_PASSWORD"/>
+            <profile>showcase_readonly</profile>
+            <quota>showcase</quota>
+            <networks><ip>::/0</ip></networks>
+            <grants>
+                <query>GRANT SELECT ON mirage.*</query>
+            </grants>
+        </showcase>
+    </users>
+</clickhouse>

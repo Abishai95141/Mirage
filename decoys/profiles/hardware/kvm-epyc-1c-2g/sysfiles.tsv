@@ -1,0 +1,97 @@
+/sys/class/dmi/id/bios_date	04/01/2014 
+/sys/class/dmi/id/bios_release	0.0 
+/sys/class/dmi/id/bios_vendor	SeaBIOS 
+/sys/class/dmi/id/bios_version	1.16.2-debian-1.16.2-1 
+/sys/class/dmi/id/chassis_asset_tag	 
+/sys/class/dmi/id/chassis_serial	 
+/sys/class/dmi/id/chassis_type	1 
+/sys/class/dmi/id/chassis_vendor	QEMU 
+/sys/class/dmi/id/chassis_version	pc-i440fx-7.2 
+/sys/class/dmi/id/modalias	dmi:bvnSeaBIOS:bvr1.16.2-debian-1.16.2-1:bd04/01/2014:br0.0:svnQEMU:pnStandardPC(i440FX+PIIX,1996):pvrpc-i440fx-7.2:cvnQEMU:ct1:cvrpc-i440fx-7.2:sku: 
+/sys/class/dmi/id/product_family	 
+/sys/class/dmi/id/product_name	Standard PC (i440FX + PIIX, 1996) 
+/sys/class/dmi/id/product_serial	 
+/sys/class/dmi/id/product_sku	 
+/sys/class/dmi/id/product_version	pc-i440fx-7.2 
+/sys/class/dmi/id/sys_vendor	QEMU 
+/sys/class/dmi/id/uevent	MODALIAS=dmi:bvnSeaBIOS:bvr1.16.2-debian-1.16.2-1:bd04/01/2014:br0.0:svnQEMU:pnStandardPC(i440FX+PIIX,1996):pvrpc-i440fx-7.2:cvnQEMU:ct1:cvrpc-i440fx-7.2:sku: 
+/sys/devices/system/cpu/online	0 
+/sys/devices/system/cpu/possible	0 
+/sys/devices/system/cpu/present	0 
+/sys/devices/system/cpu/cpu0/topology/cluster_cpus	1 
+/sys/devices/system/cpu/cpu0/topology/cluster_cpus_list	0 
+/sys/devices/system/cpu/cpu0/topology/cluster_id	65535 
+/sys/devices/system/cpu/cpu0/topology/core_cpus	1 
+/sys/devices/system/cpu/cpu0/topology/core_cpus_list	0 
+/sys/devices/system/cpu/cpu0/topology/core_id	0 
+/sys/devices/system/cpu/cpu0/topology/core_siblings	1 
+/sys/devices/system/cpu/cpu0/topology/core_siblings_list	0 
+/sys/devices/system/cpu/cpu0/topology/die_cpus	1 
+/sys/devices/system/cpu/cpu0/topology/die_cpus_list	0 
+/sys/devices/system/cpu/cpu0/topology/die_id	0 
+/sys/devices/system/cpu/cpu0/topology/package_cpus	1 
+/sys/devices/system/cpu/cpu0/topology/package_cpus_list	0 
+/sys/devices/system/cpu/cpu0/topology/physical_package_id	0 
+/sys/devices/system/cpu/cpu0/topology/thread_siblings	1 
+/sys/devices/system/cpu/cpu0/topology/thread_siblings_list	0 
+/sys/devices/system/cpu/cpu0/cache/index0/size	32K 
+/sys/devices/system/cpu/cpu0/cache/index1/size	64K 
+/sys/devices/system/cpu/cpu0/cache/index2/size	512K 
+/sys/devices/system/cpu/cpu0/cache/index3/size	8192K 
+/sys/devices/system/cpu/vulnerabilities/gather_data_sampling	Not affected 
+/sys/devices/system/cpu/vulnerabilities/indirect_target_selection	Not affected 
+/sys/devices/system/cpu/vulnerabilities/itlb_multihit	Not affected 
+/sys/devices/system/cpu/vulnerabilities/l1tf	Not affected 
+/sys/devices/system/cpu/vulnerabilities/mds	Not affected 
+/sys/devices/system/cpu/vulnerabilities/meltdown	Not affected 
+/sys/devices/system/cpu/vulnerabilities/mmio_stale_data	Not affected 
+/sys/devices/system/cpu/vulnerabilities/reg_file_data_sampling	Not affected 
+/sys/devices/system/cpu/vulnerabilities/retbleed	Mitigation: untrained return thunk; SMT disabled 
+/sys/devices/system/cpu/vulnerabilities/spec_rstack_overflow	Mitigation: safe RET, no microcode 
+/sys/devices/system/cpu/vulnerabilities/spec_store_bypass	Vulnerable 
+/sys/devices/system/cpu/vulnerabilities/spectre_v1	Mitigation: usercopy/swapgs barriers and __user pointer sanitization 
+/sys/devices/system/cpu/vulnerabilities/spectre_v2	Mitigation: Retpolines; STIBP: disabled; RSB filling; PBRSB-eIBRS: Not affected; BHI: Not affected 
+/sys/devices/system/cpu/vulnerabilities/srbds	Not affected 
+/sys/devices/system/cpu/vulnerabilities/tsa	Not affected 
+/sys/devices/system/cpu/vulnerabilities/tsx_async_abort	Not affected 
+/sys/devices/system/cpu/vulnerabilities/vmscape	Not affected 
+/sys/block/loop0/size	0 
+/sys/block/loop1/size	0 
+/sys/block/loop2/size	0 
+/sys/block/loop3/size	0 
+/sys/block/loop4/size	0 
+/sys/block/loop5/size	0 
+/sys/block/loop6/size	0 
+/sys/block/loop7/size	0 
+/sys/block/vda/size	83886080 
+/sys/block/loop0/queue/rotational	1 
+/sys/block/loop1/queue/rotational	1 
+/sys/block/loop2/queue/rotational	1 
+/sys/block/loop3/queue/rotational	1 
+/sys/block/loop4/queue/rotational	1 
+/sys/block/loop5/queue/rotational	1 
+/sys/block/loop6/queue/rotational	1 
+/sys/block/loop7/queue/rotational	1 
+/sys/block/vda/queue/rotational	1 
+/sys/block/vda/device/vendor	0x1af4 
+/sys/class/net/ens3/address	{{mac}} 
+/sys/class/net/lo/address	00:00:00:00:00:00 
+/sys/class/net/ens3/mtu	1500 
+/sys/class/net/lo/mtu	65536 
+/sys/class/net/ens3/operstate	up 
+/sys/class/net/lo/operstate	unknown 
+/sys/class/net/ens3/speed	-1 
+/sys/class/net/lo/speed	
+/sys/kernel/mm/transparent_hugepage/enabled	[always] madvise never 
+/sys/class/block/loop0/dev	7:0 
+/sys/class/block/loop1/dev	7:1 
+/sys/class/block/loop2/dev	7:2 
+/sys/class/block/loop3/dev	7:3 
+/sys/class/block/loop4/dev	7:4 
+/sys/class/block/loop5/dev	7:5 
+/sys/class/block/loop6/dev	7:6 
+/sys/class/block/loop7/dev	7:7 
+/sys/class/block/vda/dev	254:0 
+/sys/class/block/vda1/dev	254:1 
+/sys/class/block/vda14/dev	254:14 
+/sys/class/block/vda15/dev	254:15 

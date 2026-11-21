@@ -4,7 +4,7 @@ version = "0.1.0"
 description = "MIRAGE host profiles: Debian reference facts and the per-deployment generator"
 requires-python = ">=3.12,<3.14"
 license = "Apache-2.0"
-dependencies = ["mirage-schema", "mirage-tokens", "pyyaml>=6.0", "faker>=30"]
+dependencies = ["mirage-schema", "mirage-tokens", "pyyaml>=6.0", "faker>=30", "cryptography>=42"]
 
 [project.scripts]
 mirage-profile = "mirage_profiles.generator:main"

@@ -1,0 +1,13 @@
+130 watchdog
+242 rfkill
+229 fuse
+237 loop-control
+236 device-mapper
+235 autofs
+125 cpu_dma_latency
+  1 psaux
+228 hpet
+126 userfaultfd
+231 snapshot
+183 hw_random
+127 vga_arbiter

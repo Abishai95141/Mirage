@@ -1,0 +1,23 @@
+# Written by `mirage-profile render-library`; do not edit. What a real host printed.
+argv: df -h
+program: /usr/bin/df
+source: class-record
+who: any
+exit_code: 0
+ms:
+- 1
+stdout: |
+  Filesystem      Size  Used Avail Use% Mounted on
+  udev            1.9G     0  1.9G   0% /dev
+  tmpfs           392M  440K  392M   1% /run
+  /dev/vda1        79G 1002M   75G   2% /
+  tmpfs           2.0G     0  2.0G   0% /dev/shm
+  tmpfs           5.0M     0  5.0M   0% /run/lock
+  /dev/vda15      124M   12M  112M  10% /boot/efi
+stderr: ''
+inventory:
+  corpus: 5
+  lab: 0
+shape: table
+streams: stdout
+recorded: {}

@@ -13,7 +13,7 @@ from fastapi.testclient import TestClient
 
 from mirage_policy import shadow as shadow_module
 from mirage_policy.app import RULES_DIR, Settings, create_app
-from mirage_policy.explore import BanditPolicy
+from mirage_policy.explore import ACTIONS, BanditPolicy
 from mirage_policy.shadow import (
     FALLBACK_NAME,
     FallbackShadow,
@@ -29,7 +29,7 @@ from mirage_schema.policy import Action, Protocol
 TOKEN = "t" * 32
 EXPLORE_IP = "198.19.0.7"
 CAPTURE_IP = "198.18.0.7"
-ALL = list(Action)
+ALL = list(ACTIONS)  # the five of contract v1: what the shadow policies know
 
 
 class Toy:
@@ -307,14 +307,25 @@ def test_the_model_is_given_the_documented_context(tmp_path, monkeypatch, toy_fi
         "seen_before": bool,
         "seen_before_in_session": bool,
         "rule_action": str,
+        # context version 3 (phase 3 spec 3.3)
+        "rule_action_v2": (str, type(None)),
+        "tier": (str, type(None)),
+        "actor_class": (str, type(None)),
+        "actor_confidence": (float, type(None)),
+        "respond_budget_left": str,
+        "token_planted": bool,
+        "previous_action": (str, type(None)),
+        "had_non_allow": bool,
     }
     for context in (first, second):
         assert set(context) == set(types)
         for name, kind in types.items():
             assert isinstance(context[name], kind), (name, context[name])
         assert context["verb_class"] in VERB_CLASSES[Protocol(context["protocol"])]
-        assert context["rule_action"] in {a.value for a in Action}
+        assert context["rule_action"] in {a.value for a in ACTIONS}
+        assert context["respond_budget_left"] == "full" and context["token_planted"] is False
     assert (first["seconds_since_last"], first["last_tactic"]) == (None, None)
+    assert (first["previous_action"], second["previous_action"]) == (None, "allow")
     assert isinstance(second["seconds_since_last"], float) and second["last_tactic"] == "TA0007"
 
 

@@ -1,0 +1,212 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: MIRAGE <noreply@anthropic.com>
+Date: Wed, 18 Nov 2026 16:49:27 +0530
+Subject: [PATCH] MIRAGE: one login is one host
+
+Every channel of a connection (each exec request, the shell, SFTP) asked
+the connection's server for a file system and was given a new one. A
+directory made by one command was gone for the next command of the same
+login, and a file put by SFTP was never there for the shell, though the
+server object's own comment says that is what it is for. Found by the
+suite's consistency group.
+
+The file system is now made once for a connection, and the change
+journal belongs to it: a later channel carries on with the journal, with
+how far the responder has been sent it, and with the count of tokens the
+login's answers have used.
+---
+ src/cowrie/mirage_gate.py                 |  2 +-
+ src/cowrie/mirage_respond.py              |  7 +--
+ src/cowrie/mirage_state.py                | 14 ++++-
+ src/cowrie/shell/server.py                |  6 ++
+ src/cowrie/shell/session.py               |  2 +-
+ src/cowrie/test/test_mirage_connection.py | 68 +++++++++++++++++++++++
+ 6 files changed, 91 insertions(+), 8 deletions(-)
+ create mode 100644 src/cowrie/test/test_mirage_connection.py
+
+diff --git a/src/cowrie/mirage_gate.py b/src/cowrie/mirage_gate.py
+index 1f18bdf..e066946 100644
+--- a/src/cowrie/mirage_gate.py
++++ b/src/cowrie/mirage_gate.py
+@@ -392,7 +392,7 @@ def gate_then_run(shell: HoneyPotShell, cmdAndArgs: list[str]) -> Any:
+         "supports": supports,
+         # What the session's generated answers have used so far (mirage_respond counts
+         # it): the policy's budget is tokens spent, and it calls nothing to learn them.
+-        "respond_spent": int(getattr(proto, "mirage_respond_spent", 0)),
++        "respond_spent": int(getattr(getattr(proto, "mirage_journal", None), "spent", 0)),
+         "interactive": bool(shell.interactive),
+         "user": shell.user.get("username") if isinstance(shell.user, dict) else None,
+     }
+diff --git a/src/cowrie/mirage_respond.py b/src/cowrie/mirage_respond.py
+index 7ec3835..b66b7ce 100644
+--- a/src/cowrie/mirage_respond.py
++++ b/src/cowrie/mirage_respond.py
+@@ -319,7 +319,7 @@ class Answer(HoneyPotCommand):
+ 
+     def body(self, whole: bool) -> dict[str, Any]:
+         request = self.mirage_request
+-        sent = 0 if whole else int(getattr(self.protocol, "mirage_journal_sent", 0))
++        sent = 0 if whole else self.journal.sent
+         self.journal.sync(self.shell)
+         self.journal_to = self.journal.seq
+         hidden = token_paths(self.protocol)
+@@ -428,7 +428,7 @@ class Answer(HoneyPotCommand):
+                 self.fall_back("ops:rejected", detail=str(e)[:200])
+                 return
+         # The responder folded the journal it was sent before it answered.
+-        self.protocol.mirage_journal_sent = self.journal_to
++        self.journal.sent = self.journal_to
+         if stdout:
+             if self.first_ms is None:
+                 self.first_ms = round((time.monotonic() - self.began) * 1000, 1)
+@@ -439,8 +439,7 @@ class Answer(HoneyPotCommand):
+         used = rec.get("output_tokens")
+         if isinstance(used, int) and not isinstance(used, bool) and used > 0:
+             # Told to the gate with every later request of the session (mirage_gate).
+-            spent = getattr(self.protocol, "mirage_respond_spent", 0)
+-            self.protocol.mirage_respond_spent = spent + used
++            self.journal.spent += used
+         self.finish(
+             code,
+             "answered",
+diff --git a/src/cowrie/mirage_state.py b/src/cowrie/mirage_state.py
+index 37fadbb..3a6abc6 100644
+--- a/src/cowrie/mirage_state.py
++++ b/src/cowrie/mirage_state.py
+@@ -146,6 +146,10 @@ class Journal:
+         # What applied operations have added up to.
+         self.written = 0
+         self.made = 0
++        # How far the responder has been sent this journal, and the output tokens
++        # its answers to this login have used (told to the gate, mirage_gate).
++        self.sent = 0
++        self.spent = 0
+ 
+     def add(self, op: str, **fields: Any) -> None:
+         if self.full:
+@@ -204,10 +208,16 @@ class Journal:
+ 
+ 
+ def journal_of(protocol: Any) -> Journal:
+-    """The session's journal, made the first time it is asked for."""
++    """The session's journal, made the first time it is asked for. It belongs to
++    the login, as the file system does: a second channel of the same connection
++    (another exec request, a shell after an SFTP transfer) carries on with the
++    journal the first one began, so the responder's picture of the session and
++    the count of what its answers have used go on from where they were."""
+     journal = getattr(protocol, "mirage_journal", None)
+     if journal is None:
+-        journal = protocol.mirage_journal = Journal()
++        held = getattr(protocol.fs, "mirage_journal", None)
++        journal = held if isinstance(held, Journal) else Journal()
++        protocol.mirage_journal = journal
+         protocol.fs.mirage_journal = journal
+     return journal  # type: ignore[no-any-return]
+ 
+diff --git a/src/cowrie/shell/server.py b/src/cowrie/shell/server.py
+index 61bf550..8483542 100644
+--- a/src/cowrie/shell/server.py
++++ b/src/cowrie/shell/server.py
+@@ -55,6 +55,12 @@ class CowrieServer:
+         """
+         Do this so we can trigger it later. Not all sessions need file system
+         """
++        # MIRAGE: once for the connection. Every channel of a login (each exec
++        # request, the shell, SFTP) asked for this and was given a fresh file
++        # system, so a directory made by one command was gone for the next and a
++        # file put by SFTP was never there for the shell. One login is one host.
++        if self.fs is not None:
++            return
+         self.fs = fs.HoneyPotFilesystem(self.arch, home)
+ 
+         processes = CowrieConfig.get("shell", "processes", fallback=None)
+diff --git a/src/cowrie/shell/session.py b/src/cowrie/shell/session.py
+index 1c78330..1a9a354 100644
+--- a/src/cowrie/shell/session.py
++++ b/src/cowrie/shell/session.py
+@@ -83,7 +83,7 @@ class SSHSessionForCowrieUser:
+ 
+         self.server.initFileSystem(self.avatar.home)
+ 
+-        if self.avatar.temporary:
++        if self.avatar.temporary and not self.server.fs.exists(self.avatar.home):
+             self.server.fs.mkdir(
+                 self.avatar.home, self.uid, self.gid, 4096, stat.S_IFDIR | 0o755
+             )
+diff --git a/src/cowrie/test/test_mirage_connection.py b/src/cowrie/test/test_mirage_connection.py
+new file mode 100644
+index 0000000..9118743
+--- /dev/null
++++ b/src/cowrie/test/test_mirage_connection.py
+@@ -0,0 +1,68 @@
++# SPDX-License-Identifier: BSD-3-Clause
++# ABOUTME: Tests that one login is one host: every channel of a connection has
++# ABOUTME: the same file system, the same journal and the same count of tokens.
++
++from __future__ import annotations
++
++import unittest
++from typing import Any
++from unittest import mock
++
++from cowrie import mirage_state
++from cowrie.shell import server as shellserver
++from cowrie.shell.protocol import HoneyPotInteractiveProtocol
++from cowrie.test.fake_transport import FakeTransport
++from cowrie.test.test_mirage_gate import PROMPT, GateTestBase
++
++
++class ServerTests(unittest.TestCase):
++    def test_the_file_system_is_made_once_for_a_connection(self) -> None:
++        # Each channel's session asks for it (shell/session.py, filetransfer.py).
++        server = shellserver.CowrieServer(mock.Mock())
++        server.initFileSystem("/root")
++        first = server.fs
++        first.mkdir("/tmp/made-by-the-first-channel", 0, 0, 4096, 0o40755)
++        server.initFileSystem("/root")
++        self.assertIs(server.fs, first)
++        self.assertTrue(server.fs.exists("/tmp/made-by-the-first-channel"))
++
++    def test_another_connection_has_its_own(self) -> None:
++        one, other = (shellserver.CowrieServer(mock.Mock()) for _ in range(2))
++        one.initFileSystem("/root")
++        other.initFileSystem("/root")
++        one.fs.mkdir("/tmp/only-here", 0, 0, 4096, 0o40755)
++        self.assertFalse(other.fs.exists("/tmp/only-here"))
++
++
++class ChannelTests(GateTestBase):
++    """Two channels of one login: the second protocol is given the first's avatar."""
++
++    def second(self) -> tuple[Any, FakeTransport]:
++        proto = HoneyPotInteractiveProtocol(self.proto.user)
++        transport = FakeTransport("", "31337")
++        proto.makeConnection(transport)
++        proto.events = self.proto.events
++        transport.clear()
++        self.addCleanup(proto.connectionLost)
++        return proto, transport
++
++    def test_what_one_channel_made_the_next_one_sees(self) -> None:
++        self.run_line("mkdir /tmp/kept; echo marker > /tmp/kept/file")
++        proto, transport = self.second()
++        proto.lineReceived(b"cat /tmp/kept/file\n")
++        self.assertEqual(transport.value(), b"marker\n" + PROMPT)
++
++    def test_the_journal_and_what_it_counts_go_on(self) -> None:
++        self.run_line("mkdir /tmp/kept")
++        journal = mirage_state.journal_of(self.proto)
++        journal.sync(self.proto.cmdstack[0])
++        journal.sent, journal.spent = journal.seq, 42
++        seq = journal.seq
++        self.assertGreater(seq, 0)
++        proto, _ = self.second()
++        self.assertIs(mirage_state.journal_of(proto), journal)
++        proto.lineReceived(b"rmdir /tmp/kept\n")
++        self.assertGreater(journal.seq, seq)  # the second channel's change follows the first's
++        self.assertEqual((journal.sent, journal.spent), (seq, 42))
++        # And the gate is told what the login's answers have used, whichever channel asks.
++        self.assertEqual(self.gate.requests[-1]["respond_spent"], 42)
+-- 
+2.50.1 (Apple Git-155)
+

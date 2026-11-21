@@ -1,0 +1,336 @@
+d	755	0	0	3140	/dev	
+c	644	0	0	0	/dev/autofs	
+d	755	0	0	280	/dev/block	
+l	777	0	0	6	/dev/block/254:0	../vda
+l	777	0	0	7	/dev/block/254:1	../vda1
+l	777	0	0	8	/dev/block/254:14	../vda14
+l	777	0	0	8	/dev/block/254:15	../vda15
+l	777	0	0	8	/dev/block/7:0	../loop0
+l	777	0	0	8	/dev/block/7:1	../loop1
+l	777	0	0	8	/dev/block/7:2	../loop2
+l	777	0	0	8	/dev/block/7:3	../loop3
+l	777	0	0	8	/dev/block/7:4	../loop4
+l	777	0	0	8	/dev/block/7:5	../loop5
+l	777	0	0	8	/dev/block/7:6	../loop6
+l	777	0	0	8	/dev/block/7:7	../loop7
+c	600	0	0	0	/dev/btrfs-control	
+d	755	0	0	2480	/dev/char	
+l	777	0	0	8	/dev/char/10:1	../psaux
+l	777	0	0	18	/dev/char/10:125	../cpu_dma_latency
+l	777	0	0	14	/dev/char/10:126	../userfaultfd
+l	777	0	0	14	/dev/char/10:127	../vga_arbiter
+l	777	0	0	8	/dev/char/10:183	../hwrng
+l	777	0	0	7	/dev/char/10:228	../hpet
+l	777	0	0	7	/dev/char/10:229	../fuse
+l	777	0	0	11	/dev/char/10:231	../snapshot
+l	777	0	0	9	/dev/char/10:235	../autofs
+l	777	0	0	17	/dev/char/10:236	../mapper/control
+l	777	0	0	15	/dev/char/10:237	../loop-control
+l	777	0	0	9	/dev/char/10:242	../rfkill
+l	777	0	0	15	/dev/char/13:32	../input/mouse0
+l	777	0	0	15	/dev/char/13:33	../input/mouse1
+l	777	0	0	13	/dev/char/13:63	../input/mice
+l	777	0	0	15	/dev/char/13:64	../input/event0
+l	777	0	0	15	/dev/char/13:65	../input/event1
+l	777	0	0	15	/dev/char/13:66	../input/event2
+l	777	0	0	15	/dev/char/13:67	../input/event3
+l	777	0	0	6	/dev/char/1:1	../mem
+l	777	0	0	7	/dev/char/1:11	../kmsg
+l	777	0	0	7	/dev/char/1:3	../null
+l	777	0	0	7	/dev/char/1:4	../port
+l	777	0	0	7	/dev/char/1:5	../zero
+l	777	0	0	7	/dev/char/1:7	../full
+l	777	0	0	9	/dev/char/1:8	../random
+l	777	0	0	10	/dev/char/1:9	../urandom
+l	777	0	0	12	/dev/char/226:0	../dri/card0
+l	777	0	0	7	/dev/char/251:0	../rtc0
+l	777	0	0	6	/dev/char/29:0	../fb0
+l	777	0	0	7	/dev/char/4:0	../tty0
+l	777	0	0	7	/dev/char/4:1	../tty1
+l	777	0	0	8	/dev/char/4:10	../tty10
+l	777	0	0	8	/dev/char/4:11	../tty11
+l	777	0	0	8	/dev/char/4:12	../tty12
+l	777	0	0	8	/dev/char/4:13	../tty13
+l	777	0	0	8	/dev/char/4:14	../tty14
+l	777	0	0	8	/dev/char/4:15	../tty15
+l	777	0	0	8	/dev/char/4:16	../tty16
+l	777	0	0	8	/dev/char/4:17	../tty17
+l	777	0	0	8	/dev/char/4:18	../tty18
+l	777	0	0	8	/dev/char/4:19	../tty19
+l	777	0	0	7	/dev/char/4:2	../tty2
+l	777	0	0	8	/dev/char/4:20	../tty20
+l	777	0	0	8	/dev/char/4:21	../tty21
+l	777	0	0	8	/dev/char/4:22	../tty22
+l	777	0	0	8	/dev/char/4:23	../tty23
+l	777	0	0	8	/dev/char/4:24	../tty24
+l	777	0	0	8	/dev/char/4:25	../tty25
+l	777	0	0	8	/dev/char/4:26	../tty26
+l	777	0	0	8	/dev/char/4:27	../tty27
+l	777	0	0	8	/dev/char/4:28	../tty28
+l	777	0	0	8	/dev/char/4:29	../tty29
+l	777	0	0	7	/dev/char/4:3	../tty3
+l	777	0	0	8	/dev/char/4:30	../tty30
+l	777	0	0	8	/dev/char/4:31	../tty31
+l	777	0	0	8	/dev/char/4:32	../tty32
+l	777	0	0	8	/dev/char/4:33	../tty33
+l	777	0	0	8	/dev/char/4:34	../tty34
+l	777	0	0	8	/dev/char/4:35	../tty35
+l	777	0	0	8	/dev/char/4:36	../tty36
+l	777	0	0	8	/dev/char/4:37	../tty37
+l	777	0	0	8	/dev/char/4:38	../tty38
+l	777	0	0	8	/dev/char/4:39	../tty39
+l	777	0	0	7	/dev/char/4:4	../tty4
+l	777	0	0	8	/dev/char/4:40	../tty40
+l	777	0	0	8	/dev/char/4:41	../tty41
+l	777	0	0	8	/dev/char/4:42	../tty42
+l	777	0	0	8	/dev/char/4:43	../tty43
+l	777	0	0	8	/dev/char/4:44	../tty44
+l	777	0	0	8	/dev/char/4:45	../tty45
+l	777	0	0	8	/dev/char/4:46	../tty46
+l	777	0	0	8	/dev/char/4:47	../tty47
+l	777	0	0	8	/dev/char/4:48	../tty48
+l	777	0	0	8	/dev/char/4:49	../tty49
+l	777	0	0	7	/dev/char/4:5	../tty5
+l	777	0	0	8	/dev/char/4:50	../tty50
+l	777	0	0	8	/dev/char/4:51	../tty51
+l	777	0	0	8	/dev/char/4:52	../tty52
+l	777	0	0	8	/dev/char/4:53	../tty53
+l	777	0	0	8	/dev/char/4:54	../tty54
+l	777	0	0	8	/dev/char/4:55	../tty55
+l	777	0	0	8	/dev/char/4:56	../tty56
+l	777	0	0	8	/dev/char/4:57	../tty57
+l	777	0	0	8	/dev/char/4:58	../tty58
+l	777	0	0	8	/dev/char/4:59	../tty59
+l	777	0	0	7	/dev/char/4:6	../tty6
+l	777	0	0	8	/dev/char/4:60	../tty60
+l	777	0	0	8	/dev/char/4:61	../tty61
+l	777	0	0	8	/dev/char/4:62	../tty62
+l	777	0	0	8	/dev/char/4:63	../tty63
+l	777	0	0	8	/dev/char/4:64	../ttyS0
+l	777	0	0	8	/dev/char/4:65	../ttyS1
+l	777	0	0	8	/dev/char/4:66	../ttyS2
+l	777	0	0	8	/dev/char/4:67	../ttyS3
+l	777	0	0	7	/dev/char/4:7	../tty7
+l	777	0	0	7	/dev/char/4:8	../tty8
+l	777	0	0	7	/dev/char/4:9	../tty9
+l	777	0	0	6	/dev/char/5:0	../tty
+l	777	0	0	10	/dev/char/5:1	../console
+l	777	0	0	7	/dev/char/5:2	../ptmx
+l	777	0	0	6	/dev/char/7:0	../vcs
+l	777	0	0	7	/dev/char/7:1	../vcs1
+l	777	0	0	7	/dev/char/7:128	../vcsa
+l	777	0	0	8	/dev/char/7:129	../vcsa1
+l	777	0	0	8	/dev/char/7:130	../vcsa2
+l	777	0	0	8	/dev/char/7:131	../vcsa3
+l	777	0	0	8	/dev/char/7:132	../vcsa4
+l	777	0	0	8	/dev/char/7:133	../vcsa5
+l	777	0	0	8	/dev/char/7:134	../vcsa6
+l	777	0	0	7	/dev/char/7:2	../vcs2
+l	777	0	0	7	/dev/char/7:3	../vcs3
+l	777	0	0	7	/dev/char/7:4	../vcs4
+l	777	0	0	7	/dev/char/7:5	../vcs5
+l	777	0	0	7	/dev/char/7:6	../vcs6
+l	777	0	0	7	/dev/char/7:64	../vcsu
+l	777	0	0	8	/dev/char/7:65	../vcsu1
+l	777	0	0	8	/dev/char/7:66	../vcsu2
+l	777	0	0	8	/dev/char/7:67	../vcsu3
+l	777	0	0	8	/dev/char/7:68	../vcsu4
+l	777	0	0	8	/dev/char/7:69	../vcsu5
+l	777	0	0	8	/dev/char/7:70	../vcsu6
+c	600	0	0	0	/dev/console	
+l	777	0	0	11	/dev/core	/proc/kcore
+c	600	0	0	0	/dev/cpu_dma_latency	
+c	600	0	0	0	/dev/cuse	
+d	755	0	0	120	/dev/disk	
+d	755	0	0	220	/dev/disk/by-diskseq	
+l	777	0	0	11	/dev/disk/by-diskseq/10	../../loop0
+l	777	0	0	11	/dev/disk/by-diskseq/11	../../loop1
+l	777	0	0	11	/dev/disk/by-diskseq/12	../../loop2
+l	777	0	0	11	/dev/disk/by-diskseq/13	../../loop3
+l	777	0	0	11	/dev/disk/by-diskseq/14	../../loop4
+l	777	0	0	11	/dev/disk/by-diskseq/15	../../loop5
+l	777	0	0	11	/dev/disk/by-diskseq/16	../../loop6
+l	777	0	0	11	/dev/disk/by-diskseq/17	../../loop7
+l	777	0	0	9	/dev/disk/by-diskseq/9	../../vda
+d	755	0	0	100	/dev/disk/by-partuuid	
+l	777	0	0	11	/dev/disk/by-partuuid/{{partuuid_14}}	../../vda14
+l	777	0	0	11	/dev/disk/by-partuuid/{{partuuid_15}}	../../vda15
+l	777	0	0	10	/dev/disk/by-partuuid/{{partuuid_1}}	../../vda1
+d	755	0	0	200	/dev/disk/by-path	
+l	777	0	0	9	/dev/disk/by-path/pci-0000:00:04.0	../../vda
+l	777	0	0	10	/dev/disk/by-path/pci-0000:00:04.0-part1	../../vda1
+l	777	0	0	11	/dev/disk/by-path/pci-0000:00:04.0-part14	../../vda14
+l	777	0	0	11	/dev/disk/by-path/pci-0000:00:04.0-part15	../../vda15
+l	777	0	0	9	/dev/disk/by-path/virtio-pci-0000:00:04.0	../../vda
+l	777	0	0	10	/dev/disk/by-path/virtio-pci-0000:00:04.0-part1	../../vda1
+l	777	0	0	11	/dev/disk/by-path/virtio-pci-0000:00:04.0-part14	../../vda14
+l	777	0	0	11	/dev/disk/by-path/virtio-pci-0000:00:04.0-part15	../../vda15
+d	755	0	0	80	/dev/disk/by-uuid	
+l	777	0	0	11	/dev/disk/by-uuid/{{uuid_15}}	../../vda15
+l	777	0	0	10	/dev/disk/by-uuid/{{uuid_1}}	../../vda1
+d	755	0	0	80	/dev/dri	
+d	755	0	0	60	/dev/dri/by-path	
+l	777	0	0	8	/dev/dri/by-path/pci-0000:00:02.0-card	../card0
+c	660	0	44	0	/dev/dri/card0	
+c	660	0	44	0	/dev/fb0	
+l	777	0	0	13	/dev/fd	/proc/self/fd
+c	666	0	0	0	/dev/full	
+c	666	0	0	0	/dev/fuse	
+c	600	0	0	0	/dev/hpet	
+d	755	0	0	0	/dev/hugepages	
+c	600	0	0	0	/dev/hwrng	
+l	777	0	0	12	/dev/initctl	/run/initctl
+d	755	0	0	200	/dev/input	
+d	755	0	0	100	/dev/input/by-path	
+l	777	0	0	9	/dev/input/by-path/platform-i8042-serio-0-event-kbd	../event0
+l	777	0	0	9	/dev/input/by-path/platform-i8042-serio-1-event-mouse	../event2
+l	777	0	0	9	/dev/input/by-path/platform-i8042-serio-1-mouse	../mouse1
+c	660	0	101	0	/dev/input/event0	
+c	660	0	101	0	/dev/input/event1	
+c	660	0	101	0	/dev/input/event2	
+c	660	0	101	0	/dev/input/event3	
+c	660	0	101	0	/dev/input/mice	
+c	660	0	101	0	/dev/input/mouse0	
+c	660	0	101	0	/dev/input/mouse1	
+c	644	0	0	0	/dev/kmsg	
+l	777	0	0	28	/dev/log	/run/systemd/journal/dev-log
+c	660	0	6	0	/dev/loop-control	
+b	660	0	6	0	/dev/loop0	
+b	660	0	6	0	/dev/loop1	
+b	660	0	6	0	/dev/loop2	
+b	660	0	6	0	/dev/loop3	
+b	660	0	6	0	/dev/loop4	
+b	660	0	6	0	/dev/loop5	
+b	660	0	6	0	/dev/loop6	
+b	660	0	6	0	/dev/loop7	
+d	755	0	0	60	/dev/mapper	
+c	600	0	0	0	/dev/mapper/control	
+c	640	0	15	0	/dev/mem	
+d	1777	0	0	40	/dev/mqueue	
+d	755	0	0	60	/dev/net	
+c	666	0	0	0	/dev/net/tun	
+c	666	0	0	0	/dev/null	
+c	600	0	0	0	/dev/nvram	
+c	640	0	15	0	/dev/port	
+c	600	0	0	0	/dev/ppp	
+c	600	0	0	0	/dev/psaux	
+c	666	0	5	0	/dev/ptmx	
+d	755	0	0	0	/dev/pts	
+c	0	0	0	0	/dev/pts/ptmx	
+c	666	0	0	0	/dev/random	
+c	664	0	0	0	/dev/rfkill	
+l	777	0	0	4	/dev/rtc	rtc0
+c	600	0	0	0	/dev/rtc0	
+d	1777	0	0	40	/dev/shm	
+c	600	0	0	0	/dev/snapshot	
+d	755	0	0	80	/dev/snd	
+c	660	0	29	0	/dev/snd/seq	
+c	660	0	29	0	/dev/snd/timer	
+l	777	0	0	15	/dev/stderr	/proc/self/fd/2
+l	777	0	0	15	/dev/stdin	/proc/self/fd/0
+l	777	0	0	15	/dev/stdout	/proc/self/fd/1
+c	666	0	5	0	/dev/tty	
+c	620	0	5	0	/dev/tty0	
+c	620	0	5	0	/dev/tty1	
+c	620	0	5	0	/dev/tty10	
+c	620	0	5	0	/dev/tty11	
+c	620	0	5	0	/dev/tty12	
+c	620	0	5	0	/dev/tty13	
+c	620	0	5	0	/dev/tty14	
+c	620	0	5	0	/dev/tty15	
+c	620	0	5	0	/dev/tty16	
+c	620	0	5	0	/dev/tty17	
+c	620	0	5	0	/dev/tty18	
+c	620	0	5	0	/dev/tty19	
+c	620	0	5	0	/dev/tty2	
+c	620	0	5	0	/dev/tty20	
+c	620	0	5	0	/dev/tty21	
+c	620	0	5	0	/dev/tty22	
+c	620	0	5	0	/dev/tty23	
+c	620	0	5	0	/dev/tty24	
+c	620	0	5	0	/dev/tty25	
+c	620	0	5	0	/dev/tty26	
+c	620	0	5	0	/dev/tty27	
+c	620	0	5	0	/dev/tty28	
+c	620	0	5	0	/dev/tty29	
+c	620	0	5	0	/dev/tty3	
+c	620	0	5	0	/dev/tty30	
+c	620	0	5	0	/dev/tty31	
+c	620	0	5	0	/dev/tty32	
+c	620	0	5	0	/dev/tty33	
+c	620	0	5	0	/dev/tty34	
+c	620	0	5	0	/dev/tty35	
+c	620	0	5	0	/dev/tty36	
+c	620	0	5	0	/dev/tty37	
+c	620	0	5	0	/dev/tty38	
+c	620	0	5	0	/dev/tty39	
+c	620	0	5	0	/dev/tty4	
+c	620	0	5	0	/dev/tty40	
+c	620	0	5	0	/dev/tty41	
+c	620	0	5	0	/dev/tty42	
+c	620	0	5	0	/dev/tty43	
+c	620	0	5	0	/dev/tty44	
+c	620	0	5	0	/dev/tty45	
+c	620	0	5	0	/dev/tty46	
+c	620	0	5	0	/dev/tty47	
+c	620	0	5	0	/dev/tty48	
+c	620	0	5	0	/dev/tty49	
+c	620	0	5	0	/dev/tty5	
+c	620	0	5	0	/dev/tty50	
+c	620	0	5	0	/dev/tty51	
+c	620	0	5	0	/dev/tty52	
+c	620	0	5	0	/dev/tty53	
+c	620	0	5	0	/dev/tty54	
+c	620	0	5	0	/dev/tty55	
+c	620	0	5	0	/dev/tty56	
+c	620	0	5	0	/dev/tty57	
+c	620	0	5	0	/dev/tty58	
+c	620	0	5	0	/dev/tty59	
+c	620	0	5	0	/dev/tty6	
+c	620	0	5	0	/dev/tty60	
+c	620	0	5	0	/dev/tty61	
+c	620	0	5	0	/dev/tty62	
+c	620	0	5	0	/dev/tty63	
+c	620	0	5	0	/dev/tty7	
+c	620	0	5	0	/dev/tty8	
+c	620	0	5	0	/dev/tty9	
+c	660	0	20	0	/dev/ttyS0	
+c	660	0	20	0	/dev/ttyS1	
+c	660	0	20	0	/dev/ttyS2	
+c	660	0	20	0	/dev/ttyS3	
+c	600	0	0	0	/dev/uhid	
+c	600	0	0	0	/dev/uinput	
+c	666	0	0	0	/dev/urandom	
+c	600	0	0	0	/dev/userfaultfd	
+c	660	0	5	0	/dev/vcs	
+c	660	0	5	0	/dev/vcs1	
+c	660	0	5	0	/dev/vcs2	
+c	660	0	5	0	/dev/vcs3	
+c	660	0	5	0	/dev/vcs4	
+c	660	0	5	0	/dev/vcs5	
+c	660	0	5	0	/dev/vcs6	
+c	660	0	5	0	/dev/vcsa	
+c	660	0	5	0	/dev/vcsa1	
+c	660	0	5	0	/dev/vcsa2	
+c	660	0	5	0	/dev/vcsa3	
+c	660	0	5	0	/dev/vcsa4	
+c	660	0	5	0	/dev/vcsa5	
+c	660	0	5	0	/dev/vcsa6	
+c	660	0	5	0	/dev/vcsu	
+c	660	0	5	0	/dev/vcsu1	
+c	660	0	5	0	/dev/vcsu2	
+c	660	0	5	0	/dev/vcsu3	
+c	660	0	5	0	/dev/vcsu4	
+c	660	0	5	0	/dev/vcsu5	
+c	660	0	5	0	/dev/vcsu6	
+b	660	0	6	0	/dev/vda	
+b	660	0	6	0	/dev/vda1	
+b	660	0	6	0	/dev/vda14	
+b	660	0	6	0	/dev/vda15	
+d	755	0	0	60	/dev/vfio	
+c	666	0	0	0	/dev/vfio/vfio	
+c	600	0	0	0	/dev/vga_arbiter	
+c	600	0	0	0	/dev/vhci	
+c	660	0	103	0	/dev/vhost-net	
+c	660	0	103	0	/dev/vhost-vsock	
+c	666	0	0	0	/dev/zero	

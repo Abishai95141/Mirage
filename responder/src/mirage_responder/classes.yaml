@@ -1,0 +1,183 @@
+# Command classes (docs/06-phase-3-spec.md, 3.1): what a command's answer depends on, which
+# decides how it may be answered.
+#
+#   stateless       the profile alone: cached for every session of the deployment
+#   state-reading   the profile and the session's state: cached under a fingerprint of it
+#   state-changing  it changes something: buffered until its operations are validated,
+#                   never cached. A command that is not listed is treated as this.
+#   volatile        it shows something that changes by the second: never cached
+#   interactive     it takes over the terminal: never generated
+#   network         it talks to another machine: never generated
+#
+# A command is named by the last part of argv[0]. A class may be given for the bare command
+# and for forms of it: `forms` maps a first argument (or option) to another class.
+version: 1
+commands:
+  # ---- stateless: what is installed and how the host is set up
+  dpkg: {class: stateless, forms: {-i: state-changing, --install: state-changing, -r: state-changing, --remove: state-changing, -P: state-changing, --purge: state-changing, --configure: state-changing}}
+  dpkg-query: {class: stateless}
+  apt-cache: {class: stateless}
+  apt-mark: {class: stateless, forms: {hold: state-changing, unhold: state-changing, auto: state-changing, manual: state-changing}}
+  getent: {class: stateless}
+  lsb_release: {class: stateless}
+  hostnamectl: {class: stateless, forms: {set-hostname: state-changing, hostname: state-changing}}
+  locale: {class: stateless}
+  localectl: {class: stateless}
+  getconf: {class: stateless}
+  systemd-detect-virt: {class: stateless}
+  lsmod: {class: stateless}
+  modinfo: {class: stateless}
+  lsusb: {class: stateless}
+  dmidecode: {class: stateless}
+  lshw: {class: stateless}
+  sysctl: {class: stateless, forms: {-w: state-changing, --write: state-changing, -p: state-changing}}
+  update-alternatives: {class: stateless, forms: {--set: state-changing, --install: state-changing, --remove: state-changing, --config: interactive}}
+  php: {class: stateless}
+  python3: {class: stateless}
+  perl: {class: stateless}
+  openssl: {class: stateless}
+  mariadb: {class: interactive, forms: {--version: stateless, -V: stateless, --help: stateless}}
+  redis-cli: {class: interactive, forms: {--version: stateless, -v: stateless, --help: stateless}}
+  nginx: {class: stateless, forms: {-s: state-changing}}
+  sshd: {class: stateless}
+  visudo: {class: interactive}
+  groups: {class: stateless}
+  lastlog: {class: stateless}
+  chage: {class: stateless}
+  ip: {class: stateless}
+  route: {class: stateless}
+  arp: {class: stateless}
+  iptables-save: {class: stateless}
+  nft: {class: stateless}
+  ufw: {class: stateless, forms: {enable: state-changing, disable: state-changing, allow: state-changing, deny: state-changing, delete: state-changing}}
+
+  # ---- state-reading: files and the session's own state
+  file: {class: state-reading}
+  md5sum: {class: state-reading}
+  sha1sum: {class: state-reading}
+  sha256sum: {class: state-reading}
+  sha512sum: {class: state-reading}
+  cksum: {class: state-reading}
+  strings: {class: state-reading}
+  readlink: {class: state-reading}
+  realpath: {class: state-reading}
+  basename: {class: state-reading}
+  dirname: {class: state-reading}
+  tree: {class: state-reading}
+  diff: {class: state-reading}
+  cmp: {class: state-reading}
+  nl: {class: state-reading}
+  tac: {class: state-reading}
+  rev: {class: state-reading}
+  od: {class: state-reading}
+  xxd: {class: state-reading}
+  hexdump: {class: state-reading}
+  column: {class: state-reading}
+  fold: {class: state-reading}
+  paste: {class: state-reading}
+  join: {class: state-reading}
+  comm: {class: state-reading}
+  expr: {class: state-reading}
+  seq: {class: state-reading}
+  lsattr: {class: state-reading}
+  getfacl: {class: state-reading}
+  namei: {class: state-reading}
+  zcat: {class: state-reading}
+  bzcat: {class: state-reading}
+  xzcat: {class: state-reading}
+  jobs: {class: state-reading}
+  pgrep: {class: state-reading}
+  pidof: {class: state-reading}
+  pstree: {class: state-reading}
+  lsof: {class: state-reading}
+  systemctl: {class: state-reading, forms: {start: state-changing, stop: state-changing, restart: state-changing, reload: state-changing, enable: state-changing, disable: state-changing, mask: state-changing, unmask: state-changing, daemon-reload: state-changing, edit: interactive}}
+  service: {class: state-reading}
+  journalctl: {class: volatile, forms: {-f: interactive, --follow: interactive}}
+
+  # ---- volatile: the answer is a moment
+  vmstat: {class: volatile}
+  iostat: {class: volatile}
+  mpstat: {class: volatile}
+  sar: {class: volatile}
+  uptime: {class: volatile}
+  date: {class: volatile}
+  timedatectl: {class: volatile, forms: {set-time: state-changing, set-timezone: state-changing, set-ntp: state-changing}}
+  ss: {class: volatile}
+  netstat: {class: volatile}
+  dmesg: {class: volatile}
+  last: {class: volatile}
+  lastb: {class: volatile}
+  top: {class: interactive, forms: {-b: volatile, -bn1: volatile}}
+  htop: {class: interactive}
+  atop: {class: interactive}
+  iotop: {class: interactive}
+  watch: {class: interactive}
+
+  # ---- interactive: full-screen programs and prompts
+  vi: {class: interactive}
+  vim: {class: interactive}
+  view: {class: interactive}
+  nano: {class: interactive}
+  pico: {class: interactive}
+  emacs: {class: interactive}
+  ed: {class: interactive}
+  less: {class: interactive}
+  more: {class: interactive}
+  most: {class: interactive}
+  man: {class: interactive}
+  info: {class: interactive}
+  mc: {class: interactive}
+  screen: {class: interactive}
+  tmux: {class: interactive}
+  script: {class: interactive}
+  mysql: {class: interactive}
+  psql: {class: interactive}
+  sqlite3: {class: interactive}
+  ftp: {class: interactive}
+  sftp: {class: interactive}
+  telnet: {class: interactive}
+  irb: {class: interactive}
+  node: {class: interactive}
+  bc: {class: interactive}
+  gdb: {class: interactive}
+  strace: {class: interactive}
+  ltrace: {class: interactive}
+  passwd: {class: interactive}
+  adduser: {class: interactive}
+  crontab: {class: state-reading, forms: {-e: interactive, -r: state-changing}}
+
+  # ---- network: another machine is the other half of the answer
+  curl: {class: network}
+  wget: {class: network}
+  nc: {class: network}
+  ncat: {class: network}
+  netcat: {class: network}
+  socat: {class: network}
+  ping: {class: network}
+  ping6: {class: network}
+  traceroute: {class: network}
+  tracepath: {class: network}
+  mtr: {class: network}
+  dig: {class: network}
+  host: {class: network}
+  nslookup: {class: network}
+  whois: {class: network}
+  ssh: {class: network}
+  scp: {class: network}
+  rsync: {class: network}
+  nmap: {class: network}
+  masscan: {class: network}
+  tcpdump: {class: network}
+  tftp: {class: network}
+  git: {class: network}
+  apt: {class: network, forms: {list: stateless, show: stateless, policy: stateless, search: stateless}}
+  apt-get: {class: network}
+  aptitude: {class: network}
+  pip: {class: network, forms: {list: stateless, show: stateless, freeze: stateless}}
+  pip3: {class: network, forms: {list: stateless, show: stateless, freeze: stateless}}
+  npm: {class: network}
+  gem: {class: network}
+  docker: {class: network}
+  snap: {class: network}
+  ntpdate: {class: network}
+  rdate: {class: network}

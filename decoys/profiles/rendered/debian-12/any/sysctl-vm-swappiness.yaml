@@ -1,0 +1,20 @@
+# Written by `mirage-profile render-library`; do not edit. What a real host printed.
+argv: sysctl vm.swappiness
+program: /usr/sbin/sysctl
+source: reference-container
+who: any
+exit_code: 0
+ms:
+- 2
+- 2
+- 2
+- 2
+- 2
+stdout: |
+  vm.swappiness = 60
+stderr: ''
+inventory:
+  responder: 1
+shape: text
+streams: stdout
+recorded: {}

@@ -1,0 +1,16 @@
+# Written by record-sockets.sh from sha256:655d2a9ebce4. Do not edit.
+# netid	state	recv_q	send_q	local	port	peer	peer_port	comm	fd
+tcp	LISTEN	0	511	0.0.0.0	6379	0.0.0.0	*	redis-server	6
+tcp	LISTEN	0	511	0.0.0.0	80	0.0.0.0	*	nginx	5
+tcp	LISTEN	0	128	0.0.0.0	22	0.0.0.0	*	sshd	3
+tcp	LISTEN	0	80	0.0.0.0	3306	0.0.0.0	*	mariadbd	20
+tcp	LISTEN	0	511	[::]	80	[::]	*	nginx	6
+tcp	LISTEN	0	128	[::]	22	[::]	*	sshd	4
+# as ss printed it:
+# Netid State  Recv-Q Send-Q Local Address:Port Peer Address:PortProcess
+# tcp   LISTEN 0      511          0.0.0.0:6379      0.0.0.0:*    users:(("redis-server",pid=40,fd=6))
+# tcp   LISTEN 0      511          0.0.0.0:80        0.0.0.0:*    users:(("nginx",pid=37,fd=5),("nginx",pid=36,fd=5),("nginx",pid=35,fd=5),("nginx",pid=34,fd=5),("nginx",pid=33,fd=5),("nginx",pid=32,fd=5),("nginx",pid=31,fd=5),("nginx",pid=30,fd=5),("nginx",pid=26,fd=5),("nginx",pid=25,fd=5),("nginx",pid=24,fd=5),("nginx",pid=23,fd=5),("nginx",pid=22,fd=5))
+# tcp   LISTEN 0      128          0.0.0.0:22        0.0.0.0:*    users:(("sshd",pid=14,fd=3))
+# tcp   LISTEN 0      80           0.0.0.0:3306      0.0.0.0:*    users:(("mariadbd",pid=28,fd=20))
+# tcp   LISTEN 0      511             [::]:80           [::]:*    users:(("nginx",pid=37,fd=6),("nginx",pid=36,fd=6),("nginx",pid=35,fd=6),("nginx",pid=34,fd=6),("nginx",pid=33,fd=6),("nginx",pid=32,fd=6),("nginx",pid=31,fd=6),("nginx",pid=30,fd=6),("nginx",pid=26,fd=6),("nginx",pid=25,fd=6),("nginx",pid=24,fd=6),("nginx",pid=23,fd=6),("nginx",pid=22,fd=6))
+# tcp   LISTEN 0      128             [::]:22           [::]:*    users:(("sshd",pid=14,fd=4))

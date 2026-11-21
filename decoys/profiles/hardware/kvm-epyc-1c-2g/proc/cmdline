@@ -1,0 +1,1 @@
+BOOT_IMAGE=/boot/vmlinuz-6.1.0-54-amd64 root=PARTUUID={{partuuid_1}} ro console=tty0 console=ttyS0,115200 earlyprintk=ttyS0,115200 consoleblank=0

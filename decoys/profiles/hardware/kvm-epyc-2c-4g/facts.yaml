@@ -1,0 +1,45 @@
+# What this class is, read off its record. Written by `mirage-profile hardware`.
+id: kvm-epyc-2c-4g
+about: A small KVM virtual server. Two virtual CPUs, 4 GB, an 80 GB virtio disk.
+vm:
+  cpu: EPYC-Rome
+  cpus: 2
+  memory_mb: 4096
+  disk_gb: 80
+  machine: pc
+  disk_bus: virtio
+cpu_model: AMD EPYC-Rome Processor
+cpus: 2
+memory_kb: 4009140
+disk:
+  name: vda
+  size: 80G
+root_device: /dev/vda1
+interface: ens3
+virtualisation: kvm
+hardware_vendor: QEMU
+hardware_model: Standard PC _i440FX + PIIX, 1996_
+kernel_release: 6.1.0-54-amd64
+kernel_version: '#1 SMP PREEMPT_DYNAMIC Debian 6.1.190-1 (2026-10-16)'
+recorded_uptime_s: 28.73
+slots:
+  boot_id: fact
+  boot_id_hex: fact
+  broadcast: fact
+  dns: fact
+  gateway: fact
+  hostname: fact
+  ipv6_link: fact
+  mac: fact
+  machine_id: fact
+  network: fact
+  partuuid_1: uuid
+  partuuid_14: uuid
+  partuuid_15: uuid
+  private_ip: fact
+  uuid_1: uuid
+  uuid_15: fat_id
+image_sha512: ef4e6f3302cf7951f869e8e01263ee9ab69661b67dc28d45d76eb317b81cf7f87a75f85f26a3b30cbb772025f2edc27dee4f640f91d4cb3f4afe7662b6362e2a
+commands_absent:
+- dmidecode
+- lsusb

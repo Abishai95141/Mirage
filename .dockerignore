@@ -6,6 +6,8 @@
 !pipeline/src/**
 !policy/pyproject.toml
 !policy/src/**
+!responder/pyproject.toml
+!responder/src/**
 !decoys/common/pyproject.toml
 !decoys/common/src/**
 !decoys/tokens/pyproject.toml
@@ -21,4 +23,9 @@
 !decoys/ssh/patches/**
 !decoys/ssh/remove.txt
 !decoys/ssh/build_fs.py
+!decoys/profiles/pyproject.toml
+!decoys/profiles/src/**
+!decoys/profiles/reference/debian-12.json
+!eval/__init__.py
+!eval/probes/**
 **/__pycache__

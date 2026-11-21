@@ -217,6 +217,31 @@ def test_safety_check_accepts_only_an_isolated_lab():
     assert "exactly one attached private network" in why(["8.8.0.2"], public)
 
 
+def test_the_console_s_allowance_is_one_more_internal_network_and_nothing_else():
+    inner = "eth1\t0000140A\t00000000\t0001\t0\t0\t0\t0000FFFF\t0\t0\t0\n"  # 10.20.0.0/16
+    two = LAB_ROUTES + inner
+
+    def why(addresses, r4=two, r6="", side=1):
+        return " | ".join(safety.check_target(addresses, r4, r6, side))
+
+    assert why(["172.26.0.2"]) == ""
+    assert why(["172.26.0.2"], LAB_ROUTES) == ""  # and one network is still fine
+    # Everything the runner's check refuses is refused here too.
+    assert "IPv4 default route" in why(["172.26.0.2"], two + DEFAULT_ROUTE)
+    assert "IPv6 default route" in why(["172.26.0.2"], two, V6_DEFAULT)
+    gatewayed = two + "eth1\t0000A8C0\t0100140A\t0003\t0\t0\t0\t00FFFFFF\t0\t0\t0\n"
+    assert "gatewayed (off-link) route" in why(["172.26.0.2"], gatewayed)
+    assert "outside the lab network" in why(["93.184.216.34"])
+    assert "does not resolve" in why([])
+    # A third network, or a second one that is not private, is not what was allowed.
+    third = two + "eth2\t00001EAC\t00000000\t0001\t0\t0\t0\t0000FFFF\t0\t0\t0\n"
+    assert "one to 2 attached private network" in why(["172.26.0.2"], third)
+    public = LAB_ROUTES + inner.replace("0000140A", "00000808")
+    assert "one to 2 attached private network" in why(["172.26.0.2"], public)
+    # Without the allowance the same two networks are refused, as before.
+    assert "exactly one attached private network" in why(["172.26.0.2"], side=0)
+
+
 def test_runner_refuses_to_start_outside_its_container(monkeypatch, tmp_path):
     monkeypatch.setattr(safety, "ROUTE4", tmp_path / "absent")
     with pytest.raises(safety.SafetyError, match="only runs in its lab container"):

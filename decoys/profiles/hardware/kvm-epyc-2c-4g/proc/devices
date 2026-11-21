@@ -1,0 +1,31 @@
+Character devices:
+  1 mem
+  4 /dev/vc/0
+  4 tty
+  4 ttyS
+  5 /dev/tty
+  5 /dev/console
+  5 /dev/ptmx
+  7 vcs
+ 10 misc
+ 13 input
+ 29 fb
+128 ptm
+136 pts
+153 spi
+226 drm
+247 cxl
+248 bsg
+249 ptp
+250 pps
+251 rtc
+252 dax
+253 tpm
+254 gpiochip
+
+Block devices:
+  2 fd
+  7 loop
+253 device-mapper
+254 virtblk
+259 blkext

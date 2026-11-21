@@ -1,6 +1,6 @@
 """SSH transport fingerprint probes (spike S3; seed of the phase 3 probe suite).
 
-Stdlib only, so it runs in any container on the decoy network. Each probe records what a
+Stdlib only, so it runs in any container that can reach a decoy. Each probe records what a
 server does at the transport layer, below anything a Cowrie profile can change. Comparing a
 decoy against a real OpenSSH build of the version the decoy claims shows its transport tells.
 
@@ -20,6 +20,8 @@ import struct
 import sys
 import time
 from typing import Any
+
+from eval.probes.net import Target
 
 CLIENT_ID = b"SSH-2.0-OpenSSH_9.6\r\n"
 NAME_LISTS = [
@@ -47,10 +49,8 @@ BANNER_PROBES = {
 }
 
 
-def _connect(host: str, port: int, timeout: float = 5.0) -> socket.socket:
-    s = socket.create_connection((host, port), timeout=timeout)
-    s.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
-    return s
+def _connect(target: Target, timeout: float = 5.0) -> socket.socket:
+    return target.connect(timeout)
 
 
 def _read_line(s: socket.socket) -> bytes:
@@ -122,11 +122,12 @@ def _parse_kexinit(packet: bytes, padding_len: int) -> dict[str, Any]:
     }
 
 
-def probe_kexinit(host: str, port: int, samples: int = 3) -> dict[str, Any]:
+def probe_kexinit(target: Target | str, samples: int = 3) -> dict[str, Any]:
     """Banner, KEXINIT timing and contents, over ``samples`` fresh connections."""
+    target = Target.parse(target)
     runs = []
     for _ in range(samples):
-        s = _connect(host, port)
+        s = _connect(target)
         banner = _read_line(s)
         # Does the server send KEXINIT before it has seen our identification string?
         s.settimeout(1.5)
@@ -163,10 +164,11 @@ def probe_kexinit(host: str, port: int, samples: int = 3) -> dict[str, Any]:
     }
 
 
-def probe_banners(host: str, port: int) -> dict[str, Any]:
+def probe_banners(target: Target | str) -> dict[str, Any]:
+    target = Target.parse(target)
     out = {}
     for name, line in BANNER_PROBES.items():
-        s = _connect(host, port)
+        s = _connect(target)
         _read_line(s)
         s.sendall(line)
         data, closed, secs = _read_until_close(s, timeout=4.0)
@@ -183,12 +185,12 @@ def probe_banners(host: str, port: int) -> dict[str, Any]:
     return out
 
 
-def probe(target: str) -> dict[str, Any]:
-    host, port = target.rsplit(":", 1)
+def probe(target: Target | str) -> dict[str, Any]:
+    target = Target.parse(target)
     return {
-        "target": target,
-        "kexinit": probe_kexinit(host, int(port)),
-        "banners": probe_banners(host, int(port)),
+        "target": str(target),
+        "kexinit": probe_kexinit(target),
+        "banners": probe_banners(target),
     }
 
 

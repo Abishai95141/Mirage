@@ -1,0 +1,496 @@
+# Written by `make render-inventory` (mirage_profiles.inventory). Do not edit.
+# Commands the SSH decoy answers wrongly, ranked by how often they are sent, from
+# data that is not a test set. `share` is of that source's wrongly answered
+# volume; `rank_share` is the mean of the two; `cumulative` runs down the list.
+target_share: 0.8
+sources:
+  corpus:
+    what: the public Cowrie corpus sample
+    files:
+    - 2025-06-27.json.sample.json
+    lines: 850
+    wrongly_answered: 56
+  lab:
+    what: lab procedures outside every test split, once for each step sending them
+    steps_by_split:
+      dev: 177
+      train: 163
+    lines: 340
+    wrongly_answered: 67
+volume_by_kind:
+  corpus:
+    absent: 238
+    answered: 2534
+    own-file: 17
+    shell: 16
+    static-text: 23
+  lab:
+    absent: 15
+    answered: 539
+    missing: 43
+    own-file: 12
+    shell: 9
+    static-text: 2
+entries:
+- argv: lscpu
+  kind: static-text
+  render: true
+  corpus:
+    count: 7
+    share: 0.125
+  lab:
+    count: 0
+    share: 0.0
+  rank_share: 0.0625
+  cumulative: 0.0625
+- argv: nproc
+  kind: static-text
+  render: true
+  corpus:
+    count: 6
+    share: 0.1071
+  lab:
+    count: 1
+    share: 0.0149
+  rank_share: 0.061
+  cumulative: 0.1235
+- argv: SLOT
+  kind: own-file
+  render: false
+  corpus:
+    count: 0
+    share: 0.0
+  lab:
+    count: 8
+    share: 0.1194
+  rank_share: 0.0597
+  cumulative: 0.1832
+- argv: redis-cli <arg>
+  kind: missing
+  render: false
+  corpus:
+    count: 0
+    share: 0.0
+  lab:
+    count: 7
+    share: 0.1045
+  rank_share: 0.0522
+  cumulative: 0.2355
+- argv: top
+  kind: static-text
+  render: false
+  corpus:
+    count: 5
+    share: 0.0893
+  lab:
+    count: 1
+    share: 0.0149
+  rank_share: 0.0521
+  cumulative: 0.2876
+- argv: fi
+  kind: shell
+  render: false
+  corpus:
+    count: 4
+    share: 0.0714
+  lab:
+    count: 2
+    share: 0.0299
+  rank_share: 0.0506
+  cumulative: 0.3382
+- argv: if
+  kind: shell
+  render: false
+  corpus:
+    count: 4
+    share: 0.0714
+  lab:
+    count: 2
+    share: 0.0299
+  rank_share: 0.0506
+  cumulative: 0.3889
+- argv: then
+  kind: shell
+  render: false
+  corpus:
+    count: 4
+    share: 0.0714
+  lab:
+    count: 2
+    share: 0.0299
+  rank_share: 0.0506
+  cumulative: 0.4395
+- argv: df -h
+  kind: static-text
+  render: true
+  corpus:
+    count: 5
+    share: 0.0893
+  lab:
+    count: 0
+    share: 0.0
+  rank_share: 0.0446
+  cumulative: 0.4841
+- argv: nginx -v
+  kind: missing
+  render: true
+  corpus:
+    count: 0
+    share: 0.0
+  lab:
+    count: 5
+    share: 0.0746
+  rank_share: 0.0373
+  cumulative: 0.5215
+- argv: '86400'
+  kind: own-file
+  render: false
+  corpus:
+    count: 4
+    share: 0.0714
+  lab:
+    count: 0
+    share: 0.0
+  rank_share: 0.0357
+  cumulative: 0.5572
+- argv: authorized_keys
+  kind: own-file
+  render: false
+  corpus:
+    count: 4
+    share: 0.0714
+  lab:
+    count: 0
+    share: 0.0
+  rank_share: 0.0357
+  cumulative: 0.5929
+- argv: mysql -N -e <arg>
+  kind: missing
+  render: false
+  corpus:
+    count: 0
+    share: 0.0
+  lab:
+    count: 4
+    share: 0.0597
+  rank_share: 0.0299
+  cumulative: 0.6227
+- argv: nginx -t
+  kind: missing
+  render: true
+  corpus:
+    count: 0
+    share: 0.0
+  lab:
+    count: 4
+    share: 0.0597
+  rank_share: 0.0299
+  cumulative: 0.6526
+- argv: ip cloud <arg>
+  kind: own-file
+  render: false
+  corpus:
+    count: 2
+    share: 0.0357
+  lab:
+    count: 1
+    share: 0.0149
+  rank_share: 0.0253
+  cumulative: 0.6779
+- argv: SLOT -o <url> -u <arg> -p <arg> --background
+  kind: own-file
+  render: false
+  corpus:
+    count: 0
+    share: 0.0
+  lab:
+    count: 3
+    share: 0.0448
+  rank_share: 0.0224
+  cumulative: 0.7003
+- argv: pgrep -f <arg>
+  kind: missing
+  render: false
+  corpus:
+    count: 0
+    share: 0.0
+  lab:
+    count: 3
+    share: 0.0448
+  rank_share: 0.0224
+  cumulative: 0.7227
+- argv: .ssh
+  kind: own-file
+  render: false
+  corpus:
+    count: 2
+    share: 0.0357
+  lab:
+    count: 0
+    share: 0.0
+  rank_share: 0.0179
+  cumulative: 0.7405
+- argv: '3600'
+  kind: own-file
+  render: false
+  corpus:
+    count: 2
+    share: 0.0357
+  lab:
+    count: 0
+    share: 0.0
+  rank_share: 0.0179
+  cumulative: 0.7584
+- argv: '60'
+  kind: own-file
+  render: false
+  corpus:
+    count: 2
+    share: 0.0357
+  lab:
+    count: 0
+    share: 0.0
+  rank_share: 0.0179
+  cumulative: 0.7763
+- argv: '[[ -d <path> <arg>'
+  kind: shell
+  render: false
+  corpus:
+    count: 2
+    share: 0.0357
+  lab:
+    count: 0
+    share: 0.0
+  rank_share: 0.0179
+  cumulative: 0.7941
+- argv: else
+  kind: shell
+  render: false
+  corpus:
+    count: 2
+    share: 0.0357
+  lab:
+    count: 0
+    share: 0.0
+  rank_share: 0.0179
+  cumulative: 0.812
+- argv: dpkg -l <arg>
+  kind: missing
+  render: false
+  corpus:
+    count: 0
+    share: 0.0
+  lab:
+    count: 2
+    share: 0.0299
+  rank_share: 0.0149
+  cumulative: 0.8269
+- argv: gzip
+  kind: missing
+  render: false
+  corpus:
+    count: 0
+    share: 0.0
+  lab:
+    count: 2
+    share: 0.0299
+  rank_share: 0.0149
+  cumulative: 0.8418
+- argv: mysqladmin <arg>
+  kind: missing
+  render: false
+  corpus:
+    count: 0
+    share: 0.0
+  lab:
+    count: 2
+    share: 0.0299
+  rank_share: 0.0149
+  cumulative: 0.8567
+- argv: timeout <n> <arg> -c <path>
+  kind: missing
+  render: false
+  corpus:
+    count: 0
+    share: 0.0
+  lab:
+    count: 2
+    share: 0.0299
+  rank_share: 0.0149
+  cumulative: 0.8717
+- argv: vmstat <n>
+  kind: missing
+  render: false
+  corpus:
+    count: 0
+    share: 0.0
+  lab:
+    count: 2
+    share: 0.0299
+  rank_share: 0.0149
+  cumulative: 0.8866
+- argv: ./.5229472175001442035/sshd <ip>
+  kind: own-file
+  render: false
+  corpus:
+    count: 1
+    share: 0.0179
+  lab:
+    count: 0
+    share: 0.0
+  rank_share: 0.0089
+  cumulative: 0.8955
+- argv: SLOT <arg>
+  kind: own-file
+  render: false
+  corpus:
+    count: 0
+    share: 0.0
+  lab:
+    count: 1
+    share: 0.0149
+  rank_share: 0.0075
+  cumulative: 0.903
+- argv: chage -M <n> <arg>
+  kind: missing
+  render: false
+  corpus:
+    count: 0
+    share: 0.0
+  lab:
+    count: 1
+    share: 0.0149
+  rank_share: 0.0075
+  cumulative: 0.9104
+- argv: do
+  kind: shell
+  render: false
+  corpus:
+    count: 0
+    share: 0.0
+  lab:
+    count: 1
+    share: 0.0149
+  rank_share: 0.0075
+  cumulative: 0.9179
+- argv: done
+  kind: shell
+  render: false
+  corpus:
+    count: 0
+    share: 0.0
+  lab:
+    count: 1
+    share: 0.0149
+  rank_share: 0.0075
+  cumulative: 0.9254
+- argv: for <arg> <n>
+  kind: shell
+  render: false
+  corpus:
+    count: 0
+    share: 0.0
+  lab:
+    count: 1
+    share: 0.0149
+  rank_share: 0.0075
+  cumulative: 0.9328
+- argv: getcap -r <arg>
+  kind: missing
+  render: false
+  corpus:
+    count: 0
+    share: 0.0
+  lab:
+    count: 1
+    share: 0.0149
+  rank_share: 0.0075
+  cumulative: 0.9403
+- argv: ip addr <arg>
+  kind: missing
+  render: false
+  corpus:
+    count: 0
+    share: 0.0
+  lab:
+    count: 1
+    share: 0.0149
+  rank_share: 0.0075
+  cumulative: 0.9478
+- argv: ip neighbour <arg>
+  kind: missing
+  render: false
+  corpus:
+    count: 0
+    share: 0.0
+  lab:
+    count: 1
+    share: 0.0149
+  rank_share: 0.0075
+  cumulative: 0.9552
+- argv: ldd /bin/ls
+  kind: missing
+  render: false
+  corpus:
+    count: 0
+    share: 0.0
+  lab:
+    count: 1
+    share: 0.0149
+  rank_share: 0.0075
+  cumulative: 0.9627
+- argv: lsof -i -nP
+  kind: missing
+  render: true
+  corpus:
+    count: 0
+    share: 0.0
+  lab:
+    count: 1
+    share: 0.0149
+  rank_share: 0.0075
+  cumulative: 0.9701
+- argv: openssl passwd -1 <arg>
+  kind: missing
+  render: false
+  corpus:
+    count: 0
+    share: 0.0
+  lab:
+    count: 1
+    share: 0.0149
+  rank_share: 0.0075
+  cumulative: 0.9776
+- argv: ssh-keyscan <arg>
+  kind: missing
+  render: false
+  corpus:
+    count: 0
+    share: 0.0
+  lab:
+    count: 1
+    share: 0.0149
+  rank_share: 0.0075
+  cumulative: 0.9851
+- argv: sshd -t
+  kind: missing
+  render: true
+  corpus:
+    count: 0
+    share: 0.0
+  lab:
+    count: 1
+    share: 0.0149
+  rank_share: 0.0075
+  cumulative: 0.9925
+- argv: usermod -aG <arg>
+  kind: missing
+  render: false
+  corpus:
+    count: 0
+    share: 0.0
+  lab:
+    count: 1
+    share: 0.0149
+  rank_share: 0.0075
+  cumulative: 1.0

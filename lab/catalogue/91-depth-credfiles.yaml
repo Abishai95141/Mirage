@@ -24,7 +24,7 @@ procedures:
     tactic: TA0006
     source: own
     protocol: ssh
-    template: grep -qi "password" /etc/mysql/debian.cnf && echo ok$?
+    template: grep -qiE "^(user|host|socket)" /etc/mysql/debian.cnf && echo ok$?
   - id: d-shadow-readable
     technique: T1003.008
     tactic: TA0006

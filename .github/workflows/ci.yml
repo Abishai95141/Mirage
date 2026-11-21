@@ -23,6 +23,13 @@ jobs:
       - run: uv sync --frozen
       - run: uv run ruff check .
       - run: uv run ruff format --check .
+      # A rendered profile mints an RSA host key from its seed, which takes seconds in
+      # Python, and the tests render about fifty. The keys are a function of the seed and of
+      # the code that makes them, so they are kept between runs under that code's hash.
+      - uses: actions/cache@v4
+        with:
+          path: build/cache/hostkeys
+          key: hostkeys-${{ hashFiles('decoys/profiles/src/mirage_profiles/hostkeys.py') }}
       - run: uv run pytest
       # What the lab and the models are built on: the split is intact, every technique ID is
       # in the pinned ATT&CK version, and the generated scenarios match their generator.

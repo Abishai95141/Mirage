@@ -1,0 +1,20 @@
+# What a Debian 12 guest listens on before any service of ours is installed: the resolver,
+# the DHCP client and sshd. From `ss -Htulnp` and `ss -s` as root in the class capture
+# (capture/capture.sh, class kvm-epyc-2c-4g, 18 November 2026). Every class boots the same
+# image with the same services, so one record serves them all. The recorded machine's own
+# address and interface are slots; the process IDs are left out (the decoy takes them from
+# its process list). Do not edit.
+# sockets_total	98
+# raw	1	0	1
+# netid	state	recv_q	send_q	local	port	peer	peer_port	comm	fd
+udp	UNCONN	0	0	127.0.0.54	53	0.0.0.0	*	systemd-resolve	20
+udp	UNCONN	0	0	127.0.0.53%lo	53	0.0.0.0	*	systemd-resolve	18
+udp	UNCONN	0	0	{{private_ip}}%{{interface}}	68	0.0.0.0	*	systemd-network	18
+udp	UNCONN	0	0	0.0.0.0	5355	0.0.0.0	*	systemd-resolve	11
+udp	UNCONN	0	0	[::]	5355	[::]	*	systemd-resolve	13
+tcp	LISTEN	0	4096	127.0.0.54	53	0.0.0.0	*	systemd-resolve	21
+tcp	LISTEN	0	128	0.0.0.0	22	0.0.0.0	*	sshd	3
+tcp	LISTEN	0	4096	0.0.0.0	5355	0.0.0.0	*	systemd-resolve	12
+tcp	LISTEN	0	4096	127.0.0.53%lo	53	0.0.0.0	*	systemd-resolve	19
+tcp	LISTEN	0	128	[::]	22	[::]	*	sshd	4
+tcp	LISTEN	0	4096	[::]	5355	[::]	*	systemd-resolve	14

@@ -1,0 +1,161 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: MIRAGE <noreply@anthropic.com>
+Date: Tue, 17 Nov 2026 12:43:28 +0530
+Subject: [PATCH] MIRAGE: the contents directory is read once, not by every
+ session
+
+With [honeypot] contents_path set, every session made a private deep copy of
+the whole filesystem tree and walked the contents directory to mark its
+files. An exec request is a session, so 'ssh host command' took about 200 ms
+on a filesystem built from a real image, where a real host takes 5 ms. The
+marked tree is now made once and shared; a session still copies it when it
+first writes.
+---
+ src/cowrie/shell/fs.py                  | 25 ++++++-
+ src/cowrie/test/test_mirage_fs_share.py | 88 +++++++++++++++++++++++++
+ 2 files changed, 112 insertions(+), 1 deletion(-)
+ create mode 100644 src/cowrie/test/test_mirage_fs_share.py
+
+diff --git a/src/cowrie/shell/fs.py b/src/cowrie/shell/fs.py
+index c417948..4b9d4ba 100644
+--- a/src/cowrie/shell/fs.py
++++ b/src/cowrie/shell/fs.py
+@@ -116,6 +116,14 @@ class PermissionDenied(Exception):
+     """
+ 
+ 
++# MIRAGE: the base tree with the contents directory's files marked, made once
++# for each (base tree, contents directory). Upstream marks them for every
++# session on a private copy of the whole tree, so every session, and every
++# exec request is one, paid a deep copy and a walk of the directory before its
++# first command: about 200 ms with a filesystem built from a real image.
++_marked_trees: list[tuple[Any, str, Any]] = []
++
++
+ class HoneyPotFilesystem:
+     _log = Logger()
+ 
+@@ -155,10 +163,25 @@ class HoneyPotFilesystem:
+         contents_path = CowrieConfig.get("honeypot", "contents_path", fallback="")
+         if contents_path:
+             try:
+-                self.init_honeyfs(contents_path)
++                self._share_marked_tree(contents_path)
+             except Exception as e:
+                 self._log.info("Failed to load honeyfs {error!r}", error=e)
+ 
++    def _share_marked_tree(self, contents_path: str) -> None:
++        """MIRAGE: use the tree that already has ``contents_path``'s files
++        marked, making it the first time. It is shared like the base tree: a
++        session copies it only when it first writes."""
++        base = self.fs
++        for known, path, marked in _marked_trees:
++            if known is base and path == contents_path:
++                self.fs = marked
++                return
++        self.init_honeyfs(contents_path)  # copies the base tree and marks the copy
++        _marked_trees.append((base, contents_path, self.fs))
++        # That copy is now what later sessions share, so this session too must
++        # copy before it writes.
++        self._private_fs = False
++
+     def _mirage_change(self, op: str, path: str, **fields: Any) -> None:
+         """MIRAGE: report a change to the emulated filesystem (``cowrie.fs.change``).
+ 
+diff --git a/src/cowrie/test/test_mirage_fs_share.py b/src/cowrie/test/test_mirage_fs_share.py
+new file mode 100644
+index 0000000..c4a6878
+--- /dev/null
++++ b/src/cowrie/test/test_mirage_fs_share.py
+@@ -0,0 +1,88 @@
++# SPDX-License-Identifier: BSD-3-Clause
++# ABOUTME: Tests that a session shares the filesystem tree with the contents
++# ABOUTME: directory's files marked, and copies it only when it first writes.
++
++from __future__ import annotations
++
++import copy
++import os
++import shutil
++import tempfile
++import unittest
++from unittest.mock import patch
++
++from cowrie.core import honeyfs
++from cowrie.core.config import CowrieConfig
++from cowrie.shell import fs
++
++
++class SharedMarkedTreeTests(unittest.TestCase):
++    def setUp(self) -> None:
++        self.tmp = tempfile.mkdtemp()
++        os.makedirs(os.path.join(self.tmp, "etc"))
++        self.real = os.path.join(self.tmp, "etc", "passwd")
++        with open(self.real, "w") as f:
++            f.write("root:x:0:0:root:/root:/bin/bash\n")
++        if not CowrieConfig.has_section("honeypot"):
++            CowrieConfig.add_section("honeypot")
++        self.before = CowrieConfig.get("honeypot", "contents_path", fallback=None)
++        CowrieConfig.set("honeypot", "contents_path", self.tmp)
++        fs._marked_trees.clear()
++
++    def tearDown(self) -> None:
++        if self.before is None:
++            CowrieConfig.remove_option("honeypot", "contents_path")
++        else:
++            CowrieConfig.set("honeypot", "contents_path", self.before)
++        fs._marked_trees.clear()
++        shutil.rmtree(self.tmp)
++
++    def make(self) -> fs.HoneyPotFilesystem:
++        return fs.HoneyPotFilesystem("linux-x64-lsb", "/root")
++
++    def test_the_contents_files_are_marked_and_the_base_tree_is_not(self) -> None:
++        first = self.make()
++        node = first.getfile("/etc/passwd")
++        assert node is not None
++        self.assertEqual(node[fs.A_REALFILE], self.real)
++        self.assertEqual(first.file_contents("/etc/passwd")[:5], b"root:")
++        base = fs.HoneyPotFilesystem.getfile(_Bare(honeyfs.get_tree()), "/etc/passwd")
++        assert base is not None
++        self.assertFalse(base[fs.A_REALFILE])
++
++    def test_later_sessions_share_the_marked_tree_without_copying(self) -> None:
++        first = self.make()
++        with patch.object(copy, "deepcopy", side_effect=AssertionError("copied")):
++            with patch.object(os, "walk", side_effect=AssertionError("walked")):
++                second = self.make()
++        self.assertIs(first.fs, second.fs)
++        self.assertFalse(first._private_fs)
++        self.assertFalse(second._private_fs)
++
++    def test_a_write_is_private_to_its_session(self) -> None:
++        first, second = self.make(), self.make()
++        first.mkfile("/tmp/mirage-one", 0, 0, 3, 0o100644)
++        self.assertTrue(first.exists("/tmp/mirage-one"))
++        self.assertFalse(second.exists("/tmp/mirage-one"))
++        self.assertIsNot(first.fs, second.fs)
++        third = self.make()
++        self.assertFalse(third.exists("/tmp/mirage-one"))
++        self.assertIs(third.fs, second.fs)
++
++    def test_the_first_session_of_all_cannot_write_to_the_shared_tree(self) -> None:
++        first = self.make()
++        shared = first.fs
++        first.mkdir("/tmp/mirage-dir", 0, 0, 4096, 0o40755)
++        self.assertIsNot(first.fs, shared)
++        self.assertFalse(self.make().exists("/tmp/mirage-dir"))
++
++
++class _Bare:
++    """Just enough of a filesystem to look a path up in a given tree."""
++
++    def __init__(self, tree: list) -> None:
++        self.fs = tree
++
++    get_path = fs.HoneyPotFilesystem.get_path
++    resolve_path = fs.HoneyPotFilesystem.resolve_path
++    home = "/root"
+-- 
+2.50.1 (Apple Git-155)
+

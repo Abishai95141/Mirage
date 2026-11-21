@@ -32,11 +32,27 @@ from typing import Any
 import yaml
 from faker import Faker
 
+from mirage_profiles import hardware, hostkeys, library, processes
 from mirage_profiles.website import Site
 from mirage_tokens import Minter
 
 HERE = Path(__file__).resolve().parents[2]
 REFERENCE = HERE / "reference" / "debian-12.json"
+ROOT = HERE.parents[1]  # the repository, in a checkout
+RENDERED = HERE / "rendered"  # the render library and its inventory (phase 3 spec 3.2a)
+# Reporting programs Cowrie answers from a fixed text or lacks, and the recorded command whose
+# output a hardware class gives them instead.
+CLASS_TEXT_COMMANDS = {
+    "lscpu": "lscpu",
+    "nproc": "nproc",
+    "arch": "arch",
+    "df": "df",
+    "mount": "mount",
+    "dmesg": "dmesg",
+    "lsblk": "lsblk",
+    "blkid": "blkid",
+    "findmnt": "findmnt",
+}
 
 # Not extractable from a container. Debian 12's kernel is built with its own gcc-12; keep this
 # in step with the reference image's gcc package if it moves.
@@ -123,7 +139,179 @@ class Render:
             "machine_id": "".join(self.rng.choice("0123456789abcdef") for _ in range(32)),
             "timezone": "Etc/UTC",
         }
+        self._hardware()
+        self._library()
         return self.h
+
+    def _hardware(self) -> None:
+        """Pick the machine this deployment claims to be (phase 3 spec 3.2a, R6), where the
+        profile lists hardware classes. The choice and the deployment's own values for the
+        class's slots are drawn from a generator of their own, so that a seed gives the same
+        host name, users and site as before classes existed."""
+        self.hw: hardware.HardwareClass | None = None
+        self.hw_values: dict[str, str] = {}
+        choices = self.p.get("hardware_classes") or []
+        if not choices:
+            return
+        rng = random.Random(f"hardware:{self.p['profile_id']}:{self.seed}")
+        self.hw = hardware.HardwareClass.load(rng.choice(sorted(choices)))
+        facts = self.hw.facts
+        if facts["kernel_release"] != self.h["kernel_release"]:
+            raise ValueError(
+                f"hardware class {self.hw.id} was recorded on kernel {facts['kernel_release']}; "
+                f"the profile claims {self.h['kernel_release']}. Record the class again."
+            )
+        self.hw_values = hardware.slot_values(self.h, rng, facts)
+        self.h["hardware_class"] = self.hw.id
+        self.h["hardware"] = {
+            k: facts[k]
+            for k in ("cpu_model", "cpus", "memory_kb", "disk", "root_device", "interface",
+                      "virtualisation", "hardware_vendor", "hardware_model")
+        }  # fmt: skip
+        self.h["mac"] = self.hw_values["mac"]
+        self.h["boot_id"] = self.hw_values["boot_id"]
+
+    def _processes(self) -> dict[str, Any] | None:
+        """This deployment's process list (``mirage_profiles.processes``), or None where the
+        profile has no hardware class or its class recorded none: the decoy then keeps what
+        it printed before."""
+        if self.hw is None:
+            return None
+        said = {c["argv"]: c for c in self.hw.commands()}
+        if not {"ps -ef", "ps aux"} <= set(said):
+            return None
+        return processes.table(
+            said["ps -ef"]["stdout"],
+            said["ps aux"]["stdout"],
+            self.hw.facts["cpus"],
+            self.hw.facts["memory_kb"],
+            str(self.seed),
+            private_ip=str(self.h.get("private_ip", "")),
+            interface=str(self.hw.facts.get("interface", "")),
+        )
+
+    def _library(self) -> None:
+        """This deployment's render library (phase 3 spec 3.2a): the entries of its class and
+        the ones every class shares, with its own values in their slots, each checked against
+        its record. Also what the decoy needs to answer for the files under /proc that change
+        by the second: the class's own record of them and how long that machine had been up."""
+        values = {
+            "hostname": self.h["hostname"],
+            "machine_id": self.h["machine_id"],
+            "private_ip": self.h["private_ip"],
+            **self.hw_values,
+        }
+        known = {"nginx version": self.ref["nginx"]["version"].rsplit("/", 1)[-1]}
+        entries = library.load(self.hw.id if self.hw else None)
+        self.rendered = library.render_for(entries, values, self.hw, known)
+        self.rendered["hardware_class"] = self.hw.id if self.hw else None
+        if self.hw is not None:
+            proc = self.hw.proc_files()
+            self.rendered["proc"] = {
+                "recorded_uptime_s": self.hw.facts["recorded_uptime_s"],
+                "loadavg": proc.get("loadavg", ""),
+                "stat": hardware.fill(proc.get("stat", ""), self.hw_values),
+            }
+        self.h["render_library"] = {
+            "version": self.rendered["version"],
+            "entries": len(self.rendered["entries"]),
+        }
+
+    def hardware_files(self) -> dict[str, str]:
+        """What the class puts under /proc and /sys, with this deployment's values. Left out:
+        the files that change by the second (uptime, load, the tick counters), which a file
+        cannot serve truthfully."""
+        if self.hw is None:
+            return {}
+        skip = {"uptime", "loadavg", "stat"}
+        files = {
+            f"/proc/{name}": hardware.fill(text, self.hw_values)
+            for name, text in self.hw.proc_files().items()
+            if name not in skip
+        }
+        for path, text in self.hw.sysfiles().items():
+            files[path] = hardware.fill(text, self.hw_values) + "\n"
+        return files
+
+    def token_paths(self) -> list[str]:
+        """The SSH decoy's files that hold a planted token."""
+        return sorted(
+            {
+                place.strip()[len("ssh:") :]
+                for token in self.tokens.tokens
+                for place in str(token.planted_at).split(",")
+                if place.strip().startswith("ssh:/")
+            }
+        )
+
+    def responder(self, tokens: list[dict[str, Any]]) -> dict[str, Any]:
+        """What the responder may know of this host (phase 3 spec 3.2b): only what a user
+        logged in to it could read for themselves, and no secret. It goes into the model's
+        prompt. The planted tokens appear as the paths that hold them, never as values: the
+        responder must not let an answer's operations touch those files."""
+        h = self.h
+        pretty = re.search(r'PRETTY_NAME="([^"]+)"', h["os_release"])
+        token_paths = sorted(
+            {
+                place.strip()[len("ssh:") :]
+                for token in tokens
+                for place in str(token.get("planted_at", "")).split(",")
+                if place.strip().startswith("ssh:/")
+            }
+        )
+        hardware_facts = h.get("hardware") or {}
+        maria = re.search(r"(\d+\.\d+\.\d+)-MariaDB", self._mysql["server_version"])
+        redis = re.search(r"v=(\S+)", self.ref["redis"]["version"])
+        return {
+            "version": 1,
+            "deployment_id": self.deployment_id,
+            "hostname": h["hostname"],
+            "os": pretty.group(1) if pretty else "Debian GNU/Linux 12 (bookworm)",
+            "kernel": f"Linux {h['kernel_release']} {h['kernel_build']} {h['machine']}",
+            "kernel_release": h["kernel_release"],
+            "arch": h["arch"],
+            "address": h["private_ip"],
+            "timezone": h["timezone"],
+            "hardware": {
+                k: hardware_facts[k]
+                for k in ("cpu_model", "cpus", "memory_kb", "virtualization")
+                if k in hardware_facts
+            },
+            "users": [{"name": "root", "uid": 0, "home": "/root"}]
+            + [
+                {"name": u["name"], "uid": u["uid"], "home": f"/home/{u['name']}"}
+                for u in self.regular
+            ],
+            "services": [
+                {
+                    "name": "sshd",
+                    "version": self.ref["ssh"]["ssh_dash_v"].split(",")[0],
+                    "port": 22,
+                },
+                {
+                    "name": "nginx",
+                    "version": self.ref["nginx"]["version"].rsplit("/", 1)[-1],
+                    "port": 80,
+                },
+                {"name": "mariadb", "version": maria.group(1) if maria else "", "port": 3306},
+                {"name": "redis-server", "version": redis.group(1) if redis else "", "port": 6379},
+            ],
+            "token_paths": token_paths,
+        }
+
+    def kernel_files(self) -> dict[str, str]:
+        """The few files under /proc/sys that say who this host is, from what the profile
+        already holds. The hardware classes did not record /proc/sys, so the rest of it is
+        absent; these are the ones people read, and every one is a fact stated elsewhere."""
+        files = {
+            "/proc/sys/kernel/hostname": self.h["hostname"],
+            "/proc/sys/kernel/osrelease": self.h["kernel_release"],
+            "/proc/sys/kernel/ostype": "Linux",
+            "/proc/sys/kernel/version": self.h["kernel_build"],
+        }
+        if self.h.get("boot_id"):
+            files["/proc/sys/kernel/random/boot_id"] = self.h["boot_id"]
+        return {path: text + "\n" for path, text in files.items()}
 
     def users(self) -> None:
         n = self.rng.randint(self.p["regular_users"]["min"], self.p["regular_users"]["max"])
@@ -163,16 +351,26 @@ class Render:
 # Read as /etc/cowrie/cowrie.cfg; compose/cowrie/cowrie.cfg (etc/cowrie.cfg) layers on top.
 [honeypot]
 hostname = {self.h["hostname"]}
+# The address this host says it has, wherever a command shows one (SSH_CONNECTION among
+# them). Left out, Cowrie asks the kernel for a route to the internet, finds none in a
+# container with no way out, and falls back to 192.168.0.1 on every deployment.
+internet_facing_ip = {self.h["private_ip"]}
 sensor_name = {self.deployment_id}
 # Built into the image by decoys/ssh/build_fs.py from the reference root and this profile.
 contents_path = /cowrie/deployment/honeyfs
 # The stock image declares /cowrie/cowrie-git/etc a VOLUME, and an old anonymous volume would
 # hide anything the build puts there; userdb.txt lives with the rest of the deployment.
 etc_path = /cowrie/deployment/etc
+# Fixed-text commands of this deployment's hardware class; looked up before Cowrie's own.
+txtcmds_path = /cowrie/deployment/txtcmds
 download_limit_size = 52428800
 
 [shell]
 filesystem = /cowrie/deployment/fs.pickle
+# The builder gives every symbolic link the text it has on the reference host (`bin ->
+# usr/bin`), where Cowrie's own tool records the place it ends up. The fork resolves such a
+# tree's relative links from the directory that holds them.
+link_targets = verbatim
 kernel_version = {self.h["kernel_release"]}
 kernel_build_string = {self.h["kernel_build"]}
 hardware_platform = {self.h["machine"]}
@@ -184,6 +382,26 @@ version = {version}
 ciphers = {",".join(ciphers)}
 macs = {",".join(macs)}
 compression = {",".join(comp)}
+# The host keys this deployment was given (mirage_profiles.hostkeys). The server presents
+# them from the very files `cat /etc/ssh/ssh_host_*_key.pub` shows, so the two cannot differ.
+rsa_public_key = /cowrie/deployment/honeyfs/etc/ssh/ssh_host_rsa_key.pub
+rsa_private_key = /cowrie/deployment/honeyfs/etc/ssh/ssh_host_rsa_key
+ecdsa_public_key = /cowrie/deployment/honeyfs/etc/ssh/ssh_host_ecdsa_key.pub
+ecdsa_private_key = /cowrie/deployment/honeyfs/etc/ssh/ssh_host_ecdsa_key
+ed25519_public_key = /cowrie/deployment/honeyfs/etc/ssh/ssh_host_ed25519_key.pub
+ed25519_private_key = /cowrie/deployment/honeyfs/etc/ssh/ssh_host_ed25519_key
+
+[mirage]
+# This deployment's render library: answers to commands the emulator lacks, from real hosts.
+render_library = /cowrie/deployment/rendered.json
+# What `ps` shows here: the hardware class's own processes and the profile's services.
+processes = /cowrie/deployment/processes.json
+# The real checksums of the image's own programs (decoys/ssh/build_fs.py), for md5sum and
+# the like: the emulated tree holds their names and sizes, not their bytes.
+file_hashes = /cowrie/deployment/hashes.db
+# Files that hold a planted token. No answer from the responder may change them, and their
+# contents are never sent to it.
+token_paths = {",".join(self.token_paths())}
 """
         d.mkdir(parents=True, exist_ok=True)
         (d / "cowrie.cfg").write_text(cfg)
@@ -196,10 +414,47 @@ compression = {",".join(comp)}
         fs = d / "honeyfs"
         files = self.etc_files()
         files.update(self.web_files())
+        files.update(self.hardware_files())
+        files.update(self.kernel_files())
+        for key in hostkeys.mint(str(self.seed), self.h["hostname"]):
+            files[f"/etc/ssh/ssh_host_{key.kind}_key"] = key.private
+            files[f"/etc/ssh/ssh_host_{key.kind}_key.pub"] = key.public
         for rel, text in files.items():
             p = fs / rel.lstrip("/")
             p.parent.mkdir(parents=True, exist_ok=True)
             p.write_text(text)
+        _dump(d / "rendered.json", self.rendered)
+        table = self._processes()
+        if table is not None:
+            _dump(d / "processes.json", table)
+        elif (d / "processes.json").exists():
+            (d / "processes.json").unlink()
+        # Cowrie answers a few reporting commands from a fixed text, the same on every
+        # honeypot: an Intel CPU, a disk no profile has. Where the class recorded the command,
+        # its text replaces Cowrie's. A text file cannot tell `df` from `df -h`: it is what
+        # the command prints with no option, and the render library above answers the exact
+        # forms the inventory names.
+        texts = d / "txtcmds"
+        if texts.exists():
+            shutil.rmtree(texts)
+        if self.hw is not None:
+            said = {c["argv"]: c for c in self.hw.commands()}
+            for program, argv in CLASS_TEXT_COMMANDS.items():
+                if argv in said and said[argv]["exit_code"] == 0:
+                    for prefix in ("usr/bin", "bin", "usr/sbin", "sbin"):
+                        target = texts / prefix / program
+                        target.parent.mkdir(parents=True, exist_ok=True)
+                        target.write_text(hardware.fill(said[argv]["stdout"], self.hw_values))
+        # The class's trees under /dev, /proc, /sys and /boot, for the filesystem builder
+        # (decoys/ssh/build_fs.py): one line a node, this deployment's values in the names.
+        tree = d / "tree"
+        if tree.exists():
+            shutil.rmtree(tree)
+        if self.hw is not None:
+            tree.mkdir()
+            for name in ("dev.tsv", "proc.tsv", "boot.tsv", "sys.tsv.gz"):
+                text = hardware.fill(self.hw.listing(name), self.hw_values)
+                (tree / name.removesuffix(".gz")).write_text(text)
         # Directories to add to the reference tree when the fs pickle is built inside the
         # Cowrie image (decoys/ssh/build-fs.sh), with owner and mode.
         overlay = [
@@ -223,7 +478,13 @@ compression = {",".join(comp)}
         install_epoch = self.h["boot_epoch"] - 86400 * self.rng.randint(120, 600)
         _dump(
             d / "fs-overlay.json",
-            {"remove": ["/home/phil"], "add": overlay, "install_epoch": install_epoch},
+            {
+                "remove": ["/home/phil"],
+                "add": overlay,
+                "install_epoch": install_epoch,
+                # When the kernel's own nodes in /dev were made (decoys/ssh/build_fs.py).
+                "boot_epoch": self.h["boot_epoch"],
+            },
         )
 
     def etc_files(self) -> dict[str, str]:
@@ -622,6 +883,10 @@ compression = {",".join(comp)}
             for t in self.tokens.tokens
         ]
         _dump(out / "tokens.json", toks)
+        # In a directory of its own: the responder is given this directory and nothing else
+        # of the profile, which holds the decoys' passwords and the tokens' values.
+        (out / "responder").mkdir(exist_ok=True)
+        _dump(out / "responder" / "responder.json", self.responder(toks))
 
 
 def render(profile_path: Path, seed: int, out: Path, reference: Path = REFERENCE) -> Path:
@@ -639,9 +904,171 @@ def main(argv: list[str] | None = None) -> None:
     r.add_argument("--seed", type=int, required=True)
     r.add_argument("--out", type=Path, required=True)
     r.add_argument("--reference", type=Path, default=REFERENCE)
+    inv = sub.add_parser(
+        "inventory", help="rank the commands the SSH decoy answers wrongly (phase 3 spec 3.2a)"
+    )
+    inv.add_argument("--corpus", type=Path, nargs="+", required=True, help="Cowrie JSON logs")
+    inv.add_argument("--catalogue", type=Path, default=ROOT / "lab/catalogue")
+    inv.add_argument("--scenarios", type=Path, default=ROOT / "lab/scenarios")
+    inv.add_argument(
+        "--split",
+        type=Path,
+        nargs="+",
+        default=[ROOT / "eval/split.yaml", ROOT / "eval/split-depth.yaml"],
+    )
+    inv.add_argument("--sources", type=Path, default=RENDERED / "sources")
+    inv.add_argument("--out", type=Path, default=RENDERED / "inventory.yaml")
+    hw = sub.add_parser(
+        "hardware", help="turn recorded hardware (build/hardware/<class>) into committed classes"
+    )
+    hw.add_argument("captures", type=Path, nargs="+", help="what capture.sh recorded, a class each")
+    lib = sub.add_parser(
+        "render-library", help="build the render library from its records (phase 3 spec 3.2a)"
+    )
+    lib.add_argument("--commands", action="store_true", help="list the commands to record")
+    lib.add_argument("--coverage", action="store_true", help="report coverage; change nothing")
+    lib.add_argument(
+        "--candidates", type=Path, help="the responder's cached commands (JSON): promote them"
+    )
+    lib.add_argument(
+        "--cached",
+        type=Path,
+        default=ROOT / "build/rendered/candidates.json",
+        help="the same file, when building: cached answers are held to the records",
+    )
+    lib.add_argument("--records", type=Path, default=ROOT / "build/rendered/reference")
+    lib.add_argument("--inventory", type=Path, default=RENDERED / "inventory.yaml")
+    lib.add_argument("--catalogue", type=Path, default=ROOT / "lab/catalogue")
+    lib.add_argument("--scenarios", type=Path, default=ROOT / "lab/scenarios")
+    lib.add_argument("--held-out", type=Path, default=ROOT / "eval/split-depth.yaml")
     args = ap.parse_args(argv)
+    if args.cmd == "render-library":
+        raise SystemExit(write_library(args))
+    if args.cmd == "inventory":
+        print(write_inventory(args))
+        return
+    if args.cmd == "hardware":
+        from mirage_profiles import hardware
+
+        for capture in args.captures:
+            class_file = hardware.HARDWARE / f"{capture.name}.yaml"
+            facts = hardware.import_capture(capture, class_file, hardware.HARDWARE / capture.name)
+            print(
+                f"{facts['id']}: {facts['cpu_model']} x{facts['cpus']}, "
+                f"{facts['memory_kb'] // 1024} MB, {facts['disk']['name']} {facts['disk']['size']}, "
+                f"{facts['interface']}, {facts['virtualisation']}"
+            )
+        return
     out = render(args.profile, args.seed, args.out, args.reference)
     print(f"rendered {out}")
+
+
+def write_inventory(args: argparse.Namespace) -> str:
+    """Build the render inventory and write it; returns a one-line summary."""
+    from mirage_profiles import inventory
+
+    tables = inventory.Tables.load(
+        args.sources / "emulator-commands.json", args.sources / "reference-commands.txt"
+    )
+    lab, used = inventory.lab_lines(args.catalogue, args.scenarios, args.split)
+    corpus = [line for path in args.corpus for line in inventory.corpus_lines(path)]
+    notes = {
+        "corpus": {
+            "what": "the public Cowrie corpus sample",
+            "files": [p.name for p in args.corpus],
+        },
+        "lab": {
+            "what": "lab procedures outside every test split, once for each step sending them",
+            "steps_by_split": used,
+        },
+    }
+    built = inventory.build({"corpus": corpus, "lab": lab}, tables, notes)
+    args.out.parent.mkdir(parents=True, exist_ok=True)
+    args.out.write_text(built.dump())
+    wrong = {name: note["wrongly_answered"] for name, note in built.sources.items()}
+    return f"wrote {args.out}: {len(built.entries)} entries; wrongly answered {wrong}"
+
+
+def write_library(args: argparse.Namespace) -> int:
+    """Build the render library, or report on the committed one. Returns the exit status."""
+    from mirage_profiles import inventory
+
+    doc = yaml.safe_load(args.inventory.read_text())
+    promoted = library.load_promoted()
+    if args.commands:
+        print("\n".join(e["argv"] for e in library.renderable(doc, promoted)))
+        return 0
+    if args.candidates is not None:
+        # Promotion (spec 3.2b): what the responder's cache holds, added to promoted.yaml.
+        cached = json.loads(args.candidates.read_text())
+        excluded = library.load_excluded(RENDERED / "excluded.yaml")
+        promoted, left = library.candidates(cached, doc, promoted, excluded)
+        library.PROMOTED.write_text(library.dump_promoted(promoted))
+        print(f"{library.PROMOTED}: {len(promoted)} commands promoted")
+        for argv, why in sorted(left.items()):
+            print(f"left: {argv[:80]}: {why}")
+        return 0
+    classes = [hardware.HardwareClass.load(c) for c in hardware.HardwareClass.available()]
+    excluded = library.load_excluded(RENDERED / "excluded.yaml")
+    status = 0
+    if not args.coverage:
+        records, identity = library.load_records(args.records)
+        available = args.records / "available.txt"
+        if available.exists():
+            # What the reference host can run, for the inventory's next ranking.
+            (RENDERED / "sources/reference-commands.txt").write_text(
+                "# The commands a Debian 12 server of the reference image has: its shell's "
+                "builtins and the\n# programs on root's PATH. Recorded by `make render-record`, "
+                "written by `make render-library`;\n# one name a line.\n"
+                + "\n".join(sorted(set(available.read_text().split())))
+                + "\n"
+            )
+        built, problems = library.build(doc, records, identity, classes, excluded, promoted)
+        # A promoted command the reference host gave no fixed answer to is no fault of the
+        # library's: the list says why it was left, and it is not asked for again.
+        names = sorted((p["argv"] for p in promoted), key=len, reverse=True)
+        kept = []
+        for problem in problems:
+            argv = next((a for a in names if problem.startswith(a + ": ")), None)
+            if argv is None:
+                kept.append(problem)
+                continue
+            for entry in promoted:
+                if entry["argv"] == argv:
+                    entry["left"] = problem[len(argv) + 2 :]
+        if len(kept) != len(problems):
+            library.PROMOTED.write_text(library.dump_promoted(promoted))
+        problems = kept
+        if args.cached is not None and args.cached.exists():
+            # Cached answers the reference host has now answered too: which are to go.
+            verdicts = library.cache_verdicts(json.loads(args.cached.read_text()), records)
+            evict = [v for v in verdicts if not v["same"]]
+            out = args.records.parent / "evict.json"
+            out.write_text(json.dumps(evict, indent=1))
+            print(
+                f"{len(verdicts)} cached answers held to the reference host: "
+                f"{sum(1 for v in verdicts if v['same'])} the same, {len(evict)} to evict ({out})"
+            )
+        written = library.write(built, RENDERED / library.DISTRIBUTION)
+        (RENDERED / "REVIEW.md").write_text(library.review(built, excluded, problems, identity))
+        print(f"wrote {len(written)} entries and {RENDERED / 'REVIEW.md'}")
+        for problem in problems:
+            print(f"not built: {problem}")
+        status = 1 if problems else 0
+    answered: set[str] = set()
+    for c in [None, *classes]:
+        entries = library.load(c.id if c else None)
+        answered |= {e.argv for e in entries}
+        if c is not None:
+            print(f"{c.id}: {len(entries)} entries, version {library.version(entries)}")
+    tables = inventory.Tables.load(
+        RENDERED / "sources/emulator-commands.json", RENDERED / "sources/reference-commands.txt"
+    )
+    held_out = library.held_out_lines(args.catalogue, args.scenarios, args.held_out)
+    for name, c in library.coverage(doc, answered, held_out, tables).items():
+        could = f"; a library could answer {c['a_library_could']}" if "a_library_could" in c else ""
+        print(f"coverage, {name}: {c['answered']} of {c['of']} ({c['share']:.1%}){could}")
+    return status
 
 
 if __name__ == "__main__":

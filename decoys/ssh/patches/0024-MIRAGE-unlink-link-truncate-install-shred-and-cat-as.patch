@@ -1,0 +1,1344 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: MIRAGE <noreply@anthropic.com>
+Date: Wed, 18 Nov 2026 17:05:29 +0530
+Subject: [PATCH] MIRAGE: unlink, link, truncate, install, shred; and cat as
+ cat is
+
+Five commands that change files were left to the responder's model, which
+describes a change as a list of operations and described the wrong one
+about one time in four while reporting success (a directory for
+truncate, nothing for install): the session was told a file was made and
+then shown that it was not. A command whose effect is a function of its
+arguments and the tree is the emulator's. Each implements the common
+options and declines the rest.
+
+cat ended every file with a newline whether it had one or not (printf
+abc > f; cat f | wc -c said 4), accepted -A -b -e -E -s -t -T -v and did
+nothing for them, numbered lines with two spaces where cat puts a tab,
+and read any file for any user. It is coreutils 9.1's now, and a file the
+user may not read is refused.
+
+All held to recordings of the reference host: 81 command lines added to
+test/mirage_file_reference.jsonl.
+---
+ src/cowrie/commands/__init__.py               |    1 +
+ src/cowrie/commands/mirage_filemore.py        | 1017 +++++++++++++++++
+ src/cowrie/test/mirage_file_reference.jsonl   |   81 ++
+ src/cowrie/test/test_mirage_file_reference.py |   11 +-
+ src/cowrie/test/test_mirage_filemore.py       |  149 +++
+ 5 files changed, 1257 insertions(+), 2 deletions(-)
+ create mode 100644 src/cowrie/commands/mirage_filemore.py
+ create mode 100644 src/cowrie/test/test_mirage_filemore.py
+
+diff --git a/src/cowrie/commands/__init__.py b/src/cowrie/commands/__init__.py
+index 244cfeb..dafb8ea 100644
+--- a/src/cowrie/commands/__init__.py
++++ b/src/cowrie/commands/__init__.py
+@@ -71,6 +71,7 @@ command_modules = [
+     "mirage_textutils",
+     "mirage_ps",
+     "mirage_fileutils",
++    "mirage_filemore",
+     "mirage_find",
+     "mirage_moreutils",
+     "mirage_accounts",
+diff --git a/src/cowrie/commands/mirage_filemore.py b/src/cowrie/commands/mirage_filemore.py
+new file mode 100644
+index 0000000..99d2e4a
+--- /dev/null
++++ b/src/cowrie/commands/mirage_filemore.py
+@@ -0,0 +1,1017 @@
++# SPDX-License-Identifier: BSD-3-Clause
++# ABOUTME: MIRAGE: unlink, link, truncate, install, shred and cat as GNU coreutils 9.1
++# ABOUTME: runs them, on the session's own tree. Stock Cowrie has only a cat, and not that one.
++
++"""Five commands that change files, each a few lines of a script that sets a
++host up or covers its tracks.
++
++Until this module they were left to the responder's model, which describes a
++change as a list of operations. It described the wrong one about one time in
++four (a directory for ``truncate``, nothing at all for ``install``), while
++reporting success: the session was told a file was made and then shown that
++it was not. A command whose effect is a function of its arguments and the
++tree is the emulator's to run.
++
++Options this does not implement are declined (see ``Declining``). The wording
++and the cases are held to recordings of the reference host
++(``test_mirage_file_reference``).
++"""
++
++from __future__ import annotations
++
++import errno
++import getopt
++import os
++import posixpath
++import stat
++from typing import Any, ClassVar
++
++from cowrie import mirage_state
++from cowrie.commands.cat import Command_cat as StockCat
++from cowrie.commands.mirage_coreutils import Users
++from cowrie.commands.mirage_fileutils import (
++    _apply_symbolic,
++    _base,
++    _octal,
++    _TreeCommand,
++    option_error,
++)
++from cowrie.shell import fs as cfs
++
++commands: dict[str, Any] = {}
++
++UNLINK_HELP = """\
++Usage: unlink FILE
++  or:  unlink OPTION
++Call the unlink function to remove the specified FILE.
++
++      --help        display this help and exit
++      --version     output version information and exit
++
++GNU coreutils online help: <https://www.gnu.org/software/coreutils/>
++Report any translation bugs to <https://translationproject.org/team/>
++Full documentation <https://www.gnu.org/software/coreutils/unlink>
++or available locally via: info '(coreutils) unlink invocation'
++"""
++UNLINK_VERSION = """\
++unlink (GNU coreutils) 9.1
++Copyright (C) 2022 Free Software Foundation, Inc.
++License GPLv3+: GNU GPL version 3 or later <https://gnu.org/licenses/gpl.html>.
++This is free software: you are free to change and redistribute it.
++There is NO WARRANTY, to the extent permitted by law.
++
++Written by Michael Stone.
++"""
++LINK_HELP = """\
++Usage: link FILE1 FILE2
++  or:  link OPTION
++Call the link function to create a link named FILE2 to an existing FILE1.
++
++      --help        display this help and exit
++      --version     output version information and exit
++
++GNU coreutils online help: <https://www.gnu.org/software/coreutils/>
++Report any translation bugs to <https://translationproject.org/team/>
++Full documentation <https://www.gnu.org/software/coreutils/link>
++or available locally via: info '(coreutils) link invocation'
++"""
++LINK_VERSION = """\
++link (GNU coreutils) 9.1
++Copyright (C) 2022 Free Software Foundation, Inc.
++License GPLv3+: GNU GPL version 3 or later <https://gnu.org/licenses/gpl.html>.
++This is free software: you are free to change and redistribute it.
++There is NO WARRANTY, to the extent permitted by law.
++
++Written by Michael Stone.
++"""
++TRUNCATE_HELP = """\
++Usage: truncate OPTION... FILE...
++Shrink or extend the size of each FILE to the specified size
++
++A FILE argument that does not exist is created.
++
++If a FILE is larger than the specified size, the extra data is lost.
++If a FILE is shorter, it is extended and the sparse extended part (hole)
++reads as zero bytes.
++
++Mandatory arguments to long options are mandatory for short options too.
++  -c, --no-create        do not create any files
++  -o, --io-blocks        treat SIZE as number of IO blocks instead of bytes
++  -r, --reference=RFILE  base size on RFILE
++  -s, --size=SIZE        set or adjust the file size by SIZE bytes
++      --help        display this help and exit
++      --version     output version information and exit
++
++The SIZE argument is an integer and optional unit (example: 10K is 10*1024).
++Units are K,M,G,T,P,E,Z,Y (powers of 1024) or KB,MB,... (powers of 1000).
++Binary prefixes can be used, too: KiB=K, MiB=M, and so on.
++
++SIZE may also be prefixed by one of the following modifying characters:
++'+' extend by, '-' reduce by, '<' at most, '>' at least,
++'/' round down to multiple of, '%' round up to multiple of.
++
++GNU coreutils online help: <https://www.gnu.org/software/coreutils/>
++Report any translation bugs to <https://translationproject.org/team/>
++Full documentation <https://www.gnu.org/software/coreutils/truncate>
++or available locally via: info '(coreutils) truncate invocation'
++"""
++TRUNCATE_VERSION = """\
++truncate (GNU coreutils) 9.1
++Copyright (C) 2022 Free Software Foundation, Inc.
++License GPLv3+: GNU GPL version 3 or later <https://gnu.org/licenses/gpl.html>.
++This is free software: you are free to change and redistribute it.
++There is NO WARRANTY, to the extent permitted by law.
++
++Written by Padraig Brady.
++"""
++INSTALL_HELP = """\
++Usage: install [OPTION]... [-T] SOURCE DEST
++  or:  install [OPTION]... SOURCE... DIRECTORY
++  or:  install [OPTION]... -t DIRECTORY SOURCE...
++  or:  install [OPTION]... -d DIRECTORY...
++
++This install program copies files (often just compiled) into destination
++locations you choose.  If you want to download and install a ready-to-use
++package on a GNU/Linux system, you should instead be using a package manager
++like yum(1) or apt-get(1).
++
++In the first three forms, copy SOURCE to DEST or multiple SOURCE(s) to
++the existing DIRECTORY, while setting permission modes and owner/group.
++In the 4th form, create all components of the given DIRECTORY(ies).
++
++Mandatory arguments to long options are mandatory for short options too.
++      --backup[=CONTROL]  make a backup of each existing destination file
++  -b                  like --backup but does not accept an argument
++  -c                  (ignored)
++  -C, --compare       compare content of source and destination files, and
++                        if no change to content, ownership, and permissions,
++                        do not modify the destination at all
++  -d, --directory     treat all arguments as directory names; create all
++                        components of the specified directories
++  -D                  create all leading components of DEST except the last,
++                        or all components of --target-directory,
++                        then copy SOURCE to DEST
++  -g, --group=GROUP   set group ownership, instead of process' current group
++  -m, --mode=MODE     set permission mode (as in chmod), instead of rwxr-xr-x
++  -o, --owner=OWNER   set ownership (super-user only)
++  -p, --preserve-timestamps   apply access/modification times of SOURCE files
++                        to corresponding destination files
++  -s, --strip         strip symbol tables
++      --strip-program=PROGRAM  program used to strip binaries
++  -S, --suffix=SUFFIX  override the usual backup suffix
++  -t, --target-directory=DIRECTORY  copy all SOURCE arguments into DIRECTORY
++  -T, --no-target-directory  treat DEST as a normal file
++  -v, --verbose       print the name of each directory as it is created
++      --preserve-context  preserve SELinux security context
++  -Z                      set SELinux security context of destination
++                            file and each created directory to default type
++      --context[=CTX]     like -Z, or if CTX is specified then set the
++                            SELinux or SMACK security context to CTX
++      --help        display this help and exit
++      --version     output version information and exit
++
++The backup suffix is '~', unless set with --suffix or SIMPLE_BACKUP_SUFFIX.
++The version control method may be selected via the --backup option or through
++the VERSION_CONTROL environment variable.  Here are the values:
++
++  none, off       never make backups (even if --backup is given)
++  numbered, t     make numbered backups
++  existing, nil   numbered if numbered backups exist, simple otherwise
++  simple, never   always make simple backups
++
++GNU coreutils online help: <https://www.gnu.org/software/coreutils/>
++Report any translation bugs to <https://translationproject.org/team/>
++Full documentation <https://www.gnu.org/software/coreutils/install>
++or available locally via: info '(coreutils) install invocation'
++"""
++INSTALL_VERSION = """\
++install (GNU coreutils) 9.1
++Copyright (C) 2022 Free Software Foundation, Inc.
++License GPLv3+: GNU GPL version 3 or later <https://gnu.org/licenses/gpl.html>.
++This is free software: you are free to change and redistribute it.
++There is NO WARRANTY, to the extent permitted by law.
++
++Written by David MacKenzie.
++"""
++SHRED_HELP = """\
++Usage: shred [OPTION]... FILE...
++Overwrite the specified FILE(s) repeatedly, in order to make it harder
++for even very expensive hardware probing to recover the data.
++
++If FILE is -, shred standard output.
++
++Mandatory arguments to long options are mandatory for short options too.
++  -f, --force    change permissions to allow writing if necessary
++  -n, --iterations=N  overwrite N times instead of the default (3)
++      --random-source=FILE  get random bytes from FILE
++  -s, --size=N   shred this many bytes (suffixes like K, M, G accepted)
++  -u             deallocate and remove file after overwriting
++      --remove[=HOW]  like -u but give control on HOW to delete;  See below
++  -v, --verbose  show progress
++  -x, --exact    do not round file sizes up to the next full block;
++                   this is the default for non-regular files
++  -z, --zero     add a final overwrite with zeros to hide shredding
++      --help        display this help and exit
++      --version     output version information and exit
++
++Delete FILE(s) if --remove (-u) is specified.  The default is not to remove
++the files because it is common to operate on device files like /dev/hda,
++and those files usually should not be removed.
++The optional HOW parameter indicates how to remove a directory entry:
++'unlink' => use a standard unlink call.
++'wipe' => also first obfuscate bytes in the name.
++'wipesync' => also sync each obfuscated byte to the device.
++The default mode is 'wipesync', but note it can be expensive.
++
++CAUTION: shred assumes the file system and hardware overwrite data in place.
++Although this is common, many platforms operate otherwise.  Also, backups
++and mirrors may contain unremovable copies that will let a shredded file
++be recovered later.  See the GNU coreutils manual for details.
++
++GNU coreutils online help: <https://www.gnu.org/software/coreutils/>
++Report any translation bugs to <https://translationproject.org/team/>
++Full documentation <https://www.gnu.org/software/coreutils/shred>
++or available locally via: info '(coreutils) shred invocation'
++"""
++SHRED_VERSION = """\
++shred (GNU coreutils) 9.1
++Copyright (C) 2022 Free Software Foundation, Inc.
++License GPLv3+: GNU GPL version 3 or later <https://gnu.org/licenses/gpl.html>.
++This is free software: you are free to change and redistribute it.
++There is NO WARRANTY, to the extent permitted by law.
++
++Written by Colin Plumb.
++"""
++
++CAT_HELP = """\
++Usage: cat [OPTION]... [FILE]...
++Concatenate FILE(s) to standard output.
++
++With no FILE, or when FILE is -, read standard input.
++
++  -A, --show-all           equivalent to -vET
++  -b, --number-nonblank    number nonempty output lines, overrides -n
++  -e                       equivalent to -vE
++  -E, --show-ends          display $ at end of each line
++  -n, --number             number all output lines
++  -s, --squeeze-blank      suppress repeated empty output lines
++  -t                       equivalent to -vT
++  -T, --show-tabs          display TAB characters as ^I
++  -u                       (ignored)
++  -v, --show-nonprinting   use ^ and M- notation, except for LFD and TAB
++      --help        display this help and exit
++      --version     output version information and exit
++
++Examples:
++  cat f - g  Output f's contents, then standard input, then g's contents.
++  cat        Copy standard input to standard output.
++
++GNU coreutils online help: <https://www.gnu.org/software/coreutils/>
++Report any translation bugs to <https://translationproject.org/team/>
++Full documentation <https://www.gnu.org/software/coreutils/cat>
++or available locally via: info '(coreutils) cat invocation'
++"""
++CAT_VERSION = """\
++cat (GNU coreutils) 9.1
++Copyright (C) 2022 Free Software Foundation, Inc.
++License GPLv3+: GNU GPL version 3 or later <https://gnu.org/licenses/gpl.html>.
++This is free software: you are free to change and redistribute it.
++There is NO WARRANTY, to the extent permitted by law.
++
++Written by Torbjorn Granlund and Richard M. Stallman.
++"""
++
++
++def _texts(command: Any, opts: dict[str, str], help_text: str, version: str) -> bool:
++    """Print the help or the version if asked for; True if that was all."""
++    if "--help" in opts:
++        command.write(help_text)
++        return True
++    if "--version" in opts:
++        command.write(version)
++        return True
++    return False
++
++
++def _contents(command: Any, path: str) -> bytes:
++    try:
++        return bytes(command.fs.file_contents(path))
++    except Exception:
++        return b""
++
++
++def _hold(command: Any, path: str, data: bytes | None, size: int) -> None:
++    """Give the file at ``path`` this size, and these bytes where they are held."""
++    command.fs.update_size(path, size)
++    node = command.fs.getfile(path)
++    node[cfs.A_CONTENTS] = data if data is not None else b""
++    node[cfs.A_REALFILE] = None
++    node[cfs.A_SIZE] = size
++
++
++# ------------------------------------------------------------------ unlink
++
++
++class Command_unlink(_TreeCommand):
++    """coreutils 9.1's unlink: one name, removed with the system call."""
++
++    name, program = "unlink", "/usr/bin/unlink"
++    long = ("help", "version")
++    declined: ClassVar[tuple[str, ...]] = ()
++
++    def call(self) -> None:
++        got = self.setup()
++        if got is None:
++            return
++        opts, operands = got
++        if _texts(self, opts, UNLINK_HELP, UNLINK_VERSION):
++            return
++        if not operands:
++            self.missing()
++            return
++        if len(operands) > 1:
++            self.errorWrite(
++                f"unlink: extra operand '{operands[1]}'\n"
++                "Try 'unlink --help' for more information.\n"
++            )
++            self.exit_code = 1
++            return
++        shown = operands[0]
++        path = self.resolved(shown)
++        node = self.node(path, False)
++        code = 0
++        if node is None:
++            code = errno.ENOENT
++        elif node[cfs.A_TYPE] == cfs.T_DIR:
++            code = errno.EISDIR
++        else:
++            code = self.code_of(self.access.may_unlink, path)
++        if code:
++            self.fail(f"cannot unlink '{shown}': {os.strerror(code)}")
++            return
++        self.fs.remove(path)
++
++
++# -------------------------------------------------------------------- link
++
++
++class Command_link(_TreeCommand):
++    """coreutils 9.1's link: a second name for a file, made with the system call."""
++
++    name, program = "link", "/usr/bin/link"
++    long = ("help", "version")
++    declined: ClassVar[tuple[str, ...]] = ()
++
++    def call(self) -> None:
++        got = self.setup()
++        if got is None:
++            return
++        opts, operands = got
++        if _texts(self, opts, LINK_HELP, LINK_VERSION):
++            return
++        if len(operands) < 2:
++            self.missing(operands[0] if operands else None)
++            return
++        if len(operands) > 2:
++            self.errorWrite(
++                f"link: extra operand '{operands[2]}'\nTry 'link --help' for more information.\n"
++            )
++            self.exit_code = 1
++            return
++        target, shown = operands
++        source, to = self.resolved(target), self.resolved(shown)
++        node = self.node(source, False)
++        if node is None:
++            code = errno.ENOENT
++        elif node[cfs.A_TYPE] == cfs.T_DIR:
++            code = errno.EPERM
++        elif self.node(to, False) is not None:
++            code = errno.EEXIST
++        else:
++            code = self.code_of(self.access.may_create, to)
++        if code:
++            self.fail(
++                f"cannot create link '{shown}' to '{target}': {os.strerror(code)}"
++            )
++            return
++        self.fs.hardlink(source, to)
++
++
++# ---------------------------------------------------------------- truncate
++
++BLOCK = 4096
++HELD_MAX = 16 * 1024 * 1024  # bytes of a file's contents kept in memory
++_UNITS = {"": 1, "B": 1}
++for _power, _letter in enumerate("KMGTPE", start=1):
++    _UNITS[_letter] = _UNITS[f"{_letter}iB"] = 1024**_power
++    _UNITS[f"{_letter}B"] = 1000**_power
++_UNITS["k"], _UNITS["kB"] = 1024, 1000
++
++
++def size_of(text: str) -> tuple[str, int] | None:
++    """A SIZE as truncate reads it: (how it is applied, the number). How is one of
++    ``=`` (set), ``+`` and ``-`` (by), ``<`` (at most), ``>`` (at least), ``/`` (round
++    down to a multiple) and ``%`` (round up to one). None for what is no size."""
++    rest = text.lstrip(" ")
++    how = "="
++    if rest[:1] in ("<", ">", "/", "%"):
++        how, rest = rest[0], rest[1:].lstrip(" ")
++    sign = 1
++    if rest[:1] in ("+", "-"):
++        if how == "=":
++            how = rest[0]
++        elif rest[0] == "-":
++            sign = -1
++        rest = rest[1:]
++    digits = len(rest) - len(rest.lstrip("0123456789"))
++    if not digits or rest[digits:] not in _UNITS:
++        return None
++    return how, sign * int(rest[:digits]) * _UNITS[rest[digits:]]
++
++
++class Command_truncate(_TreeCommand):
++    """coreutils 9.1's truncate. A file made longer is filled with NUL bytes,
++    which are held as long as the file is no larger than HELD_MAX."""
++
++    name, program = "truncate", "/usr/bin/truncate"
++    short = "cor:s:"
++    long = ("no-create", "io-blocks", "reference=", "size=", "help", "version")
++    declined: ClassVar[tuple[str, ...]] = ()
++
++    def call(self) -> None:
++        got = self.setup()
++        if got is None:
++            return
++        opts, operands = got
++        if _texts(self, opts, TRUNCATE_HELP, TRUNCATE_VERSION):
++            return
++        given = opts.get("-s", opts.get("--size"))
++        reference = opts.get("-r", opts.get("--reference"))
++        blocks = "-o" in opts or "--io-blocks" in opts
++        tried = "Try 'truncate --help' for more information.\n"
++        if given is None and reference is None:
++            self.errorWrite(
++                f"truncate: you must specify either '--size' or '--reference'\n{tried}"
++            )
++            self.exit_code = 1
++            return
++        how, number = "=", 0
++        if given is not None:
++            parsed = size_of(given)
++            if parsed is None:
++                self.fail(f"Invalid number: '{given}'")
++                return
++            how, number = parsed
++            if how in "/%" and number == 0:
++                self.fail("division by zero")
++                return
++        if reference is not None and given is not None and how == "=":
++            self.errorWrite(
++                f"truncate: you must specify a relative '--size' with '--reference'\n{tried}"
++            )
++            self.exit_code = 1
++            return
++        if blocks and given is None:
++            self.errorWrite(
++                f"truncate: '--io-blocks' was specified but '--size' was not\n{tried}"
++            )
++            self.exit_code = 1
++            return
++        if not operands:
++            self.missing_file()
++            return
++        base: int | None = None
++        if reference is not None:
++            node = self.node(self.resolved(reference))
++            if node is None:
++                self.fail(f"cannot stat '{reference}': No such file or directory")
++                return
++            base = int(node[cfs.A_SIZE])
++        if blocks:
++            number *= BLOCK
++        no_create = "-c" in opts or "--no-create" in opts
++        for shown in operands:
++            self.one(shown, how, number, base, no_create, given is not None)
++
++    def one(
++        self,
++        shown: str,
++        how: str,
++        number: int,
++        base: int | None,
++        no_create: bool,
++        sized: bool,
++    ) -> None:
++        path = self.resolved(shown)
++        node = self.node(path)
++        if node is None and no_create:
++            return
++        code = self.code_of(self.access.may_write, path)
++        if code:
++            self.fail(f"cannot open '{shown}' for writing: {os.strerror(code)}")
++            return
++        if node is None:
++            self.fs.mkfile(
++                path, self.user["uid"], self.user["gid"], 0, stat.S_IFREG | 0o644
++            )
++            node = self.fs.getfile(path)
++        now = int(node[cfs.A_SIZE])
++        start = now if base is None else base
++        if not sized:
++            new = start
++        elif how == "=":
++            new = number
++        elif how == "+":
++            new = start + number
++        elif how == "-":
++            new = max(0, start - number)
++        elif how == "<":
++            new = min(start, number)
++        elif how == ">":
++            new = max(start, number)
++        elif how == "/":
++            new = start - start % number
++        else:
++            new = start + (-start) % number
++        new = max(0, new)
++        if new == now:
++            return
++        data: bytes | None = None
++        if new <= HELD_MAX:
++            held = _contents(self, path)[:new]
++            data = held + b"\0" * (new - len(held))
++        _hold(self, path, data, new)
++
++
++# ----------------------------------------------------------------- install
++
++
++class Command_install(_TreeCommand):
++    """coreutils 9.1's install: copy files and set what they are, or make
++    directories. A destination that is there is replaced, not written over, so
++    it becomes the installer's. Backups, comparing and stripping are declined."""
++
++    name, program = "install", "/usr/bin/install"
++    short = "cdDg:m:o:pt:Tv"
++    long = (
++        "directory", "group=", "mode=", "owner=", "preserve-timestamps",
++        "target-directory=", "no-target-directory", "verbose", "help", "version",
++    )  # fmt: skip
++    declined: ClassVar[tuple[str, ...]] = (
++        "b", "C", "s", "S", "Z", "backup", "compare", "strip", "strip-program", "suffix",
++        "context", "preserve-context", "debug",
++    )  # fmt: skip
++
++    @classmethod
++    def mirage_declines(cls, args: list[str]) -> bool:
++        try:
++            cls._parse(args)
++        except getopt.GetoptError as err:
++            return any(
++                str(err.opt) == d or d.startswith(str(err.opt)) for d in cls.declined
++            )
++        return False
++
++    def call(self) -> None:
++        got = self.setup()
++        if got is None:
++            return
++        opts, operands = got
++        if _texts(self, opts, INSTALL_HELP, INSTALL_VERSION):
++            return
++        self.verbose = "-v" in opts or "--verbose" in opts
++        self.keep_times = "-p" in opts or "--preserve-timestamps" in opts
++        directories = "-d" in opts or "--directory" in opts
++        self.mode = 0o755
++        given = opts.get("-m", opts.get("--mode"))
++        if given is not None:
++            mode = _octal(given)
++            if mode is None:
++                mode = _apply_symbolic(given, 0, directories, 0)
++            if mode is None:
++                self.fail(f"invalid mode '{given}'")
++                return
++            self.mode = mode
++        users = Users()
++        self.uid, self.gid = int(self.user["uid"]), int(self.user["gid"])
++        owner = opts.get("-o", opts.get("--owner"))
++        if owner is not None:
++            entry = users.entry(owner)
++            if entry is None and not owner.isdigit():
++                self.fail(f"invalid user '{owner}'")
++                return
++            self.uid = int(entry["pw_uid"]) if entry else int(owner)
++        group = opts.get("-g", opts.get("--group"))
++        if group is not None:
++            found = [g for g in users.group if g["gr_name"] == group]
++            if not found and not group.isdigit():
++                self.fail(f"invalid group '{group}'")
++                return
++            self.gid = int(found[0]["gr_gid"]) if found else int(group)
++        if (self.uid, self.gid) != (
++            int(self.user["uid"]),
++            int(self.user["gid"]),
++        ) and int(self.user["uid"]):
++            # Only root gives files away; what a user is told depends on the kernel's
++            # answer for each file, which is not modelled here.
++            self.not_emulated()
++            return
++        if directories:
++            if not operands:
++                self.missing_file()
++                return
++            for shown in operands:
++                self.directory(shown, self.mode)
++            return
++        parents = "-D" in opts
++        into = opts.get("-t", opts.get("--target-directory"))
++        if into is not None and parents and operands:
++            if not self.directory(into, 0o755, keep=True):
++                return
++        placed = self.destination(opts, operands)
++        if placed is None:
++            return
++        sources, dest, inside = placed
++        for shown in sources:
++            target = posixpath.join(dest, _base(shown)) if inside else dest
++            if parents and not inside:
++                above = posixpath.dirname(target)
++                if (
++                    above
++                    and not self.is_dir(above)
++                    and not self.directory(above, 0o755, True)
++                ):
++                    continue
++            self.one(shown, target)
++
++    def destination(
++        self, opts: dict[str, str], operands: list[str]
++    ) -> tuple[list[str], str, bool] | None:
++        into = opts.get("-t", opts.get("--target-directory"))
++        if into is not None and operands and not self.is_dir(into):
++            code = 20 if self.node(self.resolved(into)) is not None else 2
++            self.fail(f"failed to access '{into}': {os.strerror(code)}")
++            return None
++        return super().destination(opts, operands)
++
++    def directory(self, shown: str, mode: int, keep: bool = False) -> bool:
++        """Make the directory and every missing one above it. The last takes the
++        mode and the owner asked for; one that was there takes them too, unless
++        it is only on the way to a file (``keep``)."""
++        pieces = [p for p in shown.split("/") if p]
++        walked = "/" if shown.startswith("/") else ""
++        for index, piece in enumerate(pieces):
++            walked += piece if walked in ("", "/") else f"/{piece}"
++            last = index == len(pieces) - 1
++            path = self.resolved(walked)
++            node = self.node(path)
++            if node is not None:
++                if node[cfs.A_TYPE] != cfs.T_DIR:
++                    self.fail(f"cannot create directory '{walked}': File exists")
++                    return False
++                if last and not keep:
++                    self.fs.chmod(path, stat.S_IFDIR | mode)
++                    self.fs.chown(path, self.uid, self.gid)
++                continue
++            code = self.code_of(self.access.may_create, path)
++            if code:
++                self.fail(f"cannot create directory '{walked}': {os.strerror(code)}")
++                return False
++            made = stat.S_IFDIR | (mode if last else 0o755)
++            self.fs.mkdir(
++                path, self.uid if last else self.user["uid"], self.gid, 4096, made
++            )
++            if self.verbose:
++                self.write(f"install: creating directory '{walked}'\n")
++        return True
++
++    def one(self, shown: str, target: str) -> None:
++        path, to = self.resolved(shown), self.resolved(target)
++        node = self.node(path)
++        if node is None:
++            self.fail(f"cannot stat '{shown}': No such file or directory")
++            return
++        if node[cfs.A_TYPE] == cfs.T_DIR:
++            self.fail(f"omitting directory '{shown}'")
++            return
++        if self.code_of(self.access.may_read, path):
++            self.fail(f"cannot open '{shown}' for reading: Permission denied")
++            return
++        there = self.node(to, False)
++        if there is not None and there[cfs.A_TYPE] == cfs.T_DIR:
++            self.fail(f"cannot overwrite directory '{target}' with non-directory")
++            return
++        if to == path:
++            self.fail(f"'{shown}' and '{target}' are the same file")
++            return
++        code = self.code_of(
++            self.access.may_unlink if there is not None else self.access.may_create, to
++        )
++        if code:
++            what = "remove" if there is not None else "create regular file"
++            self.fail(f"cannot {what} '{target}': {os.strerror(code)}")
++            return
++        if there is not None:
++            self.fs.remove(to)
++        size = int(node[cfs.A_SIZE])
++        self.fs.mkfile(to, self.uid, self.gid, size, stat.S_IFREG | self.mode)
++        made = self.fs.getfile(to)
++        made[cfs.A_CONTENTS] = (
++            node[cfs.A_CONTENTS] if node[cfs.A_TYPE] == cfs.T_FILE else []
++        )
++        made[cfs.A_REALFILE] = node[cfs.A_REALFILE]
++        made[cfs.A_SIZE] = size
++        if self.keep_times:
++            made[cfs.A_CTIME] = node[cfs.A_CTIME]
++        if self.verbose:
++            self.write(f"'{shown}' -> '{target}'\n")
++
++
++# ------------------------------------------------------------------- shred
++
++
++class Command_shred(_TreeCommand):
++    """coreutils 9.1's shred. The passes are not made: the file is left holding
++    what the last one would have written (random bytes, or zeros with -z), at
++    the size shred leaves it. More than three random passes use patterns that
++    -v names, and are declined."""
++
++    name, program = "shred", "/usr/bin/shred"
++    short = "fn:s:uvxz"
++    long = ("force", "iterations=", "size=", "remove", "remove=", "verbose", "exact", "zero",
++            "help", "version")  # fmt: skip
++    declined: ClassVar[tuple[str, ...]] = ("random-source",)
++
++    @classmethod
++    def _parse(cls, args: list[str]) -> tuple[list[tuple[str, str]], list[str]]:
++        # --remove takes its value only when it is attached (--remove=wipe).
++        long = [
++            n
++            for n in cls.long
++            if n
++            != ("remove" if any(a.startswith("--remove=") for a in args) else "remove=")
++        ]
++        return getopt.gnu_getopt(args, cls.short, long)
++
++    @classmethod
++    def mirage_declines(cls, args: list[str]) -> bool:
++        try:
++            opts, _ = cls._parse(args)
++        except getopt.GetoptError as err:
++            return str(err.opt).startswith("random")
++        found = dict(opts)
++        passes = found.get("-n", found.get("--iterations", "3"))
++        verbose = "-v" in found or "--verbose" in found
++        return verbose and passes.isdigit() and int(passes) > 3
++
++    def call(self) -> None:
++        got = self.setup()
++        if got is None:
++            return
++        opts, operands = got
++        if _texts(self, opts, SHRED_HELP, SHRED_VERSION):
++            return
++        given = opts.get("-n", opts.get("--iterations"))
++        if given is not None and not given.isdigit():
++            self.fail(f"invalid number of passes: '{given}'")
++            return
++        passes = 3 if given is None else int(given)
++        exact_size: int | None = None
++        sized = opts.get("-s", opts.get("--size"))
++        if sized is not None:
++            parsed = size_of(sized)
++            if parsed is None or parsed[0] != "=":
++                self.fail(f"invalid file size: '{sized}'")
++                return
++            exact_size = parsed[1]
++        how = opts.get("--remove")
++        if how not in (None, "", "unlink", "wipe", "wipesync"):
++            self.errorWrite(
++                f"shred: invalid argument '{how}' for '--remove'\n"
++                "Valid arguments are:\n  - 'unlink'\n  - 'wipe'\n  - 'wipesync'\n"
++                "Try 'shred --help' for more information.\n"
++            )
++            self.exit_code = 1
++            return
++        remove = "-u" in opts or how is not None
++        if not operands:
++            self.missing_file()
++            return
++        self.verbose = "-v" in opts or "--verbose" in opts
++        zero = "-z" in opts or "--zero" in opts
++        exact = "-x" in opts or "--exact" in opts
++        for shown in operands:
++            self.one(shown, passes, zero, exact, exact_size, remove, how or "wipesync")
++
++    def say(self, shown: str, text: str) -> None:
++        if self.verbose:
++            self.errorWrite(f"shred: {shown}: {text}\n")
++
++    def one(
++        self,
++        shown: str,
++        passes: int,
++        zero: bool,
++        exact: bool,
++        exact_size: int | None,
++        remove: bool,
++        how: str,
++    ) -> None:
++        path = self.resolved(shown)
++        node = self.node(path)
++        code = (
++            errno.ENOENT if node is None else self.code_of(self.access.may_write, path)
++        )
++        if code:
++            self.fail_on(shown, f"failed to open for writing: {os.strerror(code)}")
++            return
++        size = int(node[cfs.A_SIZE])
++        if exact_size is not None:
++            size = exact_size
++        elif not exact and size % BLOCK:
++            size += BLOCK - size % BLOCK
++        total = passes + (1 if zero else 0)
++        for index in range(1, total + 1):
++            kind = "000000" if zero and index == total else "random"
++            self.say(shown, f"pass {index}/{total} ({kind})...")
++        if total:
++            data: bytes | None = None
++            if size <= HELD_MAX:
++                data = b"\0" * size if zero else os.urandom(size)
++            _hold(self, path, data, size)
++        if not remove:
++            return
++        code = self.code_of(self.access.may_unlink, path)
++        if code:
++            self.fail_on(shown, f"failed to remove: {os.strerror(code)}")
++            return
++        self.say(shown, "removing")
++        if how != "unlink":
++            # The name is worn down before the file goes: zeros, one fewer each time.
++            head = shown[: len(shown) - len(_base(shown))]
++            last = shown
++            for length in range(len(_base(shown)), 0, -1):
++                name = head + "0" * length
++                self.say(last, f"renamed to {name}")
++                last = name
++        self.fs.remove(path)
++        self.say(shown, "removed")
++
++    def fail_on(self, shown: str, text: str) -> None:
++        self.errorWrite(f"shred: {shown}: {text}\n")
++        self.exit_code = 1
++
++
++# --------------------------------------------------------------------- cat
++
++_CAT_LONG = [
++    "number-nonblank", "number", "squeeze-blank", "show-nonprinting", "show-ends",
++    "show-tabs", "show-all", "help", "version",
++]  # fmt: skip
++_CAT_FLAGS = {
++    "-A": "vET", "--show-all": "vET", "-b": "b", "--number-nonblank": "b", "-e": "vE",
++    "-E": "E", "--show-ends": "E", "-n": "n", "--number": "n", "-s": "s",
++    "--squeeze-blank": "s", "-t": "vT", "-T": "T", "--show-tabs": "T", "-u": "",
++    "-v": "v", "--show-nonprinting": "v",
++}  # fmt: skip
++
++
++class Command_cat(StockCat):
++    """coreutils 9.1's cat. Stock Cowrie's ended every file with a newline
++    whether it had one or not (``printf abc > f; cat f | wc -c`` said 4), took
++    -A, -b, -E, -s, -T and -v and did nothing for them, numbered lines with two
++    spaces where cat puts a tab, and read any file for anyone."""
++
++    def start(self) -> None:
++        try:
++            optlist, args = getopt.gnu_getopt(self.args, "AbeEnstTuv", _CAT_LONG)
++        except getopt.GetoptError as err:
++            if "not a unique prefix" in err.msg:
++                some = " ".join(
++                    f"'--{n}'" for n in _CAT_LONG if n.startswith(str(err.opt))
++                )
++                self.errorWrite(
++                    f"cat: option '--{err.opt}' is ambiguous; possibilities: {some}\n"
++                )
++            else:
++                self.errorWrite(option_error("cat", err))
++            self.errorWrite("Try 'cat --help' for more information.\n")
++            self.exit_code = 1
++            self.exit()
++            return
++        flags = ""
++        for option, _ in optlist:
++            if option in ("--help", "--version"):
++                self.write(CAT_HELP if option == "--help" else CAT_VERSION)
++                self.exit()
++                return
++            flags += _CAT_FLAGS[option]
++        self.nonblank = "b" in flags
++        self.every = "n" in flags and not self.nonblank
++        self.squeeze, self.ends = "s" in flags, "E" in flags
++        self.tabs, self.nonprinting = "T" in flags, "v" in flags
++        self.plain = not flags
++        self.number = not self.plain  # what the stock class asks when input ends
++        self.linenumber = 1
++        self.line_start, self.blank_before = True, False
++        if args:
++            access = mirage_state.Access(self.shell)
++            for arg in args:
++                if arg == "-":
++                    self.output(self.input_data)
++                    continue
++                path = self.fs.resolve_path(arg, self.cwd)
++                if self.fs.isdir(path):
++                    self.errorWrite(f"cat: {arg}: Is a directory\n")
++                    self.exit_code = 1
++                    continue
++                try:
++                    access.may_read(path)
++                    self.output(self.fs.file_contents(path))
++                except mirage_state.Rejected as e:
++                    self.errorWrite(
++                        f"cat: {arg}: {os.strerror(e.code or errno.EACCES)}\n"
++                    )
++                    self.exit_code = 1
++                except cfs.FileNotFound:
++                    self.errorWrite(f"cat: {arg}: No such file or directory\n")
++                    self.exit_code = 1
++            self.exit()
++        elif self.input_data is not None:
++            self.output(self.input_data)
++            self.exit()
++
++    def output(self, inb: bytes | None) -> None:
++        if not inb:
++            return
++        if self.plain:
++            self.writeBytes(bytes(inb))
++            return
++        out = bytearray()
++        pieces = bytes(inb).split(b"\n")
++        for index, body in enumerate(pieces):
++            ended = index < len(pieces) - 1
++            if not ended and not body:
++                break
++            blank = self.line_start and not body and ended
++            if blank and self.squeeze and self.blank_before:
++                continue
++            self.blank_before = blank
++            if self.line_start and (self.every or (self.nonblank and not blank)):
++                out += f"{self.linenumber:>6}\t".encode()
++                self.linenumber += 1
++            if ended and self.ends and not self.nonprinting and body.endswith(b"\r"):
++                body = body[:-1] + b"^M"
++            out += self._shown(body)
++            if ended:
++                out += b"$\n" if self.ends else b"\n"
++            self.line_start = ended
++        self.writeBytes(bytes(out))
++
++    def _shown(self, body: bytes) -> bytes:
++        if not (self.tabs or self.nonprinting):
++            return body
++        out = bytearray()
++        for b in body:
++            if b == 9:
++                out += b"^I" if self.tabs else b"\t"
++            elif not self.nonprinting or 32 <= b < 127:
++                out.append(b)
++            elif b < 32:
++                out += b"^" + bytes([b + 64])
++            elif b == 127:
++                out += b"^?"
++            else:
++                low = b - 128
++                out += b"M-"
++                if low < 32:
++                    out += b"^" + bytes([low + 64])
++                elif low == 127:
++                    out += b"^?"
++                else:
++                    out.append(low)
++        return bytes(out)
++
++    def lineReceived(self, line: str) -> None:
++        self.protocol.events.dispatch(
++            "cowrie.session.input",
++            "INPUT (%(realm)s): %(input)s",
++            realm="cat",
++            input=line,
++        )
++        self.output(line.rstrip("\n").encode("utf-8") + b"\n")
++
++
++for _path in ("cat", "/bin/cat", "/usr/bin/cat"):
++    commands[_path] = Command_cat
++
++
++for _name, _class in (
++    ("unlink", Command_unlink),
++    ("link", Command_link),
++    ("truncate", Command_truncate),
++    ("install", Command_install),
++    ("shred", Command_shred),
++):
++    for _path in (_name, f"/usr/bin/{_name}", f"/bin/{_name}"):
++        commands[_path] = _class
+diff --git a/src/cowrie/test/mirage_file_reference.jsonl b/src/cowrie/test/mirage_file_reference.jsonl
+index 30a9488..42e3a3c 100644
+--- a/src/cowrie/test/mirage_file_reference.jsonl
++++ b/src/cowrie/test/mirage_file_reference.jsonl
+@@ -115,3 +115,84 @@
+ {"cmd": "f=$(mktemp); echo \"$f\" | sed 's/[A-Za-z0-9]\\{10\\}$/XXXXXXXXXX/'; ls -l $f | cut -c1-10; rm $f; d=$(mktemp -d); echo \"$d\" | sed 's/[A-Za-z0-9]\\{10\\}$/XXXXXXXXXX/'; ls -ld $d | cut -c1-10; rmdir $d; mktemp -u /tmp/pf.XXXXXX | sed 's/[A-Za-z0-9]\\{6\\}$/XXXXXX/'; mktemp /tmp/pf-absent/x.XXXXXX; echo $?; mktemp /tmp/pfXX; echo $?; mktemp -p /tmp | cut -c1-9; mktemp -t pf.XXXXXX | cut -c1-8; mktemp --suffix=.log | sed 's/tmp\\..*\\.log/tmp.X.log/'; rm -f /tmp/tmp.* /tmp/pf.*", "exit": 0, "stdout": "/tmp/tmp.XXXXXXXXXX\n-rw-------\n/tmp/tmp.XXXXXXXXXX\ndrwx------\n/tmp/pf.XXXXXX\n1\n1\n/tmp/tmp.\n/tmp/pf.\n/tmp/tmp.X.log\n", "stderr": "mktemp: failed to create file via template '/tmp/pf-absent/x.XXXXXX': No such file or directory\nmktemp: too few X's in template '/tmp/pfXX'\n"}
+ {"cmd": "printf 'a b\\nc\\n' | xargs; printf 'a b\\nc\\n' | xargs echo got; printf 'a\\nb\\nc\\n' | xargs -n 1 echo one; printf 'a\\nb\\n' | xargs -I{} echo pre-{}-post; printf '' | xargs echo empty; printf '' | xargs -r echo empty; printf 'x y z' | xargs -n 2; echo /etc/hostname | xargs cat | wc -l; printf 'a\\0b c\\0' | xargs -0 -n 1 echo; echo a | xargs nosuchcmd; echo $?; echo a | xargs false; echo $?; echo \"it's\" | xargs echo; echo $?; xargs -x < /dev/null; printf '  spaced   out \\n' | xargs echo; printf 'a\\nb\\n' | xargs -t echo 2>&1; printf 'a b c d\\n' | xargs -L 1 echo line; printf '\"q u\" o\\n' | xargs -n 1 echo", "exit": 0, "stdout": "a b c\ngot a b c\none a\none b\none c\npre-a-post\npre-b-post\nempty\nx y\nz\n1\na\nb c\n127\n123\n1\n\nspaced out\necho a b\na b\nline a b c d\nq u\no\n", "stderr": "xargs: nosuchcmd: No such file or directory\nxargs: unmatched single quote; by default quotes are special to xargs unless you use the -0 option\n"}
+ {"cmd": "echo a:b:c > /tmp/pf1; cut -d: -f2 /tmp/pf1; cut -d: -f2 /tmp/pf1 /tmp/pf-absent; echo $?; cut -f1 /tmp/pf1; cut -s -f1 /tmp/pf1; cut -d: -f1,3 --output-delimiter=- /tmp/pf1; cut -d: --complement -f2 /tmp/pf1; cut -d: -f0 /tmp/pf1; cut -d: -f3-2 /tmp/pf1; cut -d:: -f1 /tmp/pf1; cut -c1 -f1 /tmp/pf1; cut -d: -c1 /tmp/pf1; cut -d: -f x /tmp/pf1; cut -d: -f2- /tmp/pf1; cut -d: -f-2 /tmp/pf1; cut -d: -f5 /tmp/pf1; cut -b1-3 /tmp/pf1; cut -c3,1 /tmp/pf1; cut -d: -f2 - < /tmp/pf1; cut -x; cut -s -c1 /tmp/pf1; cut -d '' -f1 /tmp/pf1; rm /tmp/pf1", "exit": 0, "stdout": "b\nb\n1\na:b:c\na-c\na:c\nb:c\na:b\n\na:b\nab\nb\na:b:c\n", "stderr": "cut: /tmp/pf-absent: No such file or directory\ncut: fields are numbered from 1\nTry 'cut --help' for more information.\ncut: invalid decreasing range\nTry 'cut --help' for more information.\ncut: the delimiter must be a single character\nTry 'cut --help' for more information.\ncut: only one list may be specified\nTry 'cut --help' for more information.\ncut: an input delimiter may be specified only when operating on fields\nTry 'cut --help' for more information.\ncut: invalid field value 'x'\nTry 'cut --help' for more information.\ncut: invalid option -- 'x'\nTry 'cut --help' for more information.\ncut: suppressing non-delimited lines makes sense\n\tonly when operating on fields\nTry 'cut --help' for more information.\n"}
++{"cmd": "echo x > /tmp/u1; unlink /tmp/u1; echo $?; ls /tmp/u1", "exit": 2, "stdout": "0\n", "stderr": "ls: cannot access '/tmp/u1': No such file or directory\n"}
++{"cmd": "unlink; echo $?", "exit": 0, "stdout": "1\n", "stderr": "unlink: missing operand\nTry 'unlink --help' for more information.\n"}
++{"cmd": "unlink /tmp/a /tmp/b; echo $?", "exit": 0, "stdout": "1\n", "stderr": "unlink: extra operand '/tmp/b'\nTry 'unlink --help' for more information.\n"}
++{"cmd": "unlink /tmp/nosuch; echo $?", "exit": 0, "stdout": "1\n", "stderr": "unlink: cannot unlink '/tmp/nosuch': No such file or directory\n"}
++{"cmd": "mkdir /tmp/ud; unlink /tmp/ud; echo $?; rmdir /tmp/ud", "exit": 0, "stdout": "1\n", "stderr": "unlink: cannot unlink '/tmp/ud': Is a directory\n"}
++{"cmd": "unlink /tmp/nosuchdir/x; echo $?", "exit": 0, "stdout": "1\n", "stderr": "unlink: cannot unlink '/tmp/nosuchdir/x': No such file or directory\n"}
++{"cmd": "unlink -x; echo $?; unlink --nosuch; echo $?", "exit": 0, "stdout": "1\n1\n", "stderr": "unlink: invalid option -- 'x'\nTry 'unlink --help' for more information.\nunlink: unrecognized option '--nosuch'\nTry 'unlink --help' for more information.\n"}
++{"cmd": "unlink --help", "exit": 0, "stdout": "Usage: unlink FILE\n  or:  unlink OPTION\nCall the unlink function to remove the specified FILE.\n\n      --help        display this help and exit\n      --version     output version information and exit\n\nGNU coreutils online help: <https://www.gnu.org/software/coreutils/>\nReport any translation bugs to <https://translationproject.org/team/>\nFull documentation <https://www.gnu.org/software/coreutils/unlink>\nor available locally via: info '(coreutils) unlink invocation'\n", "stderr": ""}
++{"cmd": "unlink --version", "exit": 0, "stdout": "unlink (GNU coreutils) 9.1\nCopyright (C) 2022 Free Software Foundation, Inc.\nLicense GPLv3+: GNU GPL version 3 or later <https://gnu.org/licenses/gpl.html>.\nThis is free software: you are free to change and redistribute it.\nThere is NO WARRANTY, to the extent permitted by law.\n\nWritten by Michael Stone.\n", "stderr": ""}
++{"cmd": "echo x > /tmp/l1; link /tmp/l1 /tmp/l2; echo $?; cat /tmp/l2; stat -c '%h %s' /tmp/l1 /tmp/l2; echo y >> /tmp/l1; cat /tmp/l2; rm /tmp/l1; stat -c '%h' /tmp/l2; rm /tmp/l2", "exit": 0, "stdout": "0\nx\n2 2\n2 2\nx\ny\n1\n", "stderr": ""}
++{"cmd": "link; echo $?", "exit": 0, "stdout": "1\n", "stderr": "link: missing operand\nTry 'link --help' for more information.\n"}
++{"cmd": "link /tmp/a; echo $?", "exit": 0, "stdout": "1\n", "stderr": "link: missing operand after '/tmp/a'\nTry 'link --help' for more information.\n"}
++{"cmd": "link /tmp/a /tmp/b /tmp/c; echo $?", "exit": 0, "stdout": "1\n", "stderr": "link: extra operand '/tmp/c'\nTry 'link --help' for more information.\n"}
++{"cmd": "link /tmp/nosuch /tmp/lx; echo $?", "exit": 0, "stdout": "1\n", "stderr": "link: cannot create link '/tmp/lx' to '/tmp/nosuch': No such file or directory\n"}
++{"cmd": "echo x > /tmp/l3; link /tmp/l3 /tmp/l3; echo $?; echo y > /tmp/l4; link /tmp/l3 /tmp/l4; echo $?; rm /tmp/l3 /tmp/l4", "exit": 0, "stdout": "1\n1\n", "stderr": "link: cannot create link '/tmp/l3' to '/tmp/l3': File exists\nlink: cannot create link '/tmp/l4' to '/tmp/l3': File exists\n"}
++{"cmd": "link /etc /tmp/ld; echo $?", "exit": 0, "stdout": "1\n", "stderr": "link: cannot create link '/tmp/ld' to '/etc': Operation not permitted\n"}
++{"cmd": "echo x > /tmp/l5; link /tmp/l5 /tmp/nosuchdir/l; echo $?; rm /tmp/l5", "exit": 0, "stdout": "1\n", "stderr": "link: cannot create link '/tmp/nosuchdir/l' to '/tmp/l5': No such file or directory\n"}
++{"cmd": "link -x; echo $?", "exit": 0, "stdout": "1\n", "stderr": "link: invalid option -- 'x'\nTry 'link --help' for more information.\n"}
++{"cmd": "link --help", "exit": 0, "stdout": "Usage: link FILE1 FILE2\n  or:  link OPTION\nCall the link function to create a link named FILE2 to an existing FILE1.\n\n      --help        display this help and exit\n      --version     output version information and exit\n\nGNU coreutils online help: <https://www.gnu.org/software/coreutils/>\nReport any translation bugs to <https://translationproject.org/team/>\nFull documentation <https://www.gnu.org/software/coreutils/link>\nor available locally via: info '(coreutils) link invocation'\n", "stderr": ""}
++{"cmd": "link --version", "exit": 0, "stdout": "link (GNU coreutils) 9.1\nCopyright (C) 2022 Free Software Foundation, Inc.\nLicense GPLv3+: GNU GPL version 3 or later <https://gnu.org/licenses/gpl.html>.\nThis is free software: you are free to change and redistribute it.\nThere is NO WARRANTY, to the extent permitted by law.\n\nWritten by Michael Stone.\n", "stderr": ""}
++{"cmd": "truncate -s 10 /tmp/t1; echo $?; wc -c /tmp/t1; od -c /tmp/t1; stat -c '%a %s' /tmp/t1; rm /tmp/t1", "exit": 0, "stdout": "0\n10 /tmp/t1\n0000000  \\0  \\0  \\0  \\0  \\0  \\0  \\0  \\0  \\0  \\0\n0000012\n644 10\n", "stderr": ""}
++{"cmd": "echo hello world > /tmp/t2; truncate -s 5 /tmp/t2; cat /tmp/t2; echo; truncate -s +3 /tmp/t2; wc -c < /tmp/t2; od -c /tmp/t2; truncate -s -6 /tmp/t2; wc -c < /tmp/t2; cat /tmp/t2; echo; rm /tmp/t2", "exit": 0, "stdout": "hello\n8\n0000000   h   e   l   l   o  \\0  \\0  \\0\n0000010\n2\nhe\n", "stderr": ""}
++{"cmd": "truncate -s 1K /tmp/t3; wc -c < /tmp/t3; truncate -s '<100' /tmp/t3; wc -c < /tmp/t3; truncate -s '>2000' /tmp/t3; wc -c < /tmp/t3; truncate -s /300 /tmp/t3; wc -c < /tmp/t3; truncate -s %700 /tmp/t3; wc -c < /tmp/t3; truncate -s '<5000' /tmp/t3; wc -c < /tmp/t3; truncate -s -99999 /tmp/t3; wc -c < /tmp/t3; rm /tmp/t3", "exit": 0, "stdout": "1024\n100\n2000\n1800\n2100\n2100\n0\n", "stderr": ""}
++{"cmd": "truncate -s 1KB /tmp/t4; wc -c < /tmp/t4; truncate -s 1M /tmp/t4; wc -c < /tmp/t4; truncate -s 2k /tmp/t4; wc -c < /tmp/t4; truncate -s 0 /tmp/t4; wc -c < /tmp/t4; rm /tmp/t4", "exit": 0, "stdout": "1000\n1048576\n2048\n0\n", "stderr": ""}
++{"cmd": "truncate; echo $?", "exit": 0, "stdout": "1\n", "stderr": "truncate: you must specify either '--size' or '--reference'\nTry 'truncate --help' for more information.\n"}
++{"cmd": "truncate -s 10; echo $?", "exit": 0, "stdout": "1\n", "stderr": "truncate: missing file operand\nTry 'truncate --help' for more information.\n"}
++{"cmd": "truncate /tmp/t5; echo $?", "exit": 0, "stdout": "1\n", "stderr": "truncate: you must specify either '--size' or '--reference'\nTry 'truncate --help' for more information.\n"}
++{"cmd": "truncate -s abc /tmp/t5; echo $?; truncate -s 10x /tmp/t5; echo $?; truncate -s '' /tmp/t5; echo $?; ls /tmp/t5", "exit": 2, "stdout": "1\n1\n1\n", "stderr": "truncate: Invalid number: 'abc'\ntruncate: Invalid number: '10x'\ntruncate: Invalid number: ''\nls: cannot access '/tmp/t5': No such file or directory\n"}
++{"cmd": "truncate -c -s 10 /tmp/nosuch-t; echo $?; ls /tmp/nosuch-t", "exit": 2, "stdout": "0\n", "stderr": "ls: cannot access '/tmp/nosuch-t': No such file or directory\n"}
++{"cmd": "truncate -s 10 /tmp/nosuchdir/x; echo $?", "exit": 0, "stdout": "1\n", "stderr": "truncate: cannot open '/tmp/nosuchdir/x' for writing: No such file or directory\n"}
++{"cmd": "truncate -s 0 /etc; echo $?", "exit": 0, "stdout": "1\n", "stderr": "truncate: cannot open '/etc' for writing: Is a directory\n"}
++{"cmd": "truncate -r /etc/hostname /tmp/t6; echo $?; wc -c < /tmp/t6; truncate -r /tmp/nosuch /tmp/t6; echo $?; truncate -r /etc/hostname -s 5 /tmp/t6; echo $?; truncate -r /etc/hostname -s +5 /tmp/t6; echo $?; wc -c < /tmp/t6; rm /tmp/t6", "exit": 0, "stdout": "0\n6\n1\n1\n0\n11\n", "stderr": "truncate: cannot stat '/tmp/nosuch': No such file or directory\ntruncate: you must specify a relative '--size' with '--reference'\nTry 'truncate --help' for more information.\n"}
++{"cmd": "truncate --size=4 /tmp/t7 /tmp/t8; echo $?; wc -c /tmp/t7 /tmp/t8; truncate -s 2 /tmp/t7 /tmp/nosuchdir/y /tmp/t8; echo $?; wc -c /tmp/t7 /tmp/t8; rm /tmp/t7 /tmp/t8", "exit": 0, "stdout": "0\n4 /tmp/t7\n4 /tmp/t8\n8 total\n1\n2 /tmp/t7\n2 /tmp/t8\n4 total\n", "stderr": "truncate: cannot open '/tmp/nosuchdir/y' for writing: No such file or directory\n"}
++{"cmd": "truncate -o -s 2 /tmp/t9; echo $?; wc -c < /tmp/t9; rm /tmp/t9", "exit": 0, "stdout": "0\n8192\n", "stderr": ""}
++{"cmd": "truncate -x; echo $?; truncate --nosuch; echo $?", "exit": 0, "stdout": "1\n1\n", "stderr": "truncate: invalid option -- 'x'\nTry 'truncate --help' for more information.\ntruncate: unrecognized option '--nosuch'\nTry 'truncate --help' for more information.\n"}
++{"cmd": "truncate --help", "exit": 0, "stdout": "Usage: truncate OPTION... FILE...\nShrink or extend the size of each FILE to the specified size\n\nA FILE argument that does not exist is created.\n\nIf a FILE is larger than the specified size, the extra data is lost.\nIf a FILE is shorter, it is extended and the sparse extended part (hole)\nreads as zero bytes.\n\nMandatory arguments to long options are mandatory for short options too.\n  -c, --no-create        do not create any files\n  -o, --io-blocks        treat SIZE as number of IO blocks instead of bytes\n  -r, --reference=RFILE  base size on RFILE\n  -s, --size=SIZE        set or adjust the file size by SIZE bytes\n      --help        display this help and exit\n      --version     output version information and exit\n\nThe SIZE argument is an integer and optional unit (example: 10K is 10*1024).\nUnits are K,M,G,T,P,E,Z,Y (powers of 1024) or KB,MB,... (powers of 1000).\nBinary prefixes can be used, too: KiB=K, MiB=M, and so on.\n\nSIZE may also be prefixed by one of the following modifying characters:\n'+' extend by, '-' reduce by, '<' at most, '>' at least,\n'/' round down to multiple of, '%' round up to multiple of.\n\nGNU coreutils online help: <https://www.gnu.org/software/coreutils/>\nReport any translation bugs to <https://translationproject.org/team/>\nFull documentation <https://www.gnu.org/software/coreutils/truncate>\nor available locally via: info '(coreutils) truncate invocation'\n", "stderr": ""}
++{"cmd": "truncate --version", "exit": 0, "stdout": "truncate (GNU coreutils) 9.1\nCopyright (C) 2022 Free Software Foundation, Inc.\nLicense GPLv3+: GNU GPL version 3 or later <https://gnu.org/licenses/gpl.html>.\nThis is free software: you are free to change and redistribute it.\nThere is NO WARRANTY, to the extent permitted by law.\n\nWritten by Padraig Brady.\n", "stderr": ""}
++{"cmd": "install -d /tmp/i1; echo $?; stat -c '%a %U %G' /tmp/i1; install -d -m 750 /tmp/i1/a/b; echo $?; stat -c '%a %n' /tmp/i1/a /tmp/i1/a/b; install -d /tmp/i1; echo $?; rm -r /tmp/i1", "exit": 0, "stdout": "0\n755 root root\n0\n755 /tmp/i1/a\n750 /tmp/i1/a/b\n0\n", "stderr": ""}
++{"cmd": "install -m 600 /etc/hostname /tmp/i2; echo $?; stat -c '%a %U %G %s' /tmp/i2; cat /tmp/i2; install /etc/hostname /tmp/i2; echo $?; stat -c '%a' /tmp/i2; rm /tmp/i2", "exit": 0, "stdout": "0\n600 root root 6\nweb01\n0\n755\n", "stderr": ""}
++{"cmd": "mkdir /tmp/i3; install -m 644 /etc/hostname /etc/shells /tmp/i3; echo $?; stat -c '%a %n' /tmp/i3/*; install /etc/hostname /tmp/i3; stat -c '%a %n' /tmp/i3/hostname; rm -r /tmp/i3", "exit": 0, "stdout": "0\n644 /tmp/i3/hostname\n644 /tmp/i3/shells\n755 /tmp/i3/hostname\n", "stderr": ""}
++{"cmd": "install -D -m 640 /etc/hostname /tmp/i4/x/y; echo $?; stat -c '%a %n' /tmp/i4/x/y /tmp/i4/x /tmp/i4; rm -r /tmp/i4", "exit": 0, "stdout": "0\n640 /tmp/i4/x/y\n755 /tmp/i4/x\n755 /tmp/i4\n", "stderr": ""}
++{"cmd": "install -o caleb -g caleb -m 600 /etc/hostname /tmp/i5; echo $?; stat -c '%U %G %a' /tmp/i5; install -o nosuchuser /etc/hostname /tmp/i5; echo $?; install -g nosuchgroup /etc/hostname /tmp/i5; echo $?; rm /tmp/i5", "exit": 0, "stdout": "0\ncaleb caleb 600\n1\n1\n", "stderr": "install: invalid user 'nosuchuser'\ninstall: invalid group 'nosuchgroup'\n"}
++{"cmd": "install -v -m 600 /etc/hostname /tmp/i6; install -v -d /tmp/i6d/a; install -v /etc/hostname /etc/shells /tmp/i6d; rm -r /tmp/i6 /tmp/i6d", "exit": 0, "stdout": "'/etc/hostname' -> '/tmp/i6'\ninstall: creating directory '/tmp/i6d'\ninstall: creating directory '/tmp/i6d/a'\n'/etc/hostname' -> '/tmp/i6d/hostname'\n'/etc/shells' -> '/tmp/i6d/shells'\n", "stderr": ""}
++{"cmd": "install -t /tmp/i7 /etc/hostname; echo $?; mkdir /tmp/i7; install -t /tmp/i7 /etc/hostname /etc/shells; echo $?; ls /tmp/i7; rm -r /tmp/i7", "exit": 0, "stdout": "1\n0\nhostname\nshells\n", "stderr": "install: failed to access '/tmp/i7': No such file or directory\n"}
++{"cmd": "install; echo $?", "exit": 0, "stdout": "1\n", "stderr": "install: missing file operand\nTry 'install --help' for more information.\n"}
++{"cmd": "install /etc/hostname; echo $?", "exit": 0, "stdout": "1\n", "stderr": "install: missing destination file operand after '/etc/hostname'\nTry 'install --help' for more information.\n"}
++{"cmd": "install /tmp/nosuch /tmp/ix; echo $?", "exit": 0, "stdout": "1\n", "stderr": "install: cannot stat '/tmp/nosuch': No such file or directory\n"}
++{"cmd": "install -m 999 /etc/hostname /tmp/i8; echo $?; install -m u=rw,go=r /etc/hostname /tmp/i8; echo $?; stat -c '%a' /tmp/i8; install -m a+x,u+s /etc/hostname /tmp/i8; stat -c '%a' /tmp/i8; rm /tmp/i8", "exit": 0, "stdout": "1\n0\n644\n4111\n", "stderr": "install: invalid mode '999'\n"}
++{"cmd": "install -d; echo $?", "exit": 0, "stdout": "1\n", "stderr": "install: missing file operand\nTry 'install --help' for more information.\n"}
++{"cmd": "install /etc /tmp/i9; echo $?", "exit": 0, "stdout": "1\n", "stderr": "install: omitting directory '/etc'\n"}
++{"cmd": "install /etc/hostname /etc/shells /tmp/i10; echo $?", "exit": 0, "stdout": "1\n", "stderr": "install: target '/tmp/i10': No such file or directory\n"}
++{"cmd": "install /etc/hostname /tmp/nosuchdir/z; echo $?", "exit": 0, "stdout": "1\n", "stderr": "install: cannot create regular file '/tmp/nosuchdir/z': No such file or directory\n"}
++{"cmd": "install -m 644 /etc/hostname /tmp/i11; install -p -m 644 /etc/hostname /tmp/i12; echo $?; rm /tmp/i11 /tmp/i12", "exit": 0, "stdout": "0\n", "stderr": ""}
++{"cmd": "install -x; echo $?; install --nosuch; echo $?", "exit": 0, "stdout": "1\n1\n", "stderr": "install: invalid option -- 'x'\nTry 'install --help' for more information.\ninstall: unrecognized option '--nosuch'\nTry 'install --help' for more information.\n"}
++{"cmd": "install --help", "exit": 0, "stdout": "Usage: install [OPTION]... [-T] SOURCE DEST\n  or:  install [OPTION]... SOURCE... DIRECTORY\n  or:  install [OPTION]... -t DIRECTORY SOURCE...\n  or:  install [OPTION]... -d DIRECTORY...\n\nThis install program copies files (often just compiled) into destination\nlocations you choose.  If you want to download and install a ready-to-use\npackage on a GNU/Linux system, you should instead be using a package manager\nlike yum(1) or apt-get(1).\n\nIn the first three forms, copy SOURCE to DEST or multiple SOURCE(s) to\nthe existing DIRECTORY, while setting permission modes and owner/group.\nIn the 4th form, create all components of the given DIRECTORY(ies).\n\nMandatory arguments to long options are mandatory for short options too.\n      --backup[=CONTROL]  make a backup of each existing destination file\n  -b                  like --backup but does not accept an argument\n  -c                  (ignored)\n  -C, --compare       compare content of source and destination files, and\n                        if no change to content, ownership, and permissions,\n                        do not modify the destination at all\n  -d, --directory     treat all arguments as directory names; create all\n                        components of the specified directories\n  -D                  create all leading components of DEST except the last,\n                        or all components of --target-directory,\n                        then copy SOURCE to DEST\n  -g, --group=GROUP   set group ownership, instead of process' current group\n  -m, --mode=MODE     set permission mode (as in chmod), instead of rwxr-xr-x\n  -o, --owner=OWNER   set ownership (super-user only)\n  -p, --preserve-timestamps   apply access/modification times of SOURCE files\n                        to corresponding destination files\n  -s, --strip         strip symbol tables\n      --strip-program=PROGRAM  program used to strip binaries\n  -S, --suffix=SUFFIX  override the usual backup suffix\n  -t, --target-directory=DIRECTORY  copy all SOURCE arguments into DIRECTORY\n  -T, --no-target-directory  treat DEST as a normal file\n  -v, --verbose       print the name of each directory as it is created\n      --preserve-context  preserve SELinux security context\n  -Z                      set SELinux security context of destination\n                            file and each created directory to default type\n      --context[=CTX]     like -Z, or if CTX is specified then set the\n                            SELinux or SMACK security context to CTX\n      --help        display this help and exit\n      --version     output version information and exit\n\nThe backup suffix is '~', unless set with --suffix or SIMPLE_BACKUP_SUFFIX.\nThe version control method may be selected via the --backup option or through\nthe VERSION_CONTROL environment variable.  Here are the values:\n\n  none, off       never make backups (even if --backup is given)\n  numbered, t     make numbered backups\n  existing, nil   numbered if numbered backups exist, simple otherwise\n  simple, never   always make simple backups\n\nGNU coreutils online help: <https://www.gnu.org/software/coreutils/>\nReport any translation bugs to <https://translationproject.org/team/>\nFull documentation <https://www.gnu.org/software/coreutils/install>\nor available locally via: info '(coreutils) install invocation'\n", "stderr": ""}
++{"cmd": "install --version", "exit": 0, "stdout": "install (GNU coreutils) 9.1\nCopyright (C) 2022 Free Software Foundation, Inc.\nLicense GPLv3+: GNU GPL version 3 or later <https://gnu.org/licenses/gpl.html>.\nThis is free software: you are free to change and redistribute it.\nThere is NO WARRANTY, to the extent permitted by law.\n\nWritten by David MacKenzie.\n", "stderr": ""}
++{"cmd": "echo x > /tmp/s1; shred -u /tmp/s1; echo $?; ls /tmp/s1", "exit": 2, "stdout": "0\n", "stderr": "ls: cannot access '/tmp/s1': No such file or directory\n"}
++{"cmd": "echo x > /tmp/s2; shred /tmp/s2; echo $?; wc -c < /tmp/s2; stat -c '%a' /tmp/s2; rm /tmp/s2", "exit": 0, "stdout": "0\n4096\n644\n", "stderr": ""}
++{"cmd": "echo x > /tmp/s3; shred -v -u /tmp/s3; echo $?", "exit": 0, "stdout": "0\n", "stderr": "shred: /tmp/s3: pass 1/3 (random)...\nshred: /tmp/s3: pass 2/3 (random)...\nshred: /tmp/s3: pass 3/3 (random)...\nshred: /tmp/s3: removing\nshred: /tmp/s3: renamed to /tmp/00\nshred: /tmp/00: renamed to /tmp/0\nshred: /tmp/s3: removed\n"}
++{"cmd": "echo x > /tmp/s4; shred -n 1 -z -v /tmp/s4; echo $?; wc -c < /tmp/s4; od -c /tmp/s4 | head -2; rm /tmp/s4", "exit": 0, "stdout": "0\n4096\n0000000  \\0  \\0  \\0  \\0  \\0  \\0  \\0  \\0  \\0  \\0  \\0  \\0  \\0  \\0  \\0  \\0\n*\n", "stderr": "shred: /tmp/s4: pass 1/2 (random)...\nshred: /tmp/s4: pass 2/2 (000000)...\n"}
++{"cmd": "echo x > /tmp/s5; shred -x -n 2 -v /tmp/s5; wc -c < /tmp/s5; shred -s 10 /tmp/s5; wc -c < /tmp/s5; rm /tmp/s5", "exit": 0, "stdout": "2\n10\n", "stderr": "shred: /tmp/s5: pass 1/2 (random)...\nshred: /tmp/s5: pass 2/2 (random)...\n"}
++{"cmd": "echo x > /tmp/s6; echo y > /tmp/s7; shred -u /tmp/s6 /tmp/nosuch /tmp/s7; echo $?; ls /tmp/s6 /tmp/s7", "exit": 2, "stdout": "1\n", "stderr": "shred: /tmp/nosuch: failed to open for writing: No such file or directory\nls: cannot access '/tmp/s6': No such file or directory\nls: cannot access '/tmp/s7': No such file or directory\n"}
++{"cmd": "shred; echo $?", "exit": 0, "stdout": "1\n", "stderr": "shred: missing file operand\nTry 'shred --help' for more information.\n"}
++{"cmd": "shred /tmp/nosuch; echo $?", "exit": 0, "stdout": "1\n", "stderr": "shred: /tmp/nosuch: failed to open for writing: No such file or directory\n"}
++{"cmd": "shred -u /etc; echo $?", "exit": 0, "stdout": "1\n", "stderr": "shred: /etc: failed to open for writing: Is a directory\n"}
++{"cmd": "echo x > /tmp/s8; shred --remove=unlink -v /tmp/s8; echo $?; echo x > /tmp/s9; shred --remove=wipe -v /tmp/s9; echo x > /tmp/sa; shred -uv -n 0 /tmp/sa", "exit": 0, "stdout": "0\n", "stderr": "shred: /tmp/s8: pass 1/3 (random)...\nshred: /tmp/s8: pass 2/3 (random)...\nshred: /tmp/s8: pass 3/3 (random)...\nshred: /tmp/s8: removing\nshred: /tmp/s8: removed\nshred: /tmp/s9: pass 1/3 (random)...\nshred: /tmp/s9: pass 2/3 (random)...\nshred: /tmp/s9: pass 3/3 (random)...\nshred: /tmp/s9: removing\nshred: /tmp/s9: renamed to /tmp/00\nshred: /tmp/00: renamed to /tmp/0\nshred: /tmp/s9: removed\nshred: /tmp/sa: removing\nshred: /tmp/sa: renamed to /tmp/00\nshred: /tmp/00: renamed to /tmp/0\nshred: /tmp/sa: removed\n"}
++{"cmd": "shred -n; echo $?; shred -n abc /tmp/x; echo $?; shred -x; echo $?; shred --nosuch; echo $?", "exit": 0, "stdout": "1\n1\n1\n1\n", "stderr": "shred: option requires an argument -- 'n'\nTry 'shred --help' for more information.\nshred: invalid number of passes: 'abc'\nshred: missing file operand\nTry 'shred --help' for more information.\nshred: unrecognized option '--nosuch'\nTry 'shred --help' for more information.\n"}
++{"cmd": "shred --help", "exit": 0, "stdout": "Usage: shred [OPTION]... FILE...\nOverwrite the specified FILE(s) repeatedly, in order to make it harder\nfor even very expensive hardware probing to recover the data.\n\nIf FILE is -, shred standard output.\n\nMandatory arguments to long options are mandatory for short options too.\n  -f, --force    change permissions to allow writing if necessary\n  -n, --iterations=N  overwrite N times instead of the default (3)\n      --random-source=FILE  get random bytes from FILE\n  -s, --size=N   shred this many bytes (suffixes like K, M, G accepted)\n  -u             deallocate and remove file after overwriting\n      --remove[=HOW]  like -u but give control on HOW to delete;  See below\n  -v, --verbose  show progress\n  -x, --exact    do not round file sizes up to the next full block;\n                   this is the default for non-regular files\n  -z, --zero     add a final overwrite with zeros to hide shredding\n      --help        display this help and exit\n      --version     output version information and exit\n\nDelete FILE(s) if --remove (-u) is specified.  The default is not to remove\nthe files because it is common to operate on device files like /dev/hda,\nand those files usually should not be removed.\nThe optional HOW parameter indicates how to remove a directory entry:\n'unlink' => use a standard unlink call.\n'wipe' => also first obfuscate bytes in the name.\n'wipesync' => also sync each obfuscated byte to the device.\nThe default mode is 'wipesync', but note it can be expensive.\n\nCAUTION: shred assumes the file system and hardware overwrite data in place.\nAlthough this is common, many platforms operate otherwise.  Also, backups\nand mirrors may contain unremovable copies that will let a shredded file\nbe recovered later.  See the GNU coreutils manual for details.\n\nGNU coreutils online help: <https://www.gnu.org/software/coreutils/>\nReport any translation bugs to <https://translationproject.org/team/>\nFull documentation <https://www.gnu.org/software/coreutils/shred>\nor available locally via: info '(coreutils) shred invocation'\n", "stderr": ""}
++{"cmd": "shred --version", "exit": 0, "stdout": "shred (GNU coreutils) 9.1\nCopyright (C) 2022 Free Software Foundation, Inc.\nLicense GPLv3+: GNU GPL version 3 or later <https://gnu.org/licenses/gpl.html>.\nThis is free software: you are free to change and redistribute it.\nThere is NO WARRANTY, to the extent permitted by law.\n\nWritten by Colin Plumb.\n", "stderr": ""}
++{"cmd": "printf abc > /tmp/c1; cat /tmp/c1 | wc -c; cat /tmp/c1; echo .; cat /tmp/c1 /tmp/c1; echo .; rm /tmp/c1", "exit": 0, "stdout": "3\nabc.\nabcabc.\n", "stderr": ""}
++{"cmd": "printf 'a\\n\\n\\n\\nb\\tc\\n' > /tmp/c2; cat -n /tmp/c2; cat -b /tmp/c2; cat -s /tmp/c2; cat -E /tmp/c2; cat -T /tmp/c2; cat -A /tmp/c2; rm /tmp/c2", "exit": 0, "stdout": "     1\ta\n     2\t\n     3\t\n     4\t\n     5\tb\tc\n     1\ta\n\n\n\n     2\tb\tc\na\n\nb\tc\na$\n$\n$\n$\nb\tc$\na\n\n\n\nb^Ic\na$\n$\n$\n$\nb^Ic$\n", "stderr": ""}
++{"cmd": "printf 'a\\n\\n\\n\\nb\\tc\\n' > /tmp/c2; cat -nE /tmp/c2; cat -bs /tmp/c2; cat -ns /tmp/c2; cat -nb /tmp/c2; cat -sE /tmp/c2; rm /tmp/c2", "exit": 0, "stdout": "     1\ta$\n     2\t$\n     3\t$\n     4\t$\n     5\tb\tc$\n     1\ta\n\n     2\tb\tc\n     1\ta\n     2\t\n     3\tb\tc\n     1\ta\n\n\n\n     2\tb\tc\na$\n$\nb\tc$\n", "stderr": ""}
++{"cmd": "printf 'x\\r\\ny\\001z\\177\\200\\237\\240\\376\\377\\n' > /tmp/c3; cat -v /tmp/c3; cat -A /tmp/c3; cat -e /tmp/c3; cat -t /tmp/c3; cat -ET /tmp/c3 | wc -c; rm /tmp/c3", "exit": 0, "stdout": "x^M\ny^Az^?M-^@M-^_M- M-~M-^?\nx^M$\ny^Az^?M-^@M-^_M- M-~M-^?$\nx^M$\ny^Az^?M-^@M-^_M- M-~M-^?$\nx^M\ny^Az^?M-^@M-^_M- M-~M-^?\n16\n", "stderr": ""}
++{"cmd": "printf abc > /tmp/c4; printf 'd\\ne' > /tmp/c5; cat -n /tmp/c4 /tmp/c5 /tmp/c4; echo .; cat -E /tmp/c4 /tmp/c5; echo .; cat -b /tmp/c5 /tmp/c5; echo .; rm /tmp/c4 /tmp/c5", "exit": 0, "stdout": "     1\tabcd\n     2\teabc.\nabcd$\ne.\n     1\td\n     2\ted\n     3\te.\n", "stderr": ""}
++{"cmd": "printf 'a\\n\\n' > /tmp/c6; printf '\\n\\nb\\n' > /tmp/c7; cat -s /tmp/c6 /tmp/c7; cat -sn /tmp/c6 /tmp/c7; rm /tmp/c6 /tmp/c7", "exit": 0, "stdout": "a\n\nb\n     1\ta\n     2\t\n     3\tb\n", "stderr": ""}
++{"cmd": "cat --number /etc/shells | head -3; cat --show-ends /etc/hostname; cat --number-nonblank --squeeze-blank --show-tabs --show-nonprinting /etc/hostname; cat --show-all /etc/hostname", "exit": 0, "stdout": "     1\t# /etc/shells: valid login shells\n     2\t/bin/sh\n     3\t/usr/bin/sh\nweb01$\n     1\tweb01\nweb01$\n", "stderr": ""}
++{"cmd": "printf 'p\\nq\\n' | cat -n; printf 'p\\nq' | cat -E; echo; printf 'p\\n' | cat -n - /etc/hostname | wc -l", "exit": 0, "stdout": "     1\tp\n     2\tq\np$\nq\n2\n", "stderr": ""}
++{"cmd": "cat -u /etc/hostname | wc -c; cat /tmp/nosuch-cat /etc/hostname | wc -l; echo $?; cat /tmp/nosuch-cat; echo $?; cat /etc; echo $?", "exit": 0, "stdout": "6\n1\n0\n1\n1\n", "stderr": "cat: /tmp/nosuch-cat: No such file or directory\ncat: /tmp/nosuch-cat: No such file or directory\ncat: /etc: Is a directory\n"}
++{"cmd": "cat -x /etc/hostname; echo $?; cat --nosuch; echo $?; cat --show; echo $?", "exit": 0, "stdout": "1\n1\n1\n", "stderr": "cat: invalid option -- 'x'\nTry 'cat --help' for more information.\ncat: unrecognized option '--nosuch'\nTry 'cat --help' for more information.\ncat: option '--show' is ambiguous; possibilities: '--show-nonprinting' '--show-ends' '--show-tabs' '--show-all'\nTry 'cat --help' for more information.\n"}
++{"cmd": "cat --version", "exit": 0, "stdout": "cat (GNU coreutils) 9.1\nCopyright (C) 2022 Free Software Foundation, Inc.\nLicense GPLv3+: GNU GPL version 3 or later <https://gnu.org/licenses/gpl.html>.\nThis is free software: you are free to change and redistribute it.\nThere is NO WARRANTY, to the extent permitted by law.\n\nWritten by Torbjorn Granlund and Richard M. Stallman.\n", "stderr": ""}
++{"cmd": "cat --help", "exit": 0, "stdout": "Usage: cat [OPTION]... [FILE]...\nConcatenate FILE(s) to standard output.\n\nWith no FILE, or when FILE is -, read standard input.\n\n  -A, --show-all           equivalent to -vET\n  -b, --number-nonblank    number nonempty output lines, overrides -n\n  -e                       equivalent to -vE\n  -E, --show-ends          display $ at end of each line\n  -n, --number             number all output lines\n  -s, --squeeze-blank      suppress repeated empty output lines\n  -t                       equivalent to -vT\n  -T, --show-tabs          display TAB characters as ^I\n  -u                       (ignored)\n  -v, --show-nonprinting   use ^ and M- notation, except for LFD and TAB\n      --help        display this help and exit\n      --version     output version information and exit\n\nExamples:\n  cat f - g  Output f's contents, then standard input, then g's contents.\n  cat        Copy standard input to standard output.\n\nGNU coreutils online help: <https://www.gnu.org/software/coreutils/>\nReport any translation bugs to <https://translationproject.org/team/>\nFull documentation <https://www.gnu.org/software/coreutils/cat>\nor available locally via: info '(coreutils) cat invocation'\n", "stderr": ""}
+diff --git a/src/cowrie/test/test_mirage_file_reference.py b/src/cowrie/test/test_mirage_file_reference.py
+index ababad5..e6ad265 100644
+--- a/src/cowrie/test/test_mirage_file_reference.py
++++ b/src/cowrie/test/test_mirage_file_reference.py
+@@ -44,6 +44,13 @@ SKIP = {
+     "readlink /bin;": "reads the reference image's own links",
+     "realpath /bin/sh": "reads the reference image's own links",
+     "printenv | grep -c": "counts the reference session's variables",
++    "od -c": "od is not emulated (the lines' other commands are compared in test_mirage_filemore)",
++    "stat -c '%h %s'": "the tree has no inodes: a hard link is a copy, and its count stays 1",
++    "truncate -r /etc/hostname": "the size of the image's /etc/hostname",
++    "stat -c '%a %U %G %s' /tmp/i2": "the size of the image's /etc/hostname",
++    "-o caleb": "an account the stock tree's /etc/passwd does not have",
++    "cat --number /etc/shells": "reads the reference image's own files",
++    "cat -u /etc/hostname": "the size of the image's /etc/hostname",
+ }
+ # The reference host's name, where a line prints /etc/hostname.
+ HOSTNAME = "web01"
+@@ -68,9 +75,9 @@ class ReferenceTests(unittest.TestCase):
+         mirage_gate.reset_for_tests()
+ 
+     def test_the_recording_is_whole(self) -> None:
+-        self.assertGreaterEqual(len(RECORDS), 110)
++        self.assertGreaterEqual(len(RECORDS), 179)
+         compared = [r for r in RECORDS if skipped(r["cmd"]) is None]
+-        self.assertGreaterEqual(len(compared), 95)
++        self.assertGreaterEqual(len(compared), 155)
+ 
+     def test_every_line_answers_as_the_reference_host_did(self) -> None:
+         wrong = []
+diff --git a/src/cowrie/test/test_mirage_filemore.py b/src/cowrie/test/test_mirage_filemore.py
+new file mode 100644
+index 0000000..185f157
+--- /dev/null
++++ b/src/cowrie/test/test_mirage_filemore.py
+@@ -0,0 +1,149 @@
++# SPDX-License-Identifier: BSD-3-Clause
++# ABOUTME: Tests of unlink, link, truncate, install and shred that the recorded
++# ABOUTME: lines cannot make here: contents, sizes, owners, and what is declined.
++
++from __future__ import annotations
++
++from cowrie.commands import mirage_filemore
++from cowrie.shell import fs as cfs
++from cowrie.test.test_mirage_gate import PROMPT, GateTestBase
++
++
++class Base(GateTestBase):
++    def text(self, line: str) -> str:
++        return self.run_line(line).decode()[: -len(PROMPT.decode())]
++
++    def held(self, path: str) -> bytes:
++        return bytes(self.proto.fs.file_contents(path))
++
++
++class TruncateTests(Base):
++    def test_a_longer_file_is_filled_with_nul_bytes_and_a_shorter_one_is_cut(
++        self,
++    ) -> None:
++        # The recorded lines look at this with od, which the emulator does not have.
++        self.text("truncate -s 10 /tmp/t1")
++        self.assertEqual(self.held("/tmp/t1"), b"\0" * 10)
++        self.text("echo hello world > /tmp/t2; truncate -s 5 /tmp/t2")
++        self.assertEqual(self.held("/tmp/t2"), b"hello")
++        self.text("truncate -s +3 /tmp/t2")
++        self.assertEqual(self.held("/tmp/t2"), b"hello\0\0\0")
++        self.assertEqual(self.text("wc -c /tmp/t2"), "8 /tmp/t2\n")
++
++    def test_a_size_as_truncate_reads_it(self) -> None:
++        size = mirage_filemore.size_of
++        self.assertEqual(size("10"), ("=", 10))
++        self.assertEqual(size("+3"), ("+", 3))
++        self.assertEqual(size("-6"), ("-", 6))
++        self.assertEqual(size("<100"), ("<", 100))
++        self.assertEqual(size("%700"), ("%", 700))
++        self.assertEqual(
++            (size("1K"), size("1KB"), size("2k")),
++            (("=", 1024), ("=", 1000), ("=", 2048)),
++        )
++        self.assertEqual(size("1M"), ("=", 1048576))
++        self.assertEqual((size("abc"), size("10x"), size("")), (None, None, None))
++
++    def test_a_reference_file_gives_the_size(self) -> None:
++        self.text("printf 123456 > /tmp/ref; truncate -r /tmp/ref /tmp/t3")
++        self.assertEqual(self.text("wc -c < /tmp/t3"), "6\n")
++        self.text("truncate -r /tmp/ref -s +5 /tmp/t3")
++        self.assertEqual(self.text("wc -c < /tmp/t3"), "11\n")
++
++    def test_a_file_too_large_to_hold_has_its_size_and_no_bytes(self) -> None:
++        self.text("truncate -s 1G /tmp/big")
++        self.assertEqual(self.proto.fs.getfile("/tmp/big")[cfs.A_SIZE], 1024**3)
++        self.assertEqual(self.held("/tmp/big"), b"")
++
++
++class InstallTests(Base):
++    def test_the_copy_holds_the_source_s_bytes_and_is_the_installer_s(self) -> None:
++        self.text("printf 'secret\\n' > /tmp/src; chmod 644 /tmp/src")
++        self.assertEqual(self.text("install -m 600 /tmp/src /tmp/dst; echo $?"), "0\n")
++        self.assertEqual(self.held("/tmp/dst"), b"secret\n")
++        self.assertEqual(
++            self.text("stat -c '%a %U %G %s' /tmp/dst"), "600 root root 7\n"
++        )
++        # A destination that is there is replaced: it takes the new mode.
++        self.text("install /tmp/src /tmp/dst")
++        self.assertEqual(self.text("stat -c '%a' /tmp/dst"), "755\n")
++
++    def test_an_owner_and_group_by_name_or_number(self) -> None:
++        self.text(
++            "printf x > /tmp/src; install -o 1000 -g 1000 -m 640 /tmp/src /tmp/owned"
++        )
++        node = self.proto.fs.getfile("/tmp/owned")
++        self.assertEqual((node[cfs.A_UID], node[cfs.A_GID]), (1000, 1000))
++        self.assertEqual(
++            self.text("install -o nosuchuser /tmp/src /tmp/x; echo $?"),
++            "install: invalid user 'nosuchuser'\n1\n",
++        )
++
++    def test_what_install_does_not_do_is_declined(self) -> None:
++        declines = mirage_filemore.Command_install.mirage_declines
++        for args in (
++            ["-b", "a", "b"],
++            ["--backup", "a", "b"],
++            ["-s", "a", "b"],
++            ["-C", "a", "b"],
++        ):
++            self.assertTrue(declines(args), args)
++        for args in (["-m", "600", "a", "b"], ["-d", "x"], ["--nosuch"], ["-x"]):
++            self.assertFalse(declines(args), args)
++
++
++class ShredTests(Base):
++    def test_the_file_is_left_at_a_whole_block_holding_other_bytes(self) -> None:
++        self.text("echo secret > /tmp/s1; shred /tmp/s1")
++        left = self.held("/tmp/s1")
++        self.assertEqual(len(left), 4096)
++        self.assertNotIn(b"secret", left)
++        self.text("echo secret > /tmp/s2; shred -n 1 -z /tmp/s2")
++        self.assertEqual(self.held("/tmp/s2"), b"\0" * 4096)
++        self.text("echo secret > /tmp/s3; shred -x /tmp/s3")
++        self.assertEqual(len(self.held("/tmp/s3")), 7)
++
++    def test_the_name_is_worn_down_one_character_at_a_time(self) -> None:
++        self.text("echo x > /tmp/abcd")
++        said = self.text("shred -u -v -n 0 /tmp/abcd")
++        self.assertEqual(
++            said,
++            "shred: /tmp/abcd: removing\n"
++            "shred: /tmp/abcd: renamed to /tmp/0000\n"
++            "shred: /tmp/0000: renamed to /tmp/000\n"
++            "shred: /tmp/000: renamed to /tmp/00\n"
++            "shred: /tmp/00: renamed to /tmp/0\n"
++            "shred: /tmp/abcd: removed\n",
++        )
++        self.assertFalse(self.proto.fs.exists("/tmp/abcd"))
++
++    def test_named_patterns_are_declined(self) -> None:
++        declines = mirage_filemore.Command_shred.mirage_declines
++        self.assertTrue(declines(["-v", "-n", "5", "f"]))
++        self.assertTrue(declines(["--random-source=/dev/zero", "f"]))
++        self.assertFalse(declines(["-n", "5", "f"]))
++        self.assertFalse(declines(["-v", "-u", "f"]))
++
++
++class LinkTests(Base):
++    def test_the_new_name_holds_what_the_file_held(self) -> None:
++        self.text("echo linked > /tmp/l1; link /tmp/l1 /tmp/l2")
++        self.assertEqual(self.text("cat /tmp/l2"), "linked\n")
++        self.text("unlink /tmp/l1")
++        self.assertEqual(
++            self.text("cat /tmp/l2; ls /tmp/l1 2>&1"),
++            "linked\nls: cannot access '/tmp/l1': No such file or directory\n",
++        )
++
++
++class CatTests(Base):
++    def test_a_file_with_no_newline_at_its_end_is_given_none(self) -> None:
++        self.assertEqual(self.text("printf abc > /tmp/c; cat /tmp/c | wc -c"), "3\n")
++        self.assertEqual(self.text("cat /tmp/c /tmp/c; echo ."), "abcabc.\n")
++
++    def test_someone_who_may_not_read_a_file_is_told_so(self) -> None:
++        self.text("printf secret > /tmp/mine; chmod 600 /tmp/mine")
++        shell = self.proto.cmdstack[0]
++        shell.user = {**shell.user, "username": "www-data", "uid": 33, "gid": 33}
++        said = self.run_line("cat /tmp/mine; echo $?").decode()
++        self.assertTrue(said.startswith("cat: /tmp/mine: Permission denied\n1\n"), said)
+-- 
+2.50.1 (Apple Git-155)
+

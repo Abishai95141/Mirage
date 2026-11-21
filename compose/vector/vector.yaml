@@ -33,11 +33,15 @@ sources:
     type: file
     include: ["/policy-log/decisions.json*"]
     read_from: beginning
+  responder_log:
+    type: file
+    include: ["/responder-log/answers.json*"]
+    read_from: beginning
 
 transforms:
   parsed:
     type: remap
-    inputs: [cowrie_log, http_log, redis_log, mysql_log, policy_log, sim_log]
+    inputs: [cowrie_log, http_log, redis_log, mysql_log, policy_log, responder_log, sim_log]
     source: |
       src = string!(.file)
       parsed, err = parse_json(.message)
@@ -57,6 +61,7 @@ transforms:
       redis: 'starts_with(string!(.__mirage_src), "/redis-log/")'
       mysql: 'starts_with(string!(.__mirage_src), "/mysql-log/")'
       policy: 'starts_with(string!(.__mirage_src), "/policy-log/")'
+      responder: 'starts_with(string!(.__mirage_src), "/responder-log/")'
       sim: 'starts_with(string!(.__mirage_src), "/lab-out/")'
   cowrie_out:
     type: remap
@@ -81,6 +86,10 @@ transforms:
   policy_out:
     type: remap
     inputs: [route.policy]
+    source: del(.__mirage_src)
+  responder_out:
+    type: remap
+    inputs: [route.responder]
     source: del(.__mirage_src)
 
 sinks:
@@ -131,6 +140,14 @@ sinks:
     inputs: [policy_out]
     url: nats://nats:4222
     subject: raw.policy.decision
+    jetstream: {enabled: true}
+    encoding: {codec: json}
+    acknowledgements: {enabled: true}
+  nats_responder:
+    type: nats
+    inputs: [responder_out]
+    url: nats://nats:4222
+    subject: raw.responder.answer
     jetstream: {enabled: true}
     encoding: {codec: json}
     acknowledgements: {enabled: true}

@@ -10,7 +10,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from mirage_policy.app import RULES_DIR, Settings, create_app
-from mirage_policy.explore import EXPRESSIBLE, allowed_actions, expressible, is_first_input
+from mirage_policy.explore import ACTIONS, EXPRESSIBLE, allowed_actions, expressible, is_first_input
 from mirage_schema.policy import Action, DecideRequest, Protocol
 
 TOKEN = "t" * 32
@@ -55,8 +55,8 @@ def test_the_redis_gopher_line_can_only_be_allowed(word):
     assert expressible(gopher) == {Action.ALLOW}
     assert allowed_actions(gopher) == [Action.ALLOW]
     # the same word is an ordinary input anywhere else, and an ordinary Redis command is too
-    assert allowed_actions(req("ssh", seq=3, argv=[word, "example.org"])) == list(Action)
-    assert allowed_actions(req("redis", seq=3, argv=["HOSTS", "x"])) == list(Action)
+    assert allowed_actions(req("ssh", seq=3, argv=[word, "example.org"])) == list(ACTIONS)
+    assert allowed_actions(req("redis", seq=3, argv=["HOSTS", "x"])) == list(ACTIONS)
 
 
 # ------------------------------------------------------------------ the first input

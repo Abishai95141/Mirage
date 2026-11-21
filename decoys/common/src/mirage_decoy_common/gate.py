@@ -20,7 +20,7 @@ from urllib.parse import urlsplit, urlunsplit
 import httpx
 from pydantic import ValidationError
 
-from mirage_schema.policy import Action, DecideRequest, Decision, as_dict
+from mirage_schema.policy import V1_ACTIONS, Action, DecideRequest, Decision, as_dict
 
 
 @dataclass(frozen=True)
@@ -162,6 +162,11 @@ class GateClient:
             d = Decision.model_validate(resp.json())
         except (ValidationError, ValueError):
             return Applied.allow_fallback("malformed", ms())
+        if d.action not in V1_ACTIONS:
+            # Contract v2's actions are for a decoy that listed them in ``supports``. This
+            # one lists none, so being sent one is the service's mistake: the input is
+            # answered as it would have been, and the mistake is recorded.
+            return Applied.allow_fallback("unsupported", ms())
         return Applied(
             action=d.action,
             output=d.output,

@@ -1,0 +1,1448 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: MIRAGE <noreply@anthropic.com>
+Date: Tue, 17 Nov 2026 16:04:03 +0530
+Subject: [PATCH] MIRAGE: gate contract v2: respond, plant_token, and what the
+ decoy can do
+
+The policy may now answer a command with an action the decoy takes only if
+it said it could. Each request lists those in `supports` and says in `tier`
+what the decoy has for the input.
+
+respond. The command runs as an ordinary command on the cmdstack whose
+output comes from the responder service (cowrie/mirage_respond.py). It sends
+who and where the session is, what the session has changed since it last
+asked (the journal), and what is at the paths the command names; it reads
+the reply as it arrives. Lines are shown as they come, through the same
+pipes and redirections as any command's. A held answer's operations are
+checked against this session's own tree and applied before a line of it is
+shown. Typed-ahead input queues behind it and Ctrl-C ends it, closing the
+connection, which is how the responder learns. Whatever goes wrong before
+anything has been shown, the command falls back to what the emulator would
+have run, and the session sees nothing of the attempt.
+
+plant_token. The decision's operations (a file holding a token) are applied,
+all or none, and the command then runs as usual. What was planted is kept
+from every later answer: not shown to the responder, not to be touched by
+its operations.
+
+supports. respond is listed only while the responder passed its last
+background health check and the session's journal is whole, so the policy
+learns availability without calling anything. An action the request did not
+list is not taken.
+
+tier gains `absent`: no such program. That is not 'nothing to answer with':
+the shell's 'command not found' is the true answer, and only `none` (a
+program that is there, which nothing here answers for) is the responder's.
+---
+ docs/OUTPUT.rst                          |  37 +-
+ src/cowrie/core/eventids.py              |   2 +
+ src/cowrie/mirage_gate.py                | 115 ++++-
+ src/cowrie/mirage_render.py              |   8 +-
+ src/cowrie/mirage_respond.py             | 512 +++++++++++++++++++++
+ src/cowrie/shell/honeypot.py             |   8 +-
+ src/cowrie/ssh/factory.py                |   7 +
+ src/cowrie/test/test_mirage_coreutils.py |   4 +-
+ src/cowrie/test/test_mirage_render.py    |   2 +-
+ src/cowrie/test/test_mirage_respond.py   | 538 +++++++++++++++++++++++
+ 10 files changed, 1222 insertions(+), 11 deletions(-)
+ create mode 100644 src/cowrie/mirage_respond.py
+ create mode 100644 src/cowrie/test/test_mirage_respond.py
+
+diff --git a/docs/OUTPUT.rst b/docs/OUTPUT.rst
+index 938c545..4a9fafe 100644
+--- a/docs/OUTPUT.rst
++++ b/docs/OUTPUT.rst
+@@ -371,9 +371,9 @@ private copy changes; the shared tree never does).
+ 
+ Attributes:
+ 
+-    * `op`: ``create``, ``mkdir``, ``rmdir``, ``write``, ``chmod``, ``chown``, ``remove`` or ``rename``
++    * `op`: ``create``, ``mkdir``, ``rmdir``, ``write``, ``chmod``, ``chown``, ``remove``, ``rename`` or ``symlink``
+     * `path`: the path changed
+-    * `new_path`: the destination of a rename
++    * `new_path`: the destination of a rename; the target of a symbolic link
+     * `mode`, `uid`, `gid`, `size`: the new attributes, where they apply
+     * `sha256`: the content's hash, for a completed SFTP upload
+ 
+@@ -390,6 +390,39 @@ Attributes:
+     * `library`: the version of the library the answer came from
+     * `exit_code`: the exit status the answer set
+ 
++cowrie.mirage.respond
++=====================
++
++MIRAGE: the policy answered a command with ``respond``, and this is how that
++ended (only emitted when ``[mirage] responder_enabled`` is set, or the policy
++asked for an answer the decoy could not give).
++
++Attributes:
++
++    * `input`: the command line
++    * `outcome`: ``answered`` (the responder's answer was shown), ``fallback`` (no answer, nothing shown; the emulator's own command ran), ``cut`` (an answer stopped after lines of it were out) or ``cancelled`` (Ctrl-C)
++    * `reason`: why, for a fallback or a cut: the responder's own reason for aborting, ``ops:rejected``, ``timeout``, ``status:<code>``, ``error:<type>``, ``truncated``, ``malformed``, ``resync``, ``input_too_long``, ``journal_full``, ``tier:<tier>``, ``no_budget``
++    * `request_id`, `seq`: the same as the ``cowrie.policy.decision`` event of this command, and as the responder's own record
++    * `lines`: lines of output shown
++    * `first_ms`, `total_ms`: time until the first line, and until the end
++    * `rung`: what answered (``cache``, ``model``, ``replay``)
++    * `ops_applied`: state operations of the answer applied to the session
++    * `output_tokens`: tokens the answer cost
++    * `exit_code`: the exit status the command ended with
++
++cowrie.mirage.plant
++===================
++
++MIRAGE: the policy answered a command with ``plant_token``: operations that
++write a file holding a token, applied before the command ran.
++
++Attributes:
++
++    * `planted`: whether a file was written
++    * `paths`: the files written
++    * `reason`: why nothing was planted
++    * `decision_id`, `request_id`, `seq`: the decision this carried out
++
+ cowrie.proxy.backend_connect_error
+ ==================================
+ 
+diff --git a/src/cowrie/core/eventids.py b/src/cowrie/core/eventids.py
+index ca43048..0abbf4c 100644
+--- a/src/cowrie/core/eventids.py
++++ b/src/cowrie/core/eventids.py
+@@ -67,6 +67,8 @@ ALL: frozenset[str] = frozenset(
+         "cowrie.policy.decision",
+         "cowrie.fs.change",
+         "cowrie.render.served",
++        "cowrie.mirage.respond",
++        "cowrie.mirage.plant",
+         # Proxy backend plumbing
+         "cowrie.proxy.backend_connect_error",
+         "cowrie.proxy.backend_connected",
+diff --git a/src/cowrie/mirage_gate.py b/src/cowrie/mirage_gate.py
+index f547ec9..0d1de81 100644
+--- a/src/cowrie/mirage_gate.py
++++ b/src/cowrie/mirage_gate.py
+@@ -16,6 +16,22 @@ With it enabled, the argv goes to the policy service, and the reply decides:
+ ``fake_error``    print ``output`` on stderr, exit ``exit_code`` (default 1).
+ ``terminate``     end the session.
+ 
++Contract v2 adds actions a decoy takes only if it said it could. The request
++lists them in ``supports``, and says in ``tier`` what the decoy has for the
++input: ``emulated``, ``rendered`` (its render library), ``none`` (a program
++that is there and nothing here answers for) or ``absent`` (no such program:
++"command not found" is the answer, and the emulator gives it).
++
++``respond``       ask the responder service for the output (``mirage_respond``),
++                  within the ``budget`` the decision carries. Listed while the
++                  responder passed its last health check and the session's
++                  journal is whole. Taken only for tier ``none``.
++``plant_token``   apply the decision's ``ops`` (a file holding a token), then
++                  run the command as Cowrie would.
++
++An action the request did not list is not taken: the command runs as allowed
++and the decision is logged as a fallback.
++
+ Any failure to get a decision in time (service down, slow, malformed reply)
+ means ``allow``: the decoy must never hang on, or reveal, the policy service.
+ 
+@@ -49,6 +65,7 @@ ASSIGNMENT_WORD = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*=")
+ MAX_DELAY_MS = 10_000
+ MAX_OUTPUT_BYTES = 64 * 1024
+ ACTIONS = {"allow", "delay", "fake_success", "fake_error", "terminate"}
++V2_ACTIONS = {"respond", "plant_token", "escalate"}
+ 
+ 
+ class PolicyGate:
+@@ -265,6 +282,88 @@ def _tier(shell: HoneyPotShell, argv: list[str]) -> str:
+     return mirage_render.tier(shell, words)
+ 
+ 
++def _supports(shell: HoneyPotShell) -> list[str]:
++    """The v2 actions this decoy can carry out for this session now."""
++    from cowrie import mirage_respond, mirage_state
++
++    journal = mirage_state.journal_of(shell.protocol)
++    journal.sync(shell)
++    if journal.full:
++        # Its journal has holes: nothing outside the emulator may act on it.
++        return []
++    supports = ["plant_token"]
++    responder = mirage_respond.get()
++    if responder is not None and getattr(responder, "healthy", False):
++        supports.insert(0, "respond")
++    return supports
++
++
++def _plant(shell: HoneyPotShell, decision: dict[str, Any], request: dict[str, Any]) -> None:
++    """Apply a ``plant_token`` decision's operations: all of them or none."""
++    from cowrie import mirage_state
++
++    proto = shell.protocol
++    paths: list[str] = []
++    reason = None
++    try:
++        ops = mirage_state.apply(shell, decision.get("ops"), limited=False)
++        paths = [op["path"] for op in ops if op["op"] == "write"]
++        if not paths:
++            reason = "no_file"
++    except mirage_state.Rejected as e:
++        reason = str(e)[:200]
++    if paths:
++        # From here on these are files no answer may touch or be shown.
++        proto.mirage_token_paths = set(getattr(proto, "mirage_token_paths", ())) | set(paths)
++    proto.events.dispatch(
++        "cowrie.mirage.plant",
++        "Planted %(planted)s",
++        planted=bool(paths),
++        paths=paths,
++        reason=reason,
++        decision_id=decision.get("decision_id"),
++        request_id=request["request_id"],
++        seq=request["seq"],
++    )
++
++
++def _respond(
++    shell: HoneyPotShell,
++    decision: dict[str, Any],
++    cmdAndArgs: list[str],
++    request: dict[str, Any],
++) -> Any:
++    """Run the command with its output asked of the responder, or as the
++    emulator would if this decision cannot be carried out."""
++    from cowrie import mirage_respond
++
++    budget = mirage_respond.budget_of(decision)
++    reason = None
++    if request["tier"] != "none":
++        reason = f"tier:{request['tier']}"  # the emulator has an answer of its own
++    elif budget is None:
++        reason = "no_budget"
++    if reason is None:
++        assert budget is not None
++        mirage_respond.arm(shell, request, budget)
++        result = shell._run_expanded(cmdAndArgs)
++        if not mirage_respond.disarm(shell):
++            return result
++        reason = "not_a_command"  # an assignment, a function: nothing was looked up
++        cmdAndArgs = []
++    shell.protocol.events.dispatch(
++        "cowrie.mirage.respond",
++        "Responder %(outcome)s for %(input)s",
++        input=" ".join(request["argv"]),
++        outcome="fallback",
++        reason=reason,
++        request_id=request["request_id"],
++        seq=request["seq"],
++        lines=0,
++    )
++    return shell._run_expanded(cmdAndArgs) if cmdAndArgs else None
++
++
+ def gate_then_run(shell: HoneyPotShell, cmdAndArgs: list[str]) -> Any:
+     gate = _get_gate()
+     if gate is None:
+@@ -274,6 +373,7 @@ def gate_then_run(shell: HoneyPotShell, cmdAndArgs: list[str]) -> Any:
+     proto = shell.protocol
+     tier = _tier(shell, argv)
+     proto.mirage_seq = getattr(proto, "mirage_seq", 0) + 1
++    supports = _supports(shell)
+     request = {
+         "request_id": str(uuid.uuid4()),
+         "session_id": _session_id(shell),
+@@ -287,8 +387,9 @@ def gate_then_run(shell: HoneyPotShell, cmdAndArgs: list[str]) -> Any:
+         "argv": argv,
+         "cwd": shell.cwd,
+         # A command the render library answers is known to the decoy too.
+-        "known": tier != "none",
++        "known": tier in ("emulated", "rendered"),
+         "tier": tier,
++        "supports": supports,
+         "interactive": bool(shell.interactive),
+         "user": shell.user.get("username") if isinstance(shell.user, dict) else None,
+     }
+@@ -325,10 +426,13 @@ def _apply(
+     started: float,
+ ) -> Any:
+     latency_ms = round((time.monotonic() - started) * 1000, 1)
+-    fallback = not isinstance(decision, dict) or decision.get("action") not in ACTIONS
++    chosen = decision.get("action") if isinstance(decision, dict) else None
++    fallback = chosen not in ACTIONS and chosen not in request["supports"]
+     reason = None
+     if fallback:
+         reason = decision.get("_fallback", "malformed") if isinstance(decision, dict) else "malformed"
++        if chosen in V2_ACTIONS:
++            reason = "unsupported"  # an action this request did not offer
+     action = "allow" if fallback else decision["action"]
+     shell.protocol.events.dispatch(
+         "cowrie.policy.decision",
+@@ -358,6 +462,13 @@ def _apply(
+     if not _release(shell, waiting):
+         return None
+ 
++    if action == "plant_token":
++        _plant(shell, decision, request)
++        return shell._run_expanded(cmdAndArgs)
++
++    if action == "respond":
++        return _respond(shell, decision, cmdAndArgs, request)
++
+     if action == "allow":
+         return shell._run_expanded(cmdAndArgs)
+ 
+diff --git a/src/cowrie/mirage_render.py b/src/cowrie/mirage_render.py
+index 52ecccc..b178824 100644
+--- a/src/cowrie/mirage_render.py
++++ b/src/cowrie/mirage_render.py
+@@ -216,8 +216,10 @@ def command_for(
+ 
+ def tier(shell: HoneyPotShell, argv: list[str]) -> str:
+     """What the decoy would answer this simple command with if allowed:
+-    ``emulated`` (a command the emulator has), ``rendered`` (the library) or
+-    ``none`` (nothing of its own)."""
++    ``emulated`` (a command the emulator has), ``rendered`` (the library),
++    ``none`` (a program that is there, which nothing here answers for) or
++    ``absent`` (no such program: "command not found" is the true answer, and
++    the shell gives it)."""
+     words = list(argv)
+     args, _ops = shell.parser.parse_redirections(words)
+     if not args or args[0] in shell.functions:
+@@ -227,7 +229,7 @@ def tier(shell: HoneyPotShell, argv: list[str]) -> str:
+     paths = shell.environ.get("PATH", "").split(":")
+     cmdclass = shell.protocol.getCommand(args[0], paths, shell.cwd)
+     if cmdclass is None:
+-        return "none"
++        return "absent"
+     # A file in the filesystem that no command class stands for gets a stand-in
+     # which runs it as a shell script. If it is a program, the stand-in can
+     # only print "cannot execute binary file": the emulator has no answer.
+diff --git a/src/cowrie/mirage_respond.py b/src/cowrie/mirage_respond.py
+new file mode 100644
+index 0000000..4aff583
+--- /dev/null
++++ b/src/cowrie/mirage_respond.py
+@@ -0,0 +1,512 @@
++# SPDX-License-Identifier: BSD-3-Clause
++# ABOUTME: MIRAGE responder client. When the policy answers "respond", ask the
++# ABOUTME: responder service for the command's output and show it as it arrives.
++
++"""MIRAGE responder client for the Cowrie shell.
++
++The policy may answer a command the emulator has nothing for with
++``respond``. The command then runs as :class:`Answer`, an ordinary command
++on the cmdstack: lines typed meanwhile queue behind it, Ctrl-C ends it, its
++output goes through the same pipes and redirections as any command's.
++
++``Answer`` sends the responder what it needs to answer in keeping with this
++session (who, where, what the session has changed, what is at the paths the
++command names) and reads the reply as it comes, one JSON record a line:
++
++``out``     a line of output: shown at once.
++``end``     the rest: operations to apply, held output, stderr, the status.
++``abort``   no answer, or no more of one.
++``resync``  the responder does not hold this session's journal (it was
++            restarted): the request is sent once more with all of it.
++
++The decoy is the only owner of the session. An answer's operations are
++checked again here, against this session's own filesystem, and applied all
++or none (:func:`cowrie.mirage_state.apply`) *before* any held output is
++shown. Whatever goes wrong before a line has been shown (the responder is
++down, slow, refuses, or its operations are rejected), the command falls back
++to what the emulator would have run, and the session sees nothing of it.
++"""
++
++from __future__ import annotations
++
++import json
++import time
++from typing import TYPE_CHECKING, Any
++
++from twisted.internet import defer, protocol, reactor
++from twisted.logger import Logger
++
++from cowrie import mirage_state
++from cowrie.core.config import CowrieConfig
++from cowrie.mirage_gate import PolicyGate
++from cowrie.shell.command import HoneyPotCommand
++
++if TYPE_CHECKING:
++    from collections.abc import Callable
++
++    from cowrie.shell.honeypot import HoneyPotShell
++
++log = Logger()
++
++MAX_INPUT_BYTES = 1024
++MAX_OUTPUT_TOKENS = 400
++MAX_DEADLINE_MS = 10_000
++MAX_REPLY_BYTES = 256 * 1024
++GRACE_S = 0.5  # past the deadline the responder was given, before giving up on it
++
++
++class _Lines(protocol.Protocol):
++    """The reply's body: newline-delimited JSON, handed on record by record."""
++
++    def __init__(self, on_record: Callable[[dict[str, Any]], None], done: defer.Deferred) -> None:
++        self.on_record, self.done = on_record, done
++        self.buffer = b""
++        self.taken = 0
++        self.stopped = False
++
++    def stop(self) -> None:
++        if not self.stopped:
++            self.stopped = True
++            self.transport.stopProducing()  # closes the connection
++
++    def dataReceived(self, data: bytes) -> None:
++        if self.stopped:
++            return
++        self.taken += len(data)
++        if self.taken > MAX_REPLY_BYTES:
++            self.stop()
++            return
++        self.buffer += data
++        while b"\n" in self.buffer:
++            line, self.buffer = self.buffer.split(b"\n", 1)
++            if not line.strip():
++                continue
++            try:
++                record = json.loads(line)
++            except ValueError:
++                record = None
++            if not isinstance(record, dict):
++                self.stop()
++                return
++            self.on_record(record)
++            if self.stopped:
++                return
++
++    def connectionLost(self, reason: Any = None) -> None:
++        if not self.done.called:
++            self.done.callback(None)
++
++
++class Responder(PolicyGate):
++    """HTTP client for the responder service: the policy gate's connection
++    handling (kept-alive connections, the address resolved in the background)
++    with a reply that is read as it arrives, and a health check."""
++
++    def __init__(self, url: str, token: str = "", health_s: float = 5.0) -> None:
++        super().__init__(url, timeout_s=MAX_DEADLINE_MS / 1000.0, idle_s=60.0, token=token)
++        self.health_s = health_s
++        self.healthy = False
++        self._health_loop: Any = None
++
++    @classmethod
++    def from_config(cls) -> Responder | None:
++        if not CowrieConfig.getboolean("mirage", "responder_enabled", fallback=False):
++            return None
++        url = CowrieConfig.get(
++            "mirage", "responder_url", fallback="http://responder:8100/v1/respond"
++        )
++        # The token comes from the environment (COWRIE_MIRAGE_RESPONDER_TOKEN).
++        token = CowrieConfig.get("mirage", "responder_token", fallback="")
++        health_ms = CowrieConfig.getint("mirage", "responder_health_ms", fallback=5000)
++        return cls(url, token, health_ms / 1000.0)
++
++    # ---------------------------------------------------------------- health
++
++    def start(self) -> None:
++        """Begin checking the responder's health in the background. The gate
++        lists ``respond`` among what this decoy supports only while the last
++        check passed, so the policy learns availability without calling
++        anything itself."""
++        if self._health_loop is not None:
++            return
++        from twisted.internet.task import LoopingCall
++
++        self.start_resolving()
++        self._health_loop = LoopingCall(self.check)
++        self._health_loop.clock = reactor
++        self._health_loop.start(self.health_s, now=True)
++
++    def check(self) -> defer.Deferred:
++        url, headers = self.target()
++        health = url.rsplit("/v1/", 1)[0] + "/healthz"
++
++        def passed(response: Any) -> None:
++            self.healthy = response.code == 200
++
++        def failed(failure: Any) -> None:
++            self.healthy = False
++            self.resolve()
++
++        d = self._http.get(health, headers=headers, timeout=min(2.0, self.health_s))
++        d.addCallbacks(passed, failed)
++        return d
++
++    # ---------------------------------------------------------------- respond
++
++    def respond(
++        self,
++        body: dict[str, Any],
++        on_record: Callable[[dict[str, Any]], None],
++        on_done: Callable[[str | None], None],
++        deadline_s: float,
++    ) -> Callable[[], None]:
++        """Send one request. ``on_record`` gets each record of the reply as it
++        arrives; ``on_done`` is called once, with None when the reply ended
++        or a reason when it could not be had. Returns what cancels it."""
++        url, headers = self.target()
++        state: dict[str, Any] = {"over": False, "body": None, "timer": None}
++
++        def finish(reason: str | None) -> None:
++            if state["over"]:
++                return
++            state["over"] = True
++            if state["timer"] is not None and state["timer"].active():
++                state["timer"].cancel()
++            on_done(reason)
++
++        def cancel(reason: str = "cancelled") -> None:
++            if state["over"]:
++                return
++            reader = state["body"]
++            if reader is not None and reader.transport is not None:
++                reader.stop()
++            else:
++                d.cancel()
++            finish(reason)
++
++        def got(response: Any) -> Any:
++            if state["over"]:
++                return None
++            if response.code != 200:
++                finish(f"status:{response.code}")
++                return None
++            ended: defer.Deferred = defer.Deferred()
++            state["body"] = _Lines(lambda r: None if state["over"] else on_record(r), ended)
++            response.original.deliverBody(state["body"])
++            ended.addCallback(lambda _: finish(None))
++            return None
++
++        def failed(failure: Any) -> None:
++            if failure.check(defer.CancelledError):
++                return
++            self.healthy = False
++            self.resolve()
++            finish(f"error:{failure.type.__name__}")
++
++        d = self._http.post(url, json=body, headers=headers)
++        d.addCallbacks(got, failed)
++        state["timer"] = reactor.callLater(deadline_s + GRACE_S, cancel, "timeout")
++        return cancel
++
++
++_UNSET = object()
++_responder: Any = _UNSET
++
++
++def get() -> Responder | None:
++    global _responder
++    if _responder is _UNSET:
++        _responder = Responder.from_config()
++    if _responder is not None and hasattr(_responder, "start"):
++        _responder.start()
++    return _responder  # type: ignore[no-any-return]
++
++
++def reset_for_tests(responder: Any = _UNSET) -> None:
++    global _responder
++    _responder = responder
++
++
++def token_paths(proto: Any) -> set[str]:
++    """Paths that hold a planted token: the deployment's, and any the policy
++    planted in this session. No answer may touch them, and their contents are
++    not shown to the responder."""
++    configured = CowrieConfig.get("mirage", "token_paths", fallback="")
++    paths = {p.strip() for p in configured.split(",") if p.strip()}
++    return paths | set(getattr(proto, "mirage_token_paths", ()))
++
++
++def budget_of(decision: dict[str, Any]) -> dict[str, int] | None:
++    """The budget a ``respond`` decision carries, or None if it carries none
++    that can be used."""
++    budget = decision.get("budget")
++    if not isinstance(budget, dict):
++        return None
++    tokens, deadline = budget.get("max_tokens"), budget.get("deadline_ms")
++    for value in (tokens, deadline):
++        if isinstance(value, bool) or not isinstance(value, int) or value < 1:
++            return None
++    return {
++        "max_tokens": min(tokens, MAX_OUTPUT_TOKENS),
++        "deadline_ms": min(deadline, MAX_DEADLINE_MS),
++    }
++
++
++def arm(shell: HoneyPotShell, request: dict[str, Any], budget: dict[str, int]) -> None:
++    """The next command this shell looks up is answered by the responder."""
++    shell._mirage_answer = (request, budget)
++
++
++def disarm(shell: HoneyPotShell) -> bool:
++    """Forget an answer that was armed and not taken. True if there was one."""
++    return shell.__dict__.pop("_mirage_answer", None) is not None
++
++
++def take(
++    shell: HoneyPotShell, cmd: str, args: list[str], environ: dict[str, str]
++) -> type[HoneyPotCommand] | None:
++    """Called by ``HoneyPotShell._run_expanded`` before its own lookup: the
++    :class:`Answer` for this command if one is armed, else None."""
++    armed = shell.__dict__.pop("_mirage_answer", None)
++    if armed is None:
++        return None
++    request, budget = armed
++    # What the emulator would have run: the fallback, should no answer come.
++    from cowrie import mirage_render
++
++    fallback = mirage_render.command_for(shell, cmd, args, environ)
++    if fallback is None:
++        fallback = shell.protocol.getCommand(cmd, environ.get("PATH", "").split(":"), shell.cwd)
++
++    class Command_answer(Answer):
++        mirage_request = request
++        mirage_budget = budget
++        mirage_fallback = fallback
++        mirage_argv = (cmd, *args)
++
++    return Command_answer
++
++
++class Answer(HoneyPotCommand):
++    """A command whose output comes from the responder."""
++
++    mirage_request: dict[str, Any]
++    mirage_budget: dict[str, int]
++    mirage_fallback: Any = None
++    mirage_argv: tuple[str, ...] = ()
++
++    def start(self) -> None:
++        self.began = time.monotonic()
++        self.shown = 0  # lines of output the session has seen
++        self.resynced = False
++        self.attempt = 0
++        self.over = False
++        self.cancel: Callable[..., None] | None = None
++        self.first_ms: float | None = None
++        self.responder = get()
++        self.journal = mirage_state.journal_of(self.protocol)
++        line = " ".join(self.mirage_argv)
++        if self.responder is None:
++            self.fall_back("unavailable")
++        elif len(line.encode("utf8", "replace")) > MAX_INPUT_BYTES:
++            self.fall_back("input_too_long")
++        elif self.journal.full:
++            self.fall_back("journal_full")
++        else:
++            self.send(whole=False)
++
++    # ---------------------------------------------------------------- the request
++
++    def body(self, whole: bool) -> dict[str, Any]:
++        request = self.mirage_request
++        sent = 0 if whole else int(getattr(self.protocol, "mirage_journal_sent", 0))
++        self.journal.sync(self.shell)
++        self.journal_to = self.journal.seq
++        hidden = token_paths(self.protocol)
++        return {
++            "request_id": request["request_id"],
++            "session_id": request.get("session_id") or "unknown",
++            "deployment_id": request.get("deployment_id") or "unknown",
++            "seq": request.get("seq"),
++            "src": request.get("src") or {},
++            "user": str(self.user.get("username") or "root"),
++            "uid": int(self.user.get("uid", 0)),
++            "gid": int(self.user.get("gid", 0)),
++            "cwd": self.cwd,
++            "argv": list(self.mirage_argv),
++            "input": " ".join(self.mirage_argv),
++            "interactive": bool(request.get("interactive", True)),
++            "env": self.journal.changed_env(self.shell),
++            "journal_from": sent + 1,
++            "journal_to": self.journal_to,
++            "journal": self.journal.since(sent),
++            "slice": mirage_state.view(self.shell, list(self.mirage_argv), hidden),
++            "budget": dict(self.mirage_budget),
++        }
++
++    def send(self, whole: bool) -> None:
++        assert self.responder is not None
++        # A request's callbacks count only while it is the one in flight: one
++        # that was stopped (the answer is complete, or is being asked again)
++        # has nothing more to say to this command.
++        self.attempt += 1
++        mine = self.attempt
++        self.cancel = self.responder.respond(
++            self.body(whole),
++            lambda rec: self.record(rec) if mine == self.attempt else None,
++            lambda why: self.reply_over(why) if mine == self.attempt else None,
++            self.mirage_budget["deadline_ms"] / 1000.0,
++        )
++
++    # ---------------------------------------------------------------- the reply
++
++    def record(self, rec: dict[str, Any]) -> None:
++        if self.over or self.exited:
++            return
++        kind = rec.get("type")
++        if kind == "out":
++            self.out(rec)
++        elif kind == "end":
++            self.end(rec)
++        elif kind == "abort":
++            reason = str(rec.get("reason") or "abort")[:120]
++            self.stop_reading()
++            if self.shown:
++                self.finish(1, "cut", reason)
++            else:
++                self.fall_back(reason)
++        elif kind == "resync":
++            self.stop_reading()
++            if self.resynced or self.shown:
++                self.fall_back("resync")
++            else:
++                # The responder was restarted: it gets the whole journal, once.
++                self.resynced = True
++                self.send(whole=True)
++        else:
++            self.stop_reading()
++            self.broken("malformed")
++
++    def out(self, rec: dict[str, Any]) -> None:
++        line = rec.get("line")
++        if not isinstance(line, str):
++            self.stop_reading()
++            self.broken("malformed")
++            return
++        if self.first_ms is None:
++            self.first_ms = round((time.monotonic() - self.began) * 1000, 1)
++        self.shown += 1
++        self.write(line + ("" if rec.get("newline") is False else "\n"))
++
++    def end(self, rec: dict[str, Any]) -> None:
++        self.stop_reading()
++        stdout, stderr = rec.get("stdout", ""), rec.get("stderr", "")
++        code, ops = rec.get("exit_code", 0), rec.get("ops") or []
++        well_formed = (
++            isinstance(stdout, str)
++            and isinstance(stderr, str)
++            and isinstance(code, int)
++            and not isinstance(code, bool)
++            and 0 <= code <= 255
++            and isinstance(ops, list)
++        )
++        if not well_formed:
++            self.broken("malformed")
++            return
++        applied = 0
++        if ops:
++            if self.shown:
++                # Lines were shown before the operations came: the responder
++                # broke the contract. Nothing is applied; the answer stops.
++                self.finish(1, "cut", "ops_after_output")
++                return
++            try:
++                applied = len(
++                    mirage_state.apply(self.shell, ops, protected_paths=token_paths(self.protocol))
++                )
++            except mirage_state.Rejected as e:
++                self.fall_back("ops:rejected", detail=str(e)[:200])
++                return
++        # The responder folded the journal it was sent before it answered.
++        self.protocol.mirage_journal_sent = self.journal_to
++        if stdout:
++            if self.first_ms is None:
++                self.first_ms = round((time.monotonic() - self.began) * 1000, 1)
++            self.shown += stdout.count("\n") + (0 if stdout.endswith("\n") else 1)
++            self.write(stdout)
++        if stderr:
++            self.errorWrite(stderr)
++        self.finish(
++            code,
++            "answered",
++            None,
++            rung=str(rec.get("rung") or "")[:16],
++            ops_applied=applied,
++            output_tokens=rec.get("output_tokens"),
++        )
++
++    def reply_over(self, reason: str | None) -> None:
++        """The reply ended without an ``end`` or ``abort`` record, or could
++        not be had at all."""
++        if self.over or self.exited:
++            return
++        self.broken(reason or "truncated")
++
++    def broken(self, reason: str) -> None:
++        if self.shown:
++            self.finish(1, "cut", reason)
++        else:
++            self.fall_back(reason)
++
++    def stop_reading(self) -> None:
++        self.attempt += 1
++        cancel, self.cancel = self.cancel, None
++        if cancel is not None:
++            cancel("done")
++
++    # ---------------------------------------------------------------- endings
++
++    def report(self, outcome: str, reason: str | None, **fields: Any) -> None:
++        self.protocol.events.dispatch(
++            "cowrie.mirage.respond",
++            "Responder %(outcome)s for %(input)s",
++            input=" ".join(self.mirage_argv),
++            outcome=outcome,
++            reason=reason,
++            request_id=self.mirage_request["request_id"],
++            seq=self.mirage_request.get("seq"),
++            lines=self.shown,
++            first_ms=self.first_ms,
++            total_ms=round((time.monotonic() - self.began) * 1000, 1),
++            **{k: v for k, v in fields.items() if v is not None},
++        )
++
++    def finish(self, code: int, outcome: str, reason: str | None, **fields: Any) -> None:
++        if self.over:
++            return
++        self.over = True
++        self.report(outcome, reason, exit_code=code, **fields)
++        self.exit(code)
++
++    def fall_back(self, reason: str, **fields: Any) -> None:
++        """No answer, and nothing shown: run what the emulator would have."""
++        if self.over:
++            return
++        self.over = True
++        self.report("fallback", reason, **fields)
++        if self.mirage_fallback is not None:
++            self.exec_command(self.pp, self.mirage_fallback, *self.args)
++            return
++        self.errorWrite(self.shell.command_not_found_message(self.mirage_argv[0]))
++        self.exit(127)
++
++    def handle_CTRL_C(self) -> None:
++        # Closing the connection is how the responder learns: it stops the
++        # model and writes the answer down as cancelled.
++        self.stop_reading()
++        self.write("^C\n")
++        self.finish(130, "cancelled", None)
++
++    def connectionLost(self) -> None:
++        self.stop_reading()
++        super().connectionLost()
+diff --git a/src/cowrie/shell/honeypot.py b/src/cowrie/shell/honeypot.py
+index 95f97d7..67b0e17 100644
+--- a/src/cowrie/shell/honeypot.py
++++ b/src/cowrie/shell/honeypot.py
+@@ -1233,9 +1233,13 @@ class HoneyPotShell:
+         cmd = args.pop(0)
+         # MIRAGE: an answer from this deployment's render library, where the
+         # emulator has no command of its own; None means the stock lookup.
+-        from cowrie import mirage_render
++        from cowrie import mirage_render, mirage_respond
+ 
+-        cmdclass = mirage_render.command_for(self, cmd, args, environ)
++        # An answer the policy asked the responder for takes the command's
++        # place; it falls back to what would have run here.
++        cmdclass = mirage_respond.take(self, cmd, args, environ)
++        if cmdclass is None:
++            cmdclass = mirage_render.command_for(self, cmd, args, environ)
+         if cmdclass is None:
+             cmdclass = self.protocol.getCommand(
+                 cmd, environ.get("PATH", "").split(":"), self.cwd
+diff --git a/src/cowrie/ssh/factory.py b/src/cowrie/ssh/factory.py
+index 5589d9d..18e4e2c 100644
+--- a/src/cowrie/ssh/factory.py
++++ b/src/cowrie/ssh/factory.py
+@@ -62,6 +62,13 @@ class CowrieSSHFactory(factory.SSHFactory):
+         # For use by the uptime command
+         self.starttime = time.time()
+ 
++        # MIRAGE: begin checking the responder's health now, not at the first
++        # command: a decoy that has just started would otherwise tell the
++        # policy it cannot be answered for, on the first command of its life.
++        from cowrie import mirage_respond
++
++        mirage_respond.get()
++
+         # Load/create keys
+         try:
+             public_key_auth = [
+diff --git a/src/cowrie/test/test_mirage_coreutils.py b/src/cowrie/test/test_mirage_coreutils.py
+index a3432de..02b5ede 100644
+--- a/src/cowrie/test/test_mirage_coreutils.py
++++ b/src/cowrie/test/test_mirage_coreutils.py
+@@ -277,7 +277,9 @@ class TierTests(Base):
+         node[fs.A_CONTENTS] = b"\x7fELF\x02\x01\x01\x00"
+         self.assertFalse(mirage_render._is_script(shell, "/tmp/program"))
+         self.assertEqual(self.tier("/tmp/program"), "none")
+-        self.assertEqual(self.tier("nosuchprogram"), "none")
++        # No such program is not "nothing to answer with": the shell's own
++        # "command not found" is the true answer.
++        self.assertEqual(self.tier("nosuchprogram"), "absent")
+ 
+ 
+ class GrepTests(Base):
+diff --git a/src/cowrie/test/test_mirage_render.py b/src/cowrie/test/test_mirage_render.py
+index 1179f9b..6a8832b 100644
+--- a/src/cowrie/test/test_mirage_render.py
++++ b/src/cowrie/test/test_mirage_render.py
+@@ -209,7 +209,7 @@ class GateTests(RenderTestBase):
+         self.run_line("mirage-report -a 2>/dev/null")
+         self.run_line("uname -a")
+         self.run_line("no-such-program")
+-        self.assertEqual(self.tiers(), [("rendered", True), ("emulated", True), ("none", False)])
++        self.assertEqual(self.tiers(), [("rendered", True), ("emulated", True), ("absent", False)])
+ 
+     def test_arguments_outside_the_library_are_not_the_rendered_tier(self) -> None:
+         self.run_line("mirage-report -z")
+diff --git a/src/cowrie/test/test_mirage_respond.py b/src/cowrie/test/test_mirage_respond.py
+new file mode 100644
+index 0000000..bd2bf7d
+--- /dev/null
++++ b/src/cowrie/test/test_mirage_respond.py
+@@ -0,0 +1,538 @@
++# SPDX-License-Identifier: BSD-3-Clause
++# ABOUTME: Tests gate contract v2 in the shell: the respond action and its client,
++# ABOUTME: plant_token, what the decoy says it supports, and every way an answer ends.
++
++from __future__ import annotations
++
++import json
++import unittest
++from typing import Any
++
++from twisted.internet import defer
++
++from cowrie import mirage_gate, mirage_respond, mirage_state
++from cowrie.shell import fs as cfs
++from cowrie.test.test_mirage_gate import PROMPT, GateTestBase, allow
++
++BUDGET = {"max_tokens": 400, "deadline_ms": 5000}
++# A command the emulator has, with an option it declines: tier ``none``.
++ASKED = "stat -f /"
++FALLBACK = b"cannot execute binary file"
++
++
++def respond(request: dict[str, Any]) -> dict[str, Any]:
++    """The policy of these tests: respond where the decoy has nothing."""
++    if request["tier"] == "none" and "respond" in request["supports"]:
++        return {"action": "respond", "decision_id": "d", "propensity": 1.0, "budget": BUDGET}
++    return allow(request)
++
++
++def end(**fields: Any) -> dict[str, Any]:
++    return {"type": "end", "stderr": "", "exit_code": 0, "ops": [], "rung": "model", **fields}
++
++
++def out(line: str, **fields: Any) -> dict[str, Any]:
++    return {"type": "out", "line": line, **fields}
++
++
++class FakeResponder:
++    """In-process stand-in for the responder service. ``script(body)`` gives
++    the reply's records; with ``manual`` they are held until ``release()``."""
++
++    def __init__(self, script: Any, manual: bool = False) -> None:
++        self.script, self.manual = script, manual
++        self.healthy = True
++        self.requests: list[dict[str, Any]] = []
++        self.held: list[Any] = []
++        self.cancelled: list[str] = []
++        self.failure: str | None = None
++
++    def respond(self, body: dict[str, Any], on_record: Any, on_done: Any, deadline_s: float) -> Any:
++        self.requests.append(json.loads(json.dumps(body)))  # as it would travel
++        state = {"over": False}
++
++        def cancel(reason: str = "cancelled") -> None:
++            if not state["over"]:
++                state["over"] = True
++                self.cancelled.append(reason)
++                on_done(reason)
++
++        def deliver(records: list[dict[str, Any]], reason: str | None = None) -> None:
++            for record in records:
++                if state["over"]:
++                    return
++                on_record(record)
++            if not state["over"]:
++                state["over"] = True
++                on_done(reason)
++
++        records = self.script(body) if callable(self.script) else self.script
++        if self.manual:
++            self.held.append(lambda upto=None, reason=None: deliver(records[:upto], reason))
++        else:
++            deliver(list(records), self.failure)
++        return cancel
++
++
++class RespondTestBase(GateTestBase):
++    rule = staticmethod(respond)
++    script: Any = (end(stdout="answered\n"),)
++    manual_reply = False
++
++    def setUp(self) -> None:
++        self.responder = FakeResponder(list(self.script), self.manual_reply)
++        mirage_respond.reset_for_tests(self.responder)
++        super().setUp()
++        self.proto.fs.events = self.proto.events
++        self.shell = self.proto.cmdstack[0]
++
++    def tearDown(self) -> None:
++        super().tearDown()
++        mirage_respond.reset_for_tests()
++
++    def reports(self) -> list[dict[str, Any]]:
++        return [e for e in self.events if e["eventid"] == "cowrie.mirage.respond"]
++
++    def ask(self, records: list[dict[str, Any]], line: str = ASKED) -> bytes:
++        self.responder.script = records
++        return self.run_line(line)
++
++
++# ------------------------------------------------------------------- what is offered
++
++
++class SupportsTests(RespondTestBase):
++    def supports(self, line: str = "echo hi") -> list[str]:
++        self.run_line(line)
++        return list(self.gate.requests[-1]["supports"])
++
++    def test_respond_is_offered_while_the_responder_is_healthy(self) -> None:
++        self.assertEqual(self.supports(), ["respond", "plant_token"])
++        self.responder.healthy = False
++        self.assertEqual(self.supports(), ["plant_token"])
++        mirage_respond.reset_for_tests(None)
++        self.assertEqual(self.supports(), ["plant_token"])
++
++    def test_nothing_is_offered_once_the_journal_has_holes(self) -> None:
++        journal = mirage_state.journal_of(self.proto)
++        journal.full = True
++        self.assertEqual(self.supports(), [])
++        # And so the command is the emulator's, whatever the policy would like.
++        self.assertIn(FALLBACK, self.run_line(ASKED))
++        self.assertEqual(self.responder.requests, [])
++
++    def test_a_program_that_is_not_there_is_absent_not_unanswered(self) -> None:
++        output = self.run_line("no-such-program --now")
++        request = self.gate.requests[-1]
++        self.assertEqual((request["tier"], request["known"]), ("absent", False))
++        self.assertIn(b"command not found", output)
++        self.assertEqual(self.responder.requests, [])
++
++    def test_an_action_that_was_not_offered_is_not_taken(self) -> None:
++        self.gate.rule = lambda r: {"action": "respond", "decision_id": "d", "budget": BUDGET}
++        self.responder.healthy = False
++        self.assertIn(FALLBACK, self.run_line(ASKED))
++        self.gate.rule = lambda r: {"action": "escalate", "decision_id": "d", "sandbox": "s"}
++        self.assertEqual(self.run_line("echo hi"), b"hi\n" + PROMPT)
++        decisions = self.decisions()
++        self.assertEqual([d["action"] for d in decisions], ["allow", "allow"])
++        self.assertEqual([d["fallback_reason"] for d in decisions], ["unsupported", "unsupported"])
++        self.assertEqual(self.responder.requests, [])
++
++    def test_respond_is_for_what_the_emulator_cannot_answer(self) -> None:
++        self.gate.rule = lambda r: {"action": "respond", "decision_id": "d", "budget": BUDGET}
++        self.assertEqual(self.run_line("echo hi"), b"hi\n" + PROMPT)
++        self.assertEqual(self.reports()[-1]["reason"], "tier:emulated")
++        self.gate.rule = lambda r: {"action": "respond", "decision_id": "d"}
++        self.assertIn(FALLBACK, self.run_line(ASKED))
++        self.assertEqual(self.reports()[-1]["reason"], "no_budget")
++        self.assertEqual(self.responder.requests, [])
++
++    def test_a_budget_is_two_positive_numbers_within_the_contract(self) -> None:
++        good = mirage_respond.budget_of({"budget": {"max_tokens": 9000, "deadline_ms": 99999}})
++        self.assertEqual(good, {"max_tokens": 400, "deadline_ms": 10000})
++        for bad in (None, {}, {"max_tokens": 0, "deadline_ms": 1}, {"max_tokens": "9", "deadline_ms": 1},
++                    {"max_tokens": True, "deadline_ms": 1}, {"max_tokens": 5}):  # fmt: skip
++            self.assertIsNone(mirage_respond.budget_of({"budget": bad}), bad)
++
++
++# ------------------------------------------------------------------- an answer
++
++
++class AnswerTests(RespondTestBase):
++    def test_lines_are_shown_as_they_come_and_the_status_is_the_answers(self) -> None:
++        output = self.ask([out("one"), out("two"), out("three", newline=False), end(exit_code=3)])
++        self.assertEqual(output, b"one\ntwo\nthree" + PROMPT)
++        self.assertEqual(self.run_line("echo $?"), b"3\n" + PROMPT)
++        (report,) = self.reports()
++        self.assertEqual((report["outcome"], report["lines"], report["rung"]), ("answered", 3, "model"))
++        self.assertEqual(report["request_id"], self.gate.requests[0]["request_id"])
++        self.assertIsNotNone(report["first_ms"])
++
++    def test_the_request_says_who_where_and_what_is_there(self) -> None:
++        self.run_line("cd /tmp; export APP=1; mkdir /tmp/seen")
++        self.ask([end()], "stat -f /tmp/seen missing")
++        (body,) = self.responder.requests
++        self.assertEqual(body["request_id"], self.gate.requests[-1]["request_id"])
++        self.assertEqual(body["session_id"], "test0000")
++        self.assertEqual((body["user"], body["uid"], body["cwd"]), ("root", 0, "/tmp"))
++        self.assertEqual(body["argv"], ["stat", "-f", "/tmp/seen", "missing"])
++        self.assertEqual(body["input"], "stat -f /tmp/seen missing")
++        self.assertEqual(body["budget"], BUDGET)
++        self.assertEqual(body["env"], {"APP": "1"})
++        self.assertEqual((body["journal_from"], body["journal_to"]), (1, len(body["journal"])))
++        self.assertEqual(
++            [(e["op"], e.get("path") or e.get("name")) for e in body["journal"]],
++            # In the order they happened: the directory was left before the other was made.
++            [("cd", "/tmp"), ("setenv", "APP"), ("mkdir", "/tmp/seen")],
++        )
++        seen = {e["path"]: e["type"] for e in body["slice"]}
++        self.assertEqual(seen["/tmp/seen"], "dir")
++        self.assertEqual(seen["/tmp/missing"], "missing")
++
++    def test_only_what_is_new_is_sent_the_next_time(self) -> None:
++        self.run_line("mkdir /tmp/a")
++        self.ask([end()])
++        self.run_line("mkdir /tmp/b")
++        self.ask([end()])
++        first, second = self.responder.requests
++        self.assertEqual((first["journal_from"], [e["path"] for e in first["journal"]]), (1, ["/tmp/a"]))
++        self.assertEqual((second["journal_from"], [e["path"] for e in second["journal"]]), (2, ["/tmp/b"]))
++
++    def test_an_aborted_answer_leaves_its_journal_to_be_sent_again(self) -> None:
++        self.run_line("mkdir /tmp/a")
++        self.ask([{"type": "abort", "reason": "busy"}])
++        self.ask([end()])
++        self.assertEqual([r["journal_from"] for r in self.responder.requests], [1, 1])
++
++    def test_output_goes_where_the_command_s_output_goes(self) -> None:
++        self.assertEqual(self.ask([out("a"), out("b"), end()], f"{ASKED} > /tmp/kept"), PROMPT)
++        self.assertEqual(self.run_line("cat /tmp/kept"), b"a\nb\n" + PROMPT)
++        self.assertEqual(self.ask([out("a"), out("b"), end()], f"{ASKED} | wc -l"), b"2\n" + PROMPT)
++        self.assertEqual(
++            self.ask([end(stdout="", stderr="stat: cannot read\n", exit_code=1)], f"{ASKED} 2>/dev/null"),
++            PROMPT,
++        )
++
++    def test_a_held_answer_applies_its_operations_before_it_shows_a_line(self) -> None:
++        ops = [
++            {"op": "mkdir", "path": "/tmp/build"},
++            {"op": "write", "path": "/tmp/build/out.log", "content": "built\n"},
++        ]
++        seen: list[bool] = []
++        write = self.tr.write
++
++        def watching(data: bytes) -> None:
++            if b"done" in data:
++                seen.append(self.proto.fs.exists("/tmp/build/out.log"))
++            write(data)
++
++        self.tr.write = watching  # type: ignore[method-assign]
++        output = self.ask([end(stdout="done\n", ops=ops)])
++        self.tr.write = write  # type: ignore[method-assign]
++        self.assertEqual(output, b"done\n" + PROMPT)
++        self.assertEqual(seen, [True])  # the file was there when the line was shown
++        self.assertEqual(self.run_line("cat /tmp/build/out.log"), b"built\n" + PROMPT)
++        self.assertEqual(self.reports()[-1]["ops_applied"], 2)
++        changes = [(e["op"], e["path"]) for e in self.events if e["eventid"] == "cowrie.fs.change"]
++        self.assertEqual(changes, [("mkdir", "/tmp/build"), ("create", "/tmp/build/out.log")])
++
++    def test_a_round_trip_each_way(self) -> None:
++        """Spec 3.1: changed by an answer and read by the emulator, and the
++        other way round, for a file, a removal, a directory, a mode, a variable."""
++        self.ask([end(ops=[{"op": "write", "path": "/tmp/made", "content": "x"}])])
++        self.assertIn(b"made", self.run_line("ls /tmp"))
++        self.ask([end(ops=[{"op": "remove", "path": "/tmp/made"}])])
++        self.assertNotIn(b"made", self.run_line("ls /tmp"))
++        self.ask([end(ops=[{"op": "cd", "path": "/var/log"}])])
++        self.assertEqual(self.run_line("pwd"), b"/var/log\nroot@unitTest:/var/log# ")
++        self.run_line("cd; touch /tmp/m")
++        self.ask([end(ops=[{"op": "chmod", "path": "/tmp/m", "mode": 0o600}])])
++        self.assertIn(b"-rw-------", self.run_line("ls -l /tmp/m"))
++        self.ask([end(ops=[{"op": "setenv", "name": "FROM_ANSWER", "value": "yes"}])])
++        self.assertEqual(self.run_line("echo $FROM_ANSWER"), b"yes\n" + PROMPT)
++        # The other way: what the emulator changed is what the responder is shown.
++        self.run_line("mkdir /tmp/e; touch /tmp/e/f; chmod 640 /tmp/e/f; cd /tmp/e; export E=1")
++        self.ask([end()], "stat -f /tmp/e/f /tmp/m")
++        body = self.responder.requests[-1]
++        by_path = {e["path"]: e for e in body["slice"]}
++        self.assertEqual(by_path["/tmp/e/f"]["mode"], 0o640)
++        self.assertEqual(by_path["/tmp/m"]["mode"], 0o600)
++        self.assertEqual((body["cwd"], body["env"]["E"], body["env"]["FROM_ANSWER"]), ("/tmp/e", "1", "yes"))
++        self.run_line("rm /tmp/e/f")
++        self.ask([end()], "stat -f /tmp/e/f")
++        self.assertEqual(self.responder.requests[-1]["slice"][0]["type"], "missing")
++
++
++# ------------------------------------------------------------------- no answer
++
++
++class FallbackTests(RespondTestBase):
++    def fell_back(self, output: bytes, reason: str) -> None:
++        self.assertIn(FALLBACK, output)
++        self.assertTrue(output.endswith(PROMPT))
++        report = self.reports()[-1]
++        self.assertEqual((report["outcome"], report["reason"], report["lines"]), ("fallback", reason, 0))
++        self.assertEqual(self.run_line("echo $?"), b"126\n" + PROMPT)
++
++    def test_an_abort_before_any_output_is_the_emulators_answer(self) -> None:
++        self.fell_back(self.ask([{"type": "abort", "reason": "filter:marker"}]), "filter:marker")
++
++    def test_each_rejected_operation_refuses_the_whole_answer(self) -> None:
++        self.run_line("echo secret > /root/.my.cnf")
++        self.proto.mirage_token_paths = {"/root/.my.cnf"}
++        for ops in (
++            [{"op": "write", "path": "tmp/x", "content": "a"}],
++            [{"op": "mkdir", "path": "/tmp/no/such/parent"}],
++            [{"op": "write", "path": "/root/.my.cnf", "content": "x"}],
++            [{"op": "mkdir", "path": f"/tmp/d{i}"} for i in range(9)],
++            [{"op": "write", "path": "/tmp/x", "content": "a" * 4097}],
++            [{"op": "mkdir", "path": "/tmp/fine"}, {"op": "mkdir", "path": "/var/absent/x"}],
++        ):
++            with self.subTest(ops=str(ops)[:60]):
++                del self.events[:]
++                self.fell_back(self.ask([end(stdout="done\n", ops=ops)]), "ops:rejected")
++                self.assertNotIn(b"done", self.tr.value())
++                self.assertEqual([e for e in self.events if e["eventid"] == "cowrie.fs.change"], [])
++        self.assertFalse(self.proto.fs.exists("/tmp/fine"))
++        self.assertEqual(self.run_line("cat /root/.my.cnf"), b"secret\n" + PROMPT)
++
++    def test_a_responder_that_fails_or_says_nothing_usable(self) -> None:
++        self.responder.failure = "error:ConnectionRefusedError"
++        self.fell_back(self.ask([]), "error:ConnectionRefusedError")
++        self.responder.failure = "timeout"
++        self.fell_back(self.ask([]), "timeout")
++        self.responder.failure = "status:503"
++        self.fell_back(self.ask([]), "status:503")
++        self.responder.failure = None
++        self.fell_back(self.ask([]), "truncated")  # the reply ended with no end record
++        self.fell_back(self.ask([{"type": "surprise"}]), "malformed")
++        self.fell_back(self.ask([out(7)]), "malformed")  # type: ignore[arg-type]
++        self.fell_back(self.ask([end(exit_code=999)]), "malformed")
++        self.fell_back(self.ask([end(ops="rm -rf")]), "malformed")
++
++    def test_an_input_over_the_cap_is_not_sent(self) -> None:
++        self.fell_back(self.run_line(f"stat -f /{'a' * 1100}"), "input_too_long")
++        self.assertEqual(self.responder.requests, [])
++
++    def test_once_lines_are_out_an_answer_that_stops_is_cut_not_replaced(self) -> None:
++        output = self.ask([out("one"), {"type": "abort", "reason": "deadline"}])
++        self.assertEqual(output, b"one\n" + PROMPT)
++        report = self.reports()[-1]
++        self.assertEqual((report["outcome"], report["reason"], report["lines"]), ("cut", "deadline", 1))
++        self.assertEqual(self.run_line("echo $?"), b"1\n" + PROMPT)
++        self.responder.failure = "error:ConnectionLost"
++        self.assertEqual(self.ask([out("one")]), b"one\n" + PROMPT)
++        self.assertEqual(self.reports()[-1]["outcome"], "cut")
++
++    def test_operations_after_output_are_a_breach_and_are_not_applied(self) -> None:
++        ops = [{"op": "write", "path": "/tmp/late", "content": "x"}]
++        self.assertEqual(self.ask([out("one"), end(ops=ops)]), b"one\n" + PROMPT)
++        self.assertEqual(self.reports()[-1]["reason"], "ops_after_output")
++        self.assertFalse(self.proto.fs.exists("/tmp/late"))
++
++
++class ResyncTests(RespondTestBase):
++    def test_a_restarted_responder_is_sent_the_whole_journal_once(self) -> None:
++        self.run_line("mkdir /tmp/a")
++        self.ask([end()])
++        self.run_line("mkdir /tmp/b")
++        replies = iter([[{"type": "resync", "have": 0}], [out("ok"), end()]])
++        self.responder.script = lambda body: next(replies)
++        self.assertEqual(self.run_line(ASKED), b"ok\n" + PROMPT)
++        _, gap, whole = self.responder.requests
++        self.assertEqual((gap["journal_from"], len(gap["journal"])), (2, 1))
++        self.assertEqual((whole["journal_from"], [e["path"] for e in whole["journal"]]), (1, ["/tmp/a", "/tmp/b"]))
++        self.assertEqual(whole["request_id"], gap["request_id"])
++        self.assertEqual(len(self.reports()), 2)  # one answer each, not one a request
++
++    def test_a_second_resync_is_a_fallback(self) -> None:
++        self.responder.script = lambda body: [{"type": "resync", "have": 0}]
++        self.assertIn(FALLBACK, self.run_line(ASKED))
++        self.assertEqual(len(self.responder.requests), 2)
++        self.assertEqual(self.reports()[-1]["reason"], "resync")
++
++
++# ------------------------------------------------------------------- while it is pending
++
++
++class PendingTests(RespondTestBase):
++    manual_reply = True
++
++    def test_typed_ahead_input_waits_for_the_answer(self) -> None:
++        self.responder.script = [out("slow answer"), end()]
++        self.assertEqual(self.run_line(ASKED), b"")  # nothing yet, and no prompt
++        self.proto.lineReceived(b"echo next\n")
++        self.assertNotIn(b"next", self.tr.value())
++        self.responder.held.pop(0)()
++        # The queued line runs when the answer is over, as it does behind any command.
++        self.assertEqual(self.tr.value(), b"slow answer\nnext\n" + PROMPT)
++
++    def test_lines_reach_the_terminal_before_the_answer_is_over(self) -> None:
++        self.responder.script = [out("first"), out("second"), end()]
++        self.run_line(ASKED)
++        reply = self.responder.held.pop(0)
++        reply(1)  # the first record only; on_done fires, so this reply is over
++        self.assertTrue(self.tr.value().startswith(b"first\n"))
++
++    def test_ctrl_c_stops_the_answer_and_tells_the_responder(self) -> None:
++        self.responder.script = [out("never shown"), end()]
++        self.run_line(ASKED)
++        self.proto.handle_CTRL_C()
++        self.assertEqual(self.tr.value(), b"^C\n" + PROMPT)
++        self.assertEqual(self.responder.cancelled, ["done"])  # the connection was closed
++        self.responder.held.pop(0)()  # what arrives afterwards is nobody's
++        self.assertEqual(self.tr.value(), b"^C\n" + PROMPT)
++        self.assertEqual(self.reports()[-1]["outcome"], "cancelled")
++        self.assertEqual(self.run_line("echo $?"), b"130\n" + PROMPT)
++
++    def test_a_session_that_goes_away_closes_the_request(self) -> None:
++        self.responder.script = [end()]
++        self.run_line(ASKED)
++        self.proto.connectionLost()
++        self.assertEqual(self.responder.cancelled, ["done"])
++        self.proto.connectionLost = lambda: None  # tearDown would close it again
++
++
++# ------------------------------------------------------------------- plant_token
++
++
++def plant(request: dict[str, Any]) -> dict[str, Any]:
++    if request["argv"][0] == "ls" and "plant_token" in request["supports"]:
++        ops = [{"op": "write", "path": "/root/.my.cnf", "content": "[client]\nuser=dbbackup\n", "mode": 0o600}]
++        return {"action": "plant_token", "decision_id": "d-plant", "ops": ops}
++    return respond(request)
++
++
++class PlantTests(RespondTestBase):
++    rule = staticmethod(plant)
++
++    def planted(self) -> list[dict[str, Any]]:
++        return [e for e in self.events if e["eventid"] == "cowrie.mirage.plant"]
++
++    def test_the_file_is_there_when_the_command_runs(self) -> None:
++        output = self.run_line("ls -a /root")
++        self.assertIn(b".my.cnf", output)  # the very command that triggered it sees it
++        node = self.proto.fs.getfile("/root/.my.cnf")
++        self.assertEqual((node[cfs.A_MODE] & 0o777, node[cfs.A_UID]), (0o600, 0))
++        self.assertEqual(self.run_line("cat /root/.my.cnf"), b"[client]\nuser=dbbackup\n" + PROMPT)
++        (event,) = self.planted()
++        self.assertEqual((event["planted"], event["paths"], event["decision_id"]), (True, ["/root/.my.cnf"], "d-plant"))
++        self.assertEqual(self.decisions()[0]["action"], "plant_token")
++
++    def test_what_was_planted_is_kept_from_the_responder(self) -> None:
++        self.run_line("ls /root")
++        self.ask([end()], "stat -f /root/.my.cnf")
++        entry = self.responder.requests[-1]["slice"][0]
++        self.assertEqual((entry["path"], entry["type"]), ("/root/.my.cnf", "file"))
++        self.assertNotIn("head", entry)
++        self.assertNotIn("dbbackup", json.dumps(self.responder.requests[-1]))
++        output = self.ask([end(stdout="ok\n", ops=[{"op": "remove", "path": "/root/.my.cnf"}])])
++        self.assertIn(FALLBACK, output)
++        self.assertTrue(self.proto.fs.exists("/root/.my.cnf"))
++
++    def test_operations_that_cannot_be_applied_plant_nothing_and_the_command_still_runs(self) -> None:
++        self.gate.rule = lambda r: {
++            "action": "plant_token",
++            "decision_id": "d",
++            "ops": [{"op": "write", "path": "/no/such/dir/x", "content": "t"}],
++        }
++        self.assertEqual(self.run_line("echo hi"), b"hi\n" + PROMPT)
++        (event,) = self.planted()
++        self.assertFalse(event["planted"])
++        self.assertIn("does not exist", event["reason"])
++        self.assertEqual(getattr(self.proto, "mirage_token_paths", set()), set())
++
++
++# ------------------------------------------------------------------- the client itself
++
++
++class LinesTests(unittest.TestCase):
++    def reader(self) -> tuple[Any, list[dict[str, Any]], list[str]]:
++        got: list[dict[str, Any]] = []
++        stopped: list[str] = []
++        done: defer.Deferred = defer.Deferred()
++        lines = mirage_respond._Lines(got.append, done)
++
++        class Transport:
++            def stopProducing(self) -> None:
++                stopped.append("stopped")
++
++        lines.transport = Transport()  # type: ignore[assignment]
++        return lines, got, stopped
++
++    def test_records_are_handed_on_as_their_lines_complete(self) -> None:
++        lines, got, _ = self.reader()
++        lines.dataReceived(b'{"type":"out","li')
++        self.assertEqual(got, [])
++        lines.dataReceived(b'ne":"a"}\n{"type":"out","line":"b"}\n\n{"type":"e')
++        self.assertEqual([r["line"] for r in got], ["a", "b"])
++        lines.dataReceived(b'nd"}\n')
++        self.assertEqual(got[-1], {"type": "end"})
++
++    def test_what_is_not_a_record_ends_the_reading(self) -> None:
++        for junk in (b"not json\n", b"[1, 2]\n", b'"text"\n'):
++            lines, got, stopped = self.reader()
++            lines.dataReceived(junk)
++            self.assertEqual((got, stopped), ([], ["stopped"]))
++
++    def test_a_reply_without_end_is_bounded(self) -> None:
++        lines, _got, stopped = self.reader()
++        chunk = b'{"type":"out","line":"' + b"x" * 1000 + b'"}\n'
++        for _ in range(mirage_respond.MAX_REPLY_BYTES // len(chunk) + 2):
++            lines.dataReceived(chunk)
++        self.assertEqual(stopped, ["stopped"])
++
++
++class HealthTests(unittest.TestCase):
++    def test_health_follows_the_service(self) -> None:
++        client = mirage_respond.Responder("http://198.51.100.9:8100/v1/respond", "t" * 32)
++        asked: list[str] = []
++        answers = iter([200, 503, None, 200])
++
++        class Http:
++            def get(self, url: str, **_kw: Any) -> defer.Deferred:
++                asked.append(url)
++                code = next(answers)
++                if code is None:
++                    return defer.fail(ConnectionRefusedError("down"))
++                return defer.succeed(type("Response", (), {"code": code})())
++
++        client._http = Http()  # type: ignore[assignment]
++        self.assertFalse(client.healthy)  # not until a check has passed
++        seen = []
++        for _ in range(4):
++            client.check()
++            seen.append(client.healthy)
++        self.assertEqual(seen, [True, False, False, True])
++        self.assertEqual(asked[0], "http://198.51.100.9:8100/healthz")
++
++    def test_checks_begin_when_the_service_starts_not_at_the_first_command(self) -> None:
++        from cowrie.ssh.factory import CowrieSSHFactory
++
++        started: list[str] = []
++
++        class Watched:
++            healthy = False
++
++            def start(self) -> None:
++                started.append("started")
++
++        mirage_respond.reset_for_tests(Watched())
++        try:
++            factory = CowrieSSHFactory.__new__(CowrieSSHFactory)
++            try:
++                factory.startFactory()
++            except Exception:  # the rest of start-up needs a whole service; not this
++                pass
++            self.assertEqual(started[:1], ["started"])
++        finally:
++            mirage_respond.reset_for_tests()
++
++    def test_the_gate_starts_no_checks_when_no_responder_is_configured(self) -> None:
++        mirage_respond.reset_for_tests()
++        try:
++            self.assertIsNone(mirage_respond.get())
++        finally:
++            mirage_respond.reset_for_tests()
++        mirage_gate.reset_for_tests()
+-- 
+2.50.1 (Apple Git-155)
+

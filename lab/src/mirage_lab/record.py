@@ -14,9 +14,11 @@ from __future__ import annotations
 import contextlib
 import os
 import random
+import re
 import select
 import signal
 import termios
+import time
 import tty
 from collections.abc import Callable
 from datetime import datetime
@@ -40,6 +42,7 @@ from mirage_lab.truth import TruthWriter, prune, run_file
 from mirage_schema.groundtruth import Connection, RunRecord, SessionTruth
 
 SCENARIO_ID = "recorded-human"
+SCENARIO_NAME = r"[a-z0-9][a-z0-9-]{3,63}"  # as models.ID
 ESCAPE = b"\x1d"  # Ctrl-]: ends the recording from this side when the decoy stops answering
 POLL_S = 0.2  # how long a window-size change can wait to be noticed
 
@@ -63,13 +66,18 @@ def _write_all(fd: int, data: bytes) -> None:
 
 
 def relay(
-    chan: Any, stdin: int, stdout: int, resized: Callable[[], tuple[int, int] | None]
+    chan: Any,
+    stdin: int,
+    stdout: int,
+    resized: Callable[[], tuple[int, int] | None],
+    stopped: Callable[[], bool] = lambda: False,
 ) -> None:
-    """Bytes both ways, as they come, until the shell closes, the local input ends or the
-    escape key is pressed. Keys go out in the chunks the terminal delivers them, so typing
-    stays typing and a paste stays a paste: that is what the keystroke statistics measure.
-    ``resized`` returns the new window size when it has changed since the last call."""
-    while True:
+    """Bytes both ways, as they come, until the shell closes, the local input ends, the
+    escape key is pressed or ``stopped`` says so. Keys go out in the chunks the terminal
+    delivers them, so typing stays typing and a paste stays a paste: that is what the
+    keystroke statistics measure. ``resized`` returns the new window size when it has changed
+    since the last call."""
+    while not stopped():
         ready, _, _ = select.select([chan, stdin], [], [], POLL_S)
         size = resized()
         if size is not None:
@@ -90,19 +98,33 @@ def relay(
                 return
 
 
-def interact(chan: Any, stdin: int, stdout: int) -> None:
+def interact(chan: Any, stdin: int, stdout: int, max_s: float | None = None) -> str | None:
     """Run the relay with the terminal in raw mode, and put the terminal back however the
     relay ends. A window-size change only sets a flag in the signal handler; the relay sends
     it. Sending from the handler could deadlock on the transport's own lock.
+
+    A hangup or a request to stop ends the relay the same way, so a person who closes the
+    window still leaves a session with its ground truth; so does ``max_s`` seconds passing.
+    Returns "limit" or "hangup" when one of those ended it, else None.
 
     Both mode changes take effect at once (``TCSANOW``). The usual choice waits for pending
     output to drain, and a terminal that has stopped reading would then hold the recorder
     here for ever, before it has written the session's ground truth."""
     saved = termios.tcgetattr(stdin)
     changed = [False]
+    ended: list[str | None] = [None]
+    deadline = None if max_s is None else time.monotonic() + max_s
 
     def on_winch(*_: object) -> None:
         changed[0] = True
+
+    def on_stop(*_: object) -> None:
+        ended[0] = "hangup"
+
+    def stopped() -> bool:
+        if ended[0] is None and deadline is not None and time.monotonic() >= deadline:
+            ended[0] = "limit"
+        return ended[0] is not None
 
     def resized() -> tuple[int, int] | None:
         if not changed[0]:
@@ -110,13 +132,21 @@ def interact(chan: Any, stdin: int, stdout: int) -> None:
         changed[0] = False
         return window(stdin)
 
-    previous = signal.signal(signal.SIGWINCH, on_winch)
+    previous = {
+        signal.SIGWINCH: signal.signal(signal.SIGWINCH, on_winch),
+        signal.SIGHUP: signal.signal(signal.SIGHUP, on_stop),
+        signal.SIGTERM: signal.signal(signal.SIGTERM, on_stop),
+    }
     try:
         tty.setraw(stdin, termios.TCSANOW)
-        relay(chan, stdin, stdout, resized)
+        relay(chan, stdin, stdout, resized, stopped)
     finally:
-        termios.tcsetattr(stdin, termios.TCSANOW, saved)
-        signal.signal(signal.SIGWINCH, previous)
+        # A terminal that has gone away (the window was closed) has no mode to put back.
+        with contextlib.suppress(termios.error):
+            termios.tcsetattr(stdin, termios.TCSANOW, saved)
+        for number, handler in previous.items():
+            signal.signal(number, handler)
+    return ended[0]
 
 
 def write_truth(
@@ -128,13 +158,14 @@ def write_truth(
     catalogue: Catalogue,
     code_version: str,
     error: str | None = None,
+    scenario_id: str = SCENARIO_ID,
 ) -> None:
     """The session, marked real and human, and the run record that closes it."""
-    actor_ref = f"{run_id}/{SCENARIO_ID}/0"
+    actor_ref = f"{run_id}/{scenario_id}/0"
     truth.write(
         SessionTruth(
             run_id=run_id,
-            scenario_id=SCENARIO_ID,
+            scenario_id=scenario_id,
             session_ref=f"{actor_ref}/0",
             protocol="ssh",
             actor_ref=actor_ref,
@@ -166,7 +197,7 @@ def write_truth(
             catalogue_sha256=catalogue.sha256,
             scenarios_sha256=scenarios_hash([]),  # no scenario file produced this
             code_version=code_version,
-            scenarios=[SCENARIO_ID],
+            scenarios=[scenario_id],
             sessions=1,
             steps=0,
         )
@@ -174,10 +205,20 @@ def write_truth(
 
 
 def run(
-    settings: Settings, catalogue: Catalogue, user: str = "root", stdin: int = 0, stdout: int = 1
+    settings: Settings,
+    catalogue: Catalogue,
+    user: str = "root",
+    stdin: int = 0,
+    stdout: int = 1,
+    scenario_id: str = SCENARIO_ID,
+    max_s: float | None = None,
 ) -> dict[str, Any]:
     """Record one session and return its summary. The caller has already made the target
-    check; ``settings.target_ip`` is the lab edge."""
+    check; ``settings.target_ip`` is the lab edge. ``scenario_id`` names where the recording
+    was made (the showcase's console uses its own), so the two kinds can be told apart.
+    ``max_s`` ends the session from this side after that many seconds."""
+    if not re.fullmatch(SCENARIO_NAME, scenario_id):
+        raise RecordError(f"{scenario_id!r} is not a scenario ID")
     if not (os.isatty(stdin) and os.isatty(stdout)):
         raise RecordError("a recording needs a terminal; run it from a shell, without -T")
     password = root_password(settings.profile_dir, user)  # from the profile, as the runner does
@@ -203,7 +244,9 @@ def run(
         _write_all(
             stdout, f"recording from {src_ip}; exit the shell or press Ctrl-] to end\r\n".encode()
         )
-        interact(chan, stdin, stdout)
+        if interact(chan, stdin, stdout, max_s) == "limit":
+            with contextlib.suppress(OSError):
+                _write_all(stdout, b"\r\nthe session's time limit was reached\r\n")
     except (paramiko.SSHException, OSError, EOFError) as exc:
         error = failure(exc)  # a connection that failed is an outcome, and is recorded as one
     except BaseException as exc:
@@ -219,7 +262,15 @@ def run(
             prune(settings.out_dir, settings.truth_keep_days)
             truth = TruthWriter(run_file(settings.out_dir, run_id))
             write_truth(
-                truth, run_id, conn, started, conn.closed, catalogue, settings.code_version, error
+                truth,
+                run_id,
+                conn,
+                started,
+                conn.closed,
+                catalogue,
+                settings.code_version,
+                error,
+                scenario_id,
             )
             truth.close()
     if not shell:

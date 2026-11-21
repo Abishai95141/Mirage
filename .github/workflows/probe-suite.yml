@@ -1,0 +1,64 @@
+name: probe-suite
+
+# The fingerprint regression suite (docs/06-phase-3-spec.md, 3.4; Gate 3 test 7): the running
+# decoy against a real reference host, from inside the lab network. It runs on a release tag
+# and whenever something that can change what an attacker sees has changed.
+on:
+  push:
+    branches: [main, "phase-*"]
+    tags: ["v*"]
+    paths:
+      - "decoys/**"
+      - "responder/**"
+      - "policy/**"
+      - "eval/probes/**"
+      - "compose/**"
+      - "lab/arm-r/**"
+      - "Makefile"
+      - ".github/workflows/probe-suite.yml"
+  pull_request:
+    paths:
+      - "decoys/**"
+      - "responder/**"
+      - "policy/**"
+      - "eval/probes/**"
+      - "compose/**"
+      - "lab/arm-r/**"
+      - "Makefile"
+      - ".github/workflows/probe-suite.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  probe-suite:
+    # Every check passes or is in eval/probes/known_gaps.yaml, and no listed gap passes. The
+    # runner is a lab host here: it renders the public lab seed and starts the reference host,
+    # which really runs the fixed list of ordinary commands it is sent and has no route out.
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.12"
+      - run: uv sync --frozen
+      - run: make env && make lab-seed && make reference-image
+      # The workers load their models when the stack starts, as in the integration job.
+      - run: make models DATA=eval/datasets/gate2
+      - run: make up
+      - run: make lab-up
+      - run: make arm-r-image
+      - run: make arm-r-check
+      - run: make probe
+      - if: always()
+        run: make probe-report > probe-report.json || true
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: probe-report
+          path: probe-report.json
+          if-no-files-found: ignore
+      - if: failure()
+        run: docker compose --env-file .env -f compose/docker-compose.yml --profile lab --profile arms --profile fleet logs --tail=150
+      - if: always()
+        run: make nuke

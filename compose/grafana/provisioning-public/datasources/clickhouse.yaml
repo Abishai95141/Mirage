@@ -1,0 +1,25 @@
+# The public showcase's connection to the store: the same as the real Grafana's
+# (../provisioning/datasources/clickhouse.yaml), with a query time limit the showcase's
+# store user is allowed. Mounted by grafana-public only.
+apiVersion: 1
+datasources:
+  - name: ClickHouse
+    uid: clickhouse
+    type: grafana-clickhouse-datasource
+    isDefault: true
+    editable: false
+    jsonData:
+      # The public showcase's store user may run a query for at most 10 seconds and cannot
+      # ask for more (compose/clickhouse/users.d/showcase.xml). The plugin asks the store for
+      # a time limit with every request, and the store refuses one over its ceiling. What it
+      # asks for is the timeout below plus about 5 seconds (the driver's margin), so both
+      # stay at 5 or under. Measured 15 Nov 2026: 10 and 10 were refused.
+      queryTimeout: "5"
+      dialTimeout: "4"
+      host: clickhouse
+      port: 8123
+      protocol: http
+      username: $CLICKHOUSE_USER
+      defaultDatabase: mirage
+    secureJsonData:
+      password: $CLICKHOUSE_PASSWORD

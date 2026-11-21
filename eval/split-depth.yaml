@@ -1,6 +1,6 @@
 '# ': Written by `python -m eval.split depth-build`. Edit via that, not by hand.
-status: provisional
-catalogue_sha256: 45cbe6173647169e6d412874af0241c9fa85d636b6fb3269e091e60c5a2b571b
+status: frozen
+catalogue_sha256: 0c2fcc5771948c05118c92fdf22c5d90513f8efc271a957e75fc1ceea1defb30
 manifest:
   procedures: 118
   components: 6

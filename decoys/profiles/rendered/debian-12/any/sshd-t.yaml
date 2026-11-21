@@ -1,0 +1,20 @@
+# Written by `mirage-profile render-library`; do not edit. What a real host printed.
+argv: sshd -t
+program: /usr/sbin/sshd
+source: reference-container
+who: root
+exit_code: 0
+ms:
+- 9
+- 9
+- 8
+- 8
+- 7
+stdout: ''
+stderr: ''
+inventory:
+  corpus: 0
+  lab: 1
+shape: empty
+streams: neither
+recorded: {}

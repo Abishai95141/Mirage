@@ -1,0 +1,53 @@
+# Known gaps of the fingerprint suite (phase 3 spec 3.4): checks that fail today, each with
+# the reason and the decision that owns it. A failing check that is not here fails the run. A
+# check that is here and passes fails the run too, until its entry is removed.
+gaps:
+  # ---- the SSH library's algorithms (decision D12; spike S4 decides)
+  - id: tells.ssh.hassh-server-equals-openssh-9-2p1
+    reason: >-
+      Twisted implements none of chacha20-poly1305, AES-GCM, the ETM and UMAC MACs, sntrup761
+      or the strict-KEX marker, so the server's algorithm lists, and the HASSH made from them,
+      are not those of any OpenSSH release. One packet shows it to a passive observer.
+    owner: D12, spike S4 (an OpenSSH front end); it stays a gap if S4 is not adopted
+  - id: transport.hassh-server
+    reason: >-
+      The same difference, measured against the live reference host instead of the recorded
+      value: the decoy's HASSH-server is not OpenSSH 9.2p1's.
+    owner: D12, spike S4
+  - id: transport.algorithms-kex-algorithms
+    reason: >-
+      The key-exchange list lacks sntrup761, the group14/16/18 SHA-2 exchanges, group
+      exchange and the strict-KEX marker. Twisted has none of them and the list is not
+      configurable.
+    owner: D12, spike S4
+  - id: transport.algorithms-encryption-c2s
+    reason: The cipher list lacks chacha20-poly1305 and the two AES-GCM ciphers, which Twisted does not implement.
+    owner: D12, spike S4
+  - id: transport.algorithms-encryption-s2c
+    reason: The cipher list lacks chacha20-poly1305 and the two AES-GCM ciphers, which Twisted does not implement.
+    owner: D12, spike S4
+  - id: transport.algorithms-mac-c2s
+    reason: The MAC list lacks the encrypt-then-MAC and UMAC algorithms, which Twisted does not implement.
+    owner: D12, spike S4
+  - id: transport.algorithms-mac-s2c
+    reason: The MAC list lacks the encrypt-then-MAC and UMAC algorithms, which Twisted does not implement.
+    owner: D12, spike S4
+
+  # ---- the reference image is a container image, not an installed system
+  - id: emulator.crontab-l
+    reason: >-
+      The reference image has no cron, so the real host answers "command not found" while
+      the decoy, like any server, has a crontab command. The decoy's answer cannot be held
+      against a host that has none.
+    owner: the reference image's rebase onto an installed system (phase 3 spec 3.4, emulator fixes)
+  - id: emulator.dpkg-l
+    reason: >-
+      The emulator has no dpkg. Its package database would come from the reference image, a
+      container image with no init system, kernel or cron package, while the decoy's process
+      list comes from a booted machine and shows systemd. Answering from that database
+      would put the two side by side; until the image is rebased the command is left to the
+      responder.
+    owner: the reference image's rebase, then the emulator (3.4); the responder (3.2b) until then
+  - id: emulator.dpkg-s
+    reason: The same as emulator.dpkg-l, for a single package's record.
+    owner: the reference image's rebase, then the emulator (3.4); the responder (3.2b) until then

@@ -377,6 +377,75 @@ def test_a_recording_as_a_user_the_profile_does_not_have_is_refused(
     assert dialled == [] and not (tmp_path / "out").exists()
 
 
+# ------------------------------------------------------------------ ending it from this side
+
+
+def test_a_time_limit_ends_the_session_and_it_is_still_recorded(
+    tmp_path, monkeypatch, chan, terminal
+):
+    master, slave = terminal
+    before = modes(slave)
+    settings, _dialled = lab(tmp_path, monkeypatch, Transport(chan))
+    chan.decoy.sendall(b"# ")  # the decoy stays open: only the limit can end this
+
+    summary = record.run(settings, CATALOGUE, stdin=slave, stdout=slave, max_s=0.3)
+
+    assert summary["error"] is None and modes(slave) == before
+    assert b"time limit was reached" in os.read(master, 4096)
+    (path,) = (tmp_path / "out").glob(TRUTH_NAME + "*")
+    session, run = read(path)
+    assert session["real"] is True and "error" not in session and run["sessions"] == 1
+
+
+def test_a_closed_window_ends_the_session_and_it_is_still_recorded(
+    tmp_path, monkeypatch, chan, terminal
+):
+    # What a browser tab closing looks like to the recorder: a hangup. Without a handler the
+    # process would die there, and the session would have no ground truth (gap register R1).
+    _master, slave = terminal
+    settings, _dialled = lab(tmp_path, monkeypatch, Transport(chan))
+    before = {n: signal.getsignal(n) for n in (signal.SIGHUP, signal.SIGTERM, signal.SIGWINCH)}
+    previous = signal.signal(signal.SIGALRM, lambda *_: os.kill(os.getpid(), signal.SIGHUP))
+    signal.setitimer(signal.ITIMER_REAL, 0.3)
+    try:
+        summary = record.run(settings, CATALOGUE, stdin=slave, stdout=slave)
+    finally:
+        signal.setitimer(signal.ITIMER_REAL, 0)
+        signal.signal(signal.SIGALRM, previous)
+
+    assert summary["sessions"] == 1 and summary["error"] is None
+    (path,) = (tmp_path / "out").glob(TRUTH_NAME + "*")
+    assert read(path)[0]["actor_class"] == "human"
+    # and the recorder leaves the process's signal handling as it found it
+    assert {n: signal.getsignal(n) for n in before} == before
+
+
+def test_a_recording_can_say_where_it_was_made(tmp_path, monkeypatch, chan, terminal):
+    _master, slave = terminal
+    settings, _dialled = lab(tmp_path, monkeypatch, Transport(chan))
+    chan.decoy.close()
+    summary = record.run(
+        settings, CATALOGUE, stdin=slave, stdout=slave, scenario_id="showcase-visitor"
+    )
+    (path,) = (tmp_path / "out").glob(TRUTH_NAME + "*")
+    session, run = read(path)
+    assert session["scenario_id"] == "showcase-visitor" and run["scenarios"] == ["showcase-visitor"]
+    assert session["session_ref"] == f"{summary['run_id']}/showcase-visitor/0/0"
+    assert session["real"] is True and session["actor_class"] == "human"  # still a person
+    assert isinstance(parse_record(session), SessionTruth)
+
+
+@pytest.mark.parametrize("bad", ["", "a/b", "Showcase", "x", "../../etc"])
+def test_a_recording_refuses_a_name_that_is_not_a_scenario_id(
+    bad, tmp_path, monkeypatch, chan, terminal
+):
+    _master, slave = terminal
+    settings, dialled = lab(tmp_path, monkeypatch, Transport(chan))
+    with pytest.raises(record.RecordError, match="is not a scenario ID"):
+        record.run(settings, CATALOGUE, stdin=slave, stdout=slave, scenario_id=bad)
+    assert dialled == [] and not (tmp_path / "out").exists()
+
+
 # ------------------------------------------------------------------ the command
 
 
@@ -437,3 +506,91 @@ def test_a_recording_that_could_not_start_exits_with_the_reason(monkeypatch):
     monkeypatch.setattr(record, "run", fail)
     with pytest.raises(SystemExit, match="not recorded: a recording needs a terminal"):
         main("record")
+
+
+# ------------------------------------------------------------------ the showcase's console
+
+
+def console_env(monkeypatch, tmp_path, **env: str) -> tuple[list, list]:
+    """Run ``record`` with the check and the recorder replaced; return what each was given."""
+    checks, runs = [], []
+
+    def check(target, **kw):
+        checks.append(kw)
+        return "172.26.0.2"
+
+    def fake(settings, catalogue, user, **kw):
+        runs.append(kw)
+        return {"run_id": "r1", "sessions": 1, "src_ip": "198.18.0.1", "error": None}
+
+    monkeypatch.setattr(safety, "require_lab", check)
+    monkeypatch.setattr(record, "run", fake)
+    monkeypatch.setenv("LAB_OUT", str(tmp_path / "out"))
+    monkeypatch.setenv("PROFILE_DIR", str(tmp_path / "profile"))
+    for name in ("LAB_SIDE_NETWORKS", "LAB_RECORD_SCENARIO", "LAB_RECORD_MAX_S"):
+        monkeypatch.delenv(name, raising=False)
+    for name, value in env.items():
+        monkeypatch.setenv(name, value)
+    return checks, runs
+
+
+def test_the_console_s_settings_reach_the_check_and_the_recorder(tmp_path, monkeypatch):
+    checks, runs = console_env(
+        monkeypatch,
+        tmp_path,
+        LAB_SIDE_NETWORKS="1",
+        LAB_RECORD_SCENARIO="showcase-visitor",
+        LAB_RECORD_MAX_S="900",
+    )
+    main("record")
+    assert checks == [{"side_networks": 1}]
+    assert runs == [{"scenario_id": "showcase-visitor", "max_s": 900.0}]
+
+
+def test_without_them_a_recording_is_checked_and_made_as_before(tmp_path, monkeypatch):
+    checks, runs = console_env(monkeypatch, tmp_path, LAB_SIDE_NETWORKS="0")
+    main("record")
+    assert checks == [{}] and runs == [{}]
+
+
+@pytest.mark.parametrize("value", ["2", "-1", "yes", "1 "])
+def test_the_side_network_allowance_is_one_or_nothing(value, tmp_path, monkeypatch):
+    checks, runs = console_env(monkeypatch, tmp_path, LAB_SIDE_NETWORKS=value)
+    with pytest.raises(SystemExit, match="LAB_SIDE_NETWORKS must be 0 or 1"):
+        main("record")
+    assert checks == [] and runs == []
+
+
+def test_a_scenario_run_never_gets_the_allowance(tmp_path, monkeypatch):
+    # The environment that lets the console sit on a second network must not loosen the
+    # check for the runner, which sends scripted attacks.
+    checks, _runs = console_env(monkeypatch, tmp_path, LAB_SIDE_NETWORKS="1")
+
+    def no_run(paths, catalogue, settings):
+        raise ValueError("stopped by the test, after the check")
+
+    monkeypatch.setattr(cli.runner, "run", no_run)
+    with pytest.raises(SystemExit, match="stopped by the test"):
+        main("run", str(ROOT / "lab/scenarios/smoke"))
+    assert checks == [{}]
+
+
+# ------------------------------------------------------------------ a wrong SCENARIOS path
+
+
+@pytest.mark.parametrize("given", ["lab", "lab/catalogue", "eval/split.yaml"])
+def test_a_file_that_is_not_a_scenario_is_refused_by_name(given, tmp_path, monkeypatch):
+    # `make lab-run SCENARIOS=/lab` reads the folder recursively and found the catalogue: the
+    # runner then printed the model's validation errors, catalogue text included (16 Nov 2026).
+    monkeypatch.setattr(safety, "require_lab", lambda target: "172.26.0.2")
+    monkeypatch.setenv("LAB_OUT", str(tmp_path / "out"))
+    monkeypatch.setenv("PROFILE_DIR", str(tmp_path))
+    split = ["--split", str(ROOT / "eval/split.yaml")]
+    for cmd in ("lint", "run"):
+        with pytest.raises(SystemExit) as exit_:
+            main(*split, cmd, str(ROOT / given))
+        said = str(exit_.value)
+        assert "is not a scenario file" in said and "SCENARIOS=/lab/scenarios/demo" in said
+        assert "validation error" not in said and "{{" not in said
+    if given != "eval/split.yaml":
+        assert "procedure catalogue" in said

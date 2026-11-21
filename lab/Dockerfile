@@ -11,7 +11,8 @@ COPY lab/pyproject.toml lab/pyproject.toml
 COPY lab/src lab/src
 RUN pip install --no-cache-dir ./schema ./lab \
  # The named volume copies this owner when first created, so the non-root runner can write.
- && mkdir -p /var/lib/mirage-lab && chown 10001:10001 /var/lib/mirage-lab
+ && mkdir -p /var/lib/mirage-lab /var/lib/mirage-arms \
+ && chown 10001:10001 /var/lib/mirage-lab /var/lib/mirage-arms
 
 USER 10001:10001
 ENTRYPOINT ["mirage-lab"]

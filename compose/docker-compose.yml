@@ -9,6 +9,11 @@
 #          they write logs to volumes that Vector reads.
 #   lab    internal, compose profile "lab" only (docs/05-phase-2-spec.md section 2): the
 #          scenario runner and lab-edge, nothing else. Never started on an exposed sensor.
+#   showcase  compose profile "showcase" only: a read-only copy of the dashboards and the
+#          tunnel that publishes it. The one deliberate way anything here is reachable from
+#          the internet, and it reaches no decoy (see `make showcase-up`).
+#   arm    internal and without a host-side address, compose profile "arms" only
+#          (docs/06-phase-3-spec.md section 5): the real reference host and its edge.
 #
 # Every published port binds to 127.0.0.1. Nothing here is meant to face the internet; see the
 # exposure checklist in docs/01-build-plan.md section 7 before changing that.
@@ -29,13 +34,52 @@ networks:
     internal: true
   edge:
     name: mirage_edge
+  # The SSH decoy's way to the responder, and nothing else's (phase 3 spec 3.2b). The other
+  # decoys are not on it: only the shell has commands to answer.
+  respond:
+    name: mirage_respond
+    internal: true
+  # The responder's way to its model server. Internal, as every network an attacker's input
+  # can reach is: no input is sent to a model outside this machine.
+  llm:
+    name: mirage_llm
+    internal: true
   lab:
     name: mirage_lab
     internal: true
+    # Internal stops traffic leaving this machine; it does not stop a container reaching the
+    # machine's own services (its SSH port, say) at the bridge's gateway address. So the
+    # bridge is given no address here, as on the arm network below.
+    driver_opts:
+      com.docker.network.bridge.gateway_mode_ipv4: isolated
+  # Arm R of the depth comparison (phase 3 spec, section 5), compose profile "arms" only: the
+  # real reference host and the edge in front of it. Inputs sent to that host really run, so
+  # beside being internal the bridge is given no address on this machine: a program inside
+  # cannot reach the host any more than it can reach the internet.
+  arm:
+    name: mirage_arm
+    internal: true
+    driver_opts:
+      com.docker.network.bridge.gateway_mode_ipv4: isolated
   core:
     name: mirage_core
+  # The public showcase (compose profile "showcase" only), in two networks. On this one: the
+  # tunnel that gives the showcase a public link, and the proxy it reaches. Nothing else is
+  # on it, so the tunnel can reach one thing.
+  showcase:
+    name: mirage_showcase
+  # Behind the proxy: the read-only Grafana and the console. It is internal, so the console,
+  # which also sits on the lab network, has no route out through it, and the bridge has no
+  # address on this machine, so the console cannot reach the machine's own services either.
+  showcase-inner:
+    name: mirage_showcase_inner
+    internal: true
+    driver_opts:
+      com.docker.network.bridge.gateway_mode_ipv4: isolated
 
 volumes:
+  responder-log:
+  responder-data:
   cowrie-var:
   policy-log:
   http-log:
@@ -45,6 +89,8 @@ volumes:
   mysql-log:
   mysql-artifacts:
   lab-out:
+  arm-out:
+  fleet-var:
   vector-data:
   nats-data:
   clickhouse-data:
@@ -60,12 +106,13 @@ services:
         profile: ../build/profile
     image: mirage/cowrie:dev
     <<: *hardening
-    networks: [decoy, gate]
+    networks: [decoy, gate, respond]
     read_only: true
     tmpfs: ["/tmp"]
     environment:
       COWRIE_MIRAGE_POLICY_TOKEN: ${POLICY_TOKEN:?run make env}
       COWRIE_MIRAGE_POLICY_TIMEOUT_MS: ${POLICY_TIMEOUT_MS:-100}
+      COWRIE_MIRAGE_RESPONDER_TOKEN: ${RESPONDER_TOKEN:?run make env}
     volumes:
       - cowrie-var:/cowrie/cowrie-git/var
       - ./cowrie/cowrie.cfg:/cowrie/cowrie-git/etc/cowrie.cfg:ro
@@ -149,6 +196,10 @@ services:
       # The bandit acts only when this is "lab" AND the source is in the explore range
       # (198.19.0.0/16); otherwise the rules decide and the bandit shadows (spec Q6).
       POLICY_EXPLORE: ${POLICY_EXPLORE:-}
+      # Rules v2 (phase 3 spec 3.3): towards a decoy that offers none of the new actions they
+      # are phase 2's allow-all; towards the SSH decoy they ask the responder for what its
+      # emulator has no answer to. `default` is phase 2's set.
+      POLICY_RULESET: ${POLICY_RULESET:-v2}
       # The tagger's rules, read in-process for the last-tactic context feature (spec Q12).
       POLICY_TECHNIQUE_RULES: /rules
       # A trained shadow policy, read once at start. Absent or unreadable, the service says so
@@ -160,6 +211,108 @@ services:
       - ../build/models:/models:ro
     mem_limit: 128m
     pids_limit: 64
+
+  responder:
+    # Answers the commands the SSH decoy's emulator has nothing for (phase 3 spec 3.2). With
+    # the default backend, `replay`, it gives recorded answers and needs no model: a command
+    # it has no recording of falls back to the emulator.
+    build:
+      context: ..
+      dockerfile: responder/Dockerfile
+    image: mirage/responder:dev
+    <<: *hardening
+    networks: [respond, llm]
+    read_only: true
+    tmpfs: ["/tmp"]
+    environment:
+      RESPONDER_TOKEN: ${RESPONDER_TOKEN:?run make env}
+      RESPONDER_BACKEND: ${RESPONDER_BACKEND:-replay}
+      RESPONDER_LLM_URL: ${RESPONDER_LLM_URL:-}
+      RESPONDER_MODEL: ${RESPONDER_MODEL:-}
+      RESPONDER_CONCURRENCY: ${RESPONDER_CONCURRENCY:-1}
+      # Recording (`make llm-record-on`) writes to the service's own volume, never into the
+      # repository's mount; `make llm-record-save` copies the recordings out.
+      RESPONDER_RECORD: ${RESPONDER_RECORD:-}
+      RESPONDER_RECORDINGS: ${RESPONDER_RECORDINGS:-/recordings}
+      # The answer cache's file. The bench points it at the tmpfs, to start from empty.
+      RESPONDER_CACHE: ${RESPONDER_CACHE:-/var/lib/mirage-responder/cache.db}
+      # How long a program that could not be answered stays refused (a week; 0: not kept).
+      RESPONDER_REFUSAL_S: ${RESPONDER_REFUSAL_S:-}
+    volumes:
+      # What the model may be told about this host: nothing a user logged in could not read.
+      - ../build/profile/responder:/profile:ro
+      - ../eval/recordings:/recordings:ro
+      - responder-log:/var/log/mirage-responder
+      - responder-data:/var/lib/mirage-responder
+    mem_limit: 256m
+    pids_limit: 64
+
+  llama:
+    # The model server (phase 3 spec 3.2c), on the Linux host. Profile "llm": it starts only
+    # where it is asked for (`make llm-up`), and needs the host's GPU runtime
+    # (tools/lab-host/install-runtimes.sh). It is on the internal model network and nothing
+    # else: no route out, no volume but its model file, read-only. Only the responder reaches
+    # it. The image is llama.cpp's own server build.
+    profiles: ["llm"]
+    image: ${LLAMA_IMAGE:-ghcr.io/ggml-org/llama.cpp:server-cuda}
+    <<: *hardening
+    networks: [llm]
+    read_only: true
+    tmpfs: ["/tmp"]
+    # Through a shell, so that an adapter can be named or not (`make llm-up LLM_LORA=...`):
+    # a tuned model is the base file and a small adapter file beside it.
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - >-
+        exec /app/llama-server
+        --model /models/${LLAMA_MODEL_FILE:-Qwen3.5-9B-Q4_K_M.gguf}
+        --host 0.0.0.0 --port 8080
+        --n-gpu-layers ${LLAMA_GPU_LAYERS:-99}
+        --ctx-size ${LLAMA_CTX:-16384}
+        --parallel ${LLAMA_SLOTS:-4}
+        --reasoning off --flash-attn on --no-mmproj
+        --cache-ram ${LLAMA_CACHE_RAM:-1024}
+        --no-webui --metrics
+        ${LLAMA_LORA:+--lora /models/}${LLAMA_LORA:-}
+    volumes:
+      - ../data/models:/models:ro
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8080/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 60
+    mem_limit: 8g
+    pids_limit: 256
+
+  llm-stub:
+    # A scripted stand-in for the model server (profile "stub": the integration tests only).
+    # It is not a model: it answers the commands its file lists and nothing else. See
+    # responder/src/mirage_responder/stub.py.
+    profiles: ["stub"]
+    image: mirage/responder:dev
+    <<: *hardening
+    command: ["mirage-llm-stub"]
+    networks: [llm]
+    read_only: true
+    tmpfs: ["/tmp"]
+    environment:
+      STUB_ANSWERS: /answers/answers.yaml
+    volumes:
+      - ../tests/integration/stub_answers.yaml:/answers/answers.yaml:ro
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request as u; u.urlopen('http://127.0.0.1:8080/health', timeout=2)"]
+      interval: 5s
+      timeout: 3s
+      retries: 6
+    mem_limit: 128m
+    pids_limit: 32
 
   edge:
     image: haproxy:3.2-alpine
@@ -216,9 +369,174 @@ services:
       # The depth scenarios' own split (phase 3 spec, 3.0), read beside the phase 2 one.
       - ../eval/split-depth.yaml:/lab/split-depth.yaml:ro
       - lab-out:/var/lib/mirage-lab
+      # Records of runs against an arm with no pipeline behind it (stock Cowrie, the
+      # reference host). Kept apart so the label join never sees them.
+      - arm-out:/var/lib/mirage-arms
     depends_on: [lab-edge]
     mem_limit: 256m
     pids_limit: 256
+
+  # Arm R: a real Debian host as the profile describes it (lab/arm-r). What is sent to it
+  # really runs as root, so it is alone on the arm network, has no route anywhere, is held to
+  # one CPU, 512 MB and 256 processes, and is recreated for every scenario (make lab-arm-r).
+  # Never started on an exposed sensor.
+  arm-r:
+    profiles: ["arms"]
+    build:
+      context: ../lab/arm-r
+    image: mirage/arm-r:dev
+    restart: "no"
+    hostname: ${ARM_HOSTNAME:-debian}
+    networks: [arm]
+    security_opt: ["no-new-privileges:true"]
+    # Docker's default set, less what a program could use to make devices or raw packets.
+    cap_drop: ["NET_RAW", "MKNOD", "SETFCAP"]
+    # Plus the one thing root on a real host can do that the default set leaves out and a
+    # depth scenario uses: setting a file's immutable flag. It reaches no further than this
+    # container's own files; `make lab-arm` clears the flags before the container goes.
+    cap_add: ["LINUX_IMMUTABLE"]
+    volumes:
+      - ../build/profile:/profile:ro
+    healthcheck:
+      test: ["CMD", "test", "-f", "/ready"]
+      interval: 2s
+      timeout: 2s
+      retries: 60
+    mem_limit: 512m
+    memswap_limit: 512m
+    cpus: 1.0
+    pids_limit: 256
+
+  # The lab's way in to arm R: on the lab network where the runner can reach it, and on the
+  # arm network where the reference host is. It listens for the runner's PROXY header and
+  # passes the connection on plain (compose/lab/arm-r.cfg).
+  arm-r-edge:
+    profiles: ["arms"]
+    image: haproxy:3.2-alpine
+    <<: *hardening
+    restart: "no"
+    networks: [lab, arm]
+    volumes:
+      - ./lab/arm-r.cfg:/usr/local/etc/haproxy/haproxy.cfg:ro
+    depends_on:
+      arm-r: {condition: service_healthy}
+    mem_limit: 128m
+
+  # Arm A: stock Cowrie, unpatched and with its stock configuration, the negative control of
+  # the depth comparison. Nothing is executed here, but it shares arm R's network and rules:
+  # no route anywhere, recreated for every scenario.
+  arm-a:
+    profiles: ["arms"]
+    image: cowrie/cowrie:3.1.6
+    <<: *hardening
+    restart: "no"
+    networks: [arm]
+    healthcheck:
+      test:
+        - CMD
+        - /cowrie/cowrie-env/bin/python3
+        - -c
+        - "import socket; socket.create_connection(('127.0.0.1', 2222), 2).close()"
+      interval: 2s
+      timeout: 3s
+      retries: 30
+    mem_limit: 512m
+    pids_limit: 256
+
+  arm-a-edge:
+    profiles: ["arms"]
+    image: haproxy:3.2-alpine
+    <<: *hardening
+    restart: "no"
+    networks: [lab, arm]
+    volumes:
+      - ./lab/arm-a.cfg:/usr/local/etc/haproxy/haproxy.cfg:ro
+    depends_on:
+      arm-a: {condition: service_healthy}
+    mem_limit: 128m
+
+  # A second deployment for the fingerprint suite's fleet group (phase 3 spec 3.4): the same
+  # code and image as `cowrie`, with the filesystem of another seed's profile
+  # (build/profile-fleet, from `make fleet-profile`). It is alone with its edge on the arm
+  # network, has no policy service to ask (its gate is off) and writes to a volume nothing
+  # reads, so it is no part of the pipeline. Started by `make probe`, removed after.
+  cowrie-fleet:
+    profiles: ["fleet"]
+    build:
+      context: ..
+      dockerfile: decoys/ssh/Dockerfile
+      additional_contexts:
+        profile: ../build/profile-fleet
+    image: mirage/cowrie:fleet
+    <<: *hardening
+    restart: "no"
+    networks: [arm]
+    read_only: true
+    tmpfs: ["/tmp"]
+    environment:
+      COWRIE_MIRAGE_POLICY_ENABLED: "false"
+    volumes:
+      - fleet-var:/cowrie/cowrie-git/var
+      - ./cowrie/cowrie.cfg:/cowrie/cowrie-git/etc/cowrie.cfg:ro
+    healthcheck:
+      test:
+        - CMD
+        - /cowrie/cowrie-env/bin/python3
+        - -c
+        - "import socket; socket.create_connection(('127.0.0.1', 2222), 2).close()"
+      interval: 2s
+      timeout: 3s
+      retries: 30
+    mem_limit: 512m
+    pids_limit: 256
+
+  fleet-edge:
+    profiles: ["fleet"]
+    image: haproxy:3.2-alpine
+    <<: *hardening
+    restart: "no"
+    networks: [lab, arm]
+    volumes:
+      - ./lab/fleet.cfg:/usr/local/etc/haproxy/haproxy.cfg:ro
+    depends_on:
+      cowrie-fleet: {condition: service_healthy}
+    mem_limit: 128m
+
+  # The fingerprint suite (phase 3 spec 3.4): run on demand with `make probe`. On the lab
+  # network only, so its two peers are lab-edge (the decoys) and arm-r-edge (the real
+  # reference host), each one proxy away. It announces a documentation-range source, never a
+  # lab one, so the label join does not take a probe for a simulated actor.
+  probe:
+    profiles: ["arms"]
+    build:
+      context: ..
+      dockerfile: eval/probes/Dockerfile
+    image: mirage/probe:dev
+    <<: *hardening
+    restart: "no"
+    networks: [lab]
+    read_only: true
+    tmpfs: ["/tmp"]
+    environment:
+      PROBE_SSH: lab-edge:2222
+      PROBE_HTTP: lab-edge:8080
+      PROBE_REDIS: lab-edge:6379
+      PROBE_MYSQL: lab-edge:3306
+      PROBE_REFERENCE: arm-r-edge:2222
+      PROBE_PROXY: "1"
+      PROFILE_DIR: /profile
+      # The second deployment, when `make probe` has started it; the group is skipped if not.
+      PROBE_FLEET: fleet-edge:2222
+      PROBE_FLEET_PROFILE: /profile-fleet
+    volumes:
+      - ../build/profile:/profile:ro
+      - ../build/profile-fleet:/profile-fleet:ro
+      - ../eval/probes/known_gaps.yaml:/app/eval/probes/known_gaps.yaml:ro
+      # The full report (--json) goes beside the arms' records, which the runner image's
+      # user owns.
+      - arm-out:/var/lib/mirage-arms
+    mem_limit: 256m
+    pids_limit: 128
 
   nats:
     image: nats:2.15.2
@@ -241,6 +559,7 @@ services:
       - ./vector/vector.yaml:/etc/vector/vector.yaml:ro
       - cowrie-var:/cowrie-var:ro
       - policy-log:/policy-log:ro
+      - responder-log:/responder-log:ro
       - http-log:/http-log:ro
       - redis-log:/redis-log:ro
       - mysql-log:/mysql-log:ro
@@ -261,10 +580,12 @@ services:
       CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD:?run make env}
       CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT: "1"
       CLICKHOUSE_GRAFANA_PASSWORD: ${CLICKHOUSE_GRAFANA_PASSWORD:?run make env}
+      CLICKHOUSE_SHOWCASE_PASSWORD: ${CLICKHOUSE_SHOWCASE_PASSWORD:?run make env}
     volumes:
       - clickhouse-data:/var/lib/clickhouse
       - ./clickhouse/config.d/mirage.xml:/etc/clickhouse-server/config.d/mirage.xml:ro
       - ./clickhouse/users.d/grafana.xml:/etc/clickhouse-server/users.d/grafana.xml:ro
+      - ./clickhouse/users.d/showcase.xml:/etc/clickhouse-server/users.d/showcase.xml:ro
       - ./clickhouse/init.sql:/docker-entrypoint-initdb.d/001-init.sql:ro
     ulimits:
       nofile: {soft: 262144, hard: 262144}
@@ -505,3 +826,157 @@ services:
     depends_on:
       clickhouse: {condition: service_healthy}
     mem_limit: 512m
+
+
+  # ---------------------------------------------------------------- the public showcase
+  #
+  # Profile "showcase": never started by `make up`, only by `make showcase-up`. It exists so
+  # that the dashboards can be shown to anyone through a link while the decoys, the store's
+  # write access and the real Grafana stay where they are, unreachable. Someone who is also
+  # given the console's password can type into the SSH decoy from the same link, through
+  # the lab's own recorder; the decoy itself is still not on the internet.
+  #
+  # grafana-public is a second Grafana with the same dashboards. Nobody can sign in to it:
+  # the login form and basic auth are off, and every visitor is an anonymous viewer. It
+  # reads the store as the `showcase` user, which can only read and is held to hard limits
+  # (compose/clickhouse/users.d/showcase.xml). It keeps nothing: its state is in memory.
+  grafana-public:
+    profiles: ["showcase"]
+    image: grafana/grafana:13.2.6
+    <<: *hardening
+    restart: "no"
+    networks: [core, showcase-inner]
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_PUBLIC_ADMIN_PASSWORD:?run make env}
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Viewer
+      GF_AUTH_ANONYMOUS_HIDE_VERSION: "true"
+      GF_AUTH_DISABLE_LOGIN_FORM: "true"
+      GF_AUTH_BASIC_ENABLED: "false"
+      GF_AUTH_DISABLE_SIGNOUT_MENU: "true"
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_USERS_VIEWERS_CAN_EDIT: "false"
+      GF_EXPLORE_ENABLED: "false"
+      GF_SNAPSHOTS_ENABLED: "false"
+      GF_SNAPSHOTS_EXTERNAL_ENABLED: "false"
+      GF_ANALYTICS_REPORTING_ENABLED: "false"
+      GF_ANALYTICS_CHECK_FOR_UPDATES: "false"
+      GF_PLUGINS_PREINSTALL_SYNC: grafana-clickhouse-datasource
+      # The store's plugin is the only one the dashboards use. Grafana fetches and starts
+      # others by default, each a program of its own; on a public instance that is memory
+      # and code a visitor can reach for nothing.
+      GF_PLUGINS_PREINSTALL: grafana-clickhouse-datasource
+      GF_PLUGINS_DISABLE_PLUGINS: elasticsearch,stackdriver,prometheus,grafana-advisor-app,grafana-exploretraces-app,grafana-lokiexplore-app,grafana-metricsdrilldown-app,grafana-pyroscope-app
+      GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH: /var/lib/grafana/dashboards/mirage-overview.json
+      CLICKHOUSE_USER: showcase
+      CLICKHOUSE_PASSWORD: ${CLICKHOUSE_SHOWCASE_PASSWORD:?run make env}
+    # In memory, so it keeps nothing. Docker mounts a tmpfs no-execute unless told otherwise,
+    # and the ClickHouse plugin Grafana installs here at start is a program it runs: without
+    # "exec" every panel says "Datasource clickhouse was not found" (found 15 Nov 2026).
+    tmpfs: ["/var/lib/grafana:uid=472,gid=0,mode=0770,exec"]
+    volumes:
+      # The dashboards as the real Grafana has them; the store connection of its own.
+      - ./grafana/provisioning/dashboards:/etc/grafana/provisioning/dashboards:ro
+      - ./grafana/provisioning-public/datasources:/etc/grafana/provisioning/datasources:ro
+      - ./grafana/dashboards:/var/lib/grafana/dashboards:ro
+    depends_on:
+      clickhouse: {condition: service_healthy}
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:3000/api/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+    # Its plugins (about 220 MB) live in the in-memory folder above, and that counts against
+    # this limit too. At 512m it was killed for memory while serving visitors (15 Nov 2026).
+    mem_limit: 1g
+    cpus: 2.0
+    pids_limit: 256
+
+  # The showcase's console: a terminal in a browser whose only program is the human recorder
+  # (lab/console). Whoever knows the password types into the SSH decoy through the lab edge,
+  # from a simulated address, and the session is recorded like any other. It is the lab's
+  # `make lab-human` with a browser in front, so it sits on the lab network; its second
+  # network is internal too, and the recorder checks both before every session (safety.py).
+  # It can reach the lab edge and the proxy, and nothing else. Lab hosts only.
+  showcase-console:
+    profiles: ["showcase"]
+    build:
+      context: ../lab/console
+    image: mirage/console:dev
+    <<: *hardening
+    restart: "no"
+    networks: [lab, showcase-inner]
+    read_only: true
+    tmpfs: ["/tmp"]
+    environment:
+      LAB_TARGET: lab-edge
+      LAB_OUT: /var/lib/mirage-lab
+      LAB_CATALOGUE: /lab/catalogue
+      PROFILE_DIR: /profile
+      MIRAGE_CODE_VERSION: ${MIRAGE_CODE_VERSION:-dev}
+      # The console's exception to the runner's rule of exactly one network: one more.
+      LAB_SIDE_NETWORKS: "1"
+      # Its sessions carry their own name, so they are never mistaken for lab-human ones.
+      LAB_RECORD_SCENARIO: showcase-visitor
+      LAB_RECORD_MAX_S: "900"
+      CONSOLE_MAX_CLIENTS: "3"
+      CONSOLE_MAX_SESSIONS: "300"
+      CONSOLE_PASSWORD: ${SHOWCASE_CONSOLE_PASSWORD:?run make env}
+    volumes:
+      - ../build/profile:/profile:ro
+      - ../lab/catalogue:/lab/catalogue:ro
+      - ../eval/split.yaml:/lab/split.yaml:ro
+      - ../eval/split-depth.yaml:/lab/split-depth.yaml:ro
+      - lab-out:/var/lib/mirage-lab
+    depends_on: [lab-edge]
+    healthcheck:
+      test: ["CMD", "python", "-c", "import socket; socket.create_connection(('127.0.0.1', 7681), 2)"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+    mem_limit: 256m
+    cpus: 1.0
+    pids_limit: 128
+
+  # What the public link reaches, and the only thing: /console/ goes to the console, for
+  # requests that carry its password, and everything else to the read-only Grafana.
+  showcase-proxy:
+    profiles: ["showcase"]
+    image: haproxy:3.2-alpine
+    <<: *hardening
+    restart: "no"
+    networks: [showcase, showcase-inner]
+    # Loopback only: for the owner to see what a visitor sees before sharing the link.
+    ports: ["127.0.0.1:${SHOWCASE_PORT:-3301}:8080"]
+    environment:
+      CONSOLE_PASSWORD: ${SHOWCASE_CONSOLE_PASSWORD:?run make env}
+    volumes:
+      - ./showcase/haproxy.cfg:/usr/local/etc/haproxy/haproxy.cfg:ro
+    depends_on:
+      grafana-public: {condition: service_healthy}
+      showcase-console: {condition: service_healthy}
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:8080/-/proxy-health"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+    mem_limit: 128m
+    pids_limit: 64
+
+  # The public link. An outbound-only tunnel to Cloudflare's quick-tunnel service: it opens
+  # no port on this machine and needs no account, and it can reach showcase-proxy and
+  # nothing else here. The link is new every time it starts and is gone when it stops.
+  # Starting it is the owner's act, never the stack's: it publishes the showcase and is
+  # subject to Cloudflare's terms for account-less tunnels.
+  showcase-tunnel:
+    profiles: ["showcase"]
+    image: cloudflare/cloudflared:2026.11.0
+    <<: *hardening
+    restart: "no"
+    networks: [showcase]
+    read_only: true
+    command: ["tunnel", "--no-autoupdate", "--url", "http://showcase-proxy:8080"]
+    depends_on:
+      showcase-proxy: {condition: service_healthy}
+    mem_limit: 128m
+    pids_limit: 64

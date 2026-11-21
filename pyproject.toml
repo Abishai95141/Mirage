@@ -9,7 +9,7 @@ license = "Apache-2.0"
 package = false
 
 [tool.uv.workspace]
-members = ["schema", "pipeline", "policy", "decoys/common", "decoys/profiles", "decoys/tokens", "decoys/http", "decoys/db", "lab", "intel"]
+members = ["schema", "pipeline", "policy", "decoys/common", "decoys/profiles", "decoys/tokens", "decoys/http", "decoys/db", "lab", "intel", "responder"]
 
 [tool.uv.sources]
 mirage-schema = { workspace = true }
@@ -22,6 +22,7 @@ mirage-http-decoy = { workspace = true }
 mirage-db-decoy = { workspace = true }
 mirage-lab = { workspace = true }
 mirage-intel = { workspace = true }
+mirage-responder = { workspace = true }
 torch = [{ index = "pytorch-cpu", marker = "sys_platform == 'linux'" }]
 
 [[tool.uv.index]]
@@ -41,6 +42,7 @@ dev = [
     "mirage-db-decoy",
     "mirage-lab",
     "mirage-intel",
+    "mirage-responder",
     "redis>=5.2",
     "pymysql>=1.1",
     "pytest>=8.3",
@@ -64,7 +66,7 @@ research = [
 ]
 
 [tool.pytest.ini_options]
-testpaths = ["schema/tests", "pipeline/tests", "policy/tests", "decoys", "lab", "intel", "tests", "eval"]
+testpaths = ["schema/tests", "pipeline/tests", "policy/tests", "decoys", "lab", "intel", "responder", "tests", "eval"]
 markers = [
     "integration: needs the docker compose stack running (make up)",
     "ml: needs the ML libraries (uv sync installs them; deselected from the fast unit run)",

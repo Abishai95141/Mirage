@@ -1,0 +1,22 @@
+# Written by `mirage-profile render-library`; do not edit. What a real host printed.
+argv: nginx -t
+program: /usr/sbin/nginx
+source: reference-container
+who: root
+exit_code: 0
+ms:
+- 4
+- 4
+- 4
+- 4
+- 4
+stdout: ''
+stderr: |
+  nginx: the configuration file /etc/nginx/nginx.conf syntax is ok
+  nginx: configuration file /etc/nginx/nginx.conf test is successful
+inventory:
+  corpus: 0
+  lab: 4
+shape: error
+streams: stderr
+recorded: {}

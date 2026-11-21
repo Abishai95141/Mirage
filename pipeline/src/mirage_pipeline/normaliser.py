@@ -26,7 +26,7 @@ from nats.js.errors import BadRequestError
 
 from mirage_pipeline.rows import to_row
 from mirage_schema import MirageEvent
-from mirage_schema.mappings import cowrie, cowrie_zenodo, decoy, policy
+from mirage_schema.mappings import cowrie, cowrie_zenodo, decoy, policy, responder
 
 log = logging.getLogger("mirage.normaliser")
 
@@ -39,6 +39,7 @@ MAPPERS: dict[str, Mapper] = {
     "raw.honeypot.redis": decoy.map_record,
     "raw.honeypot.mysql": decoy.map_record,
     "raw.policy.decision": policy.map_record,
+    "raw.responder.answer": responder.map_record,
 }
 
 STREAMS = [
@@ -133,11 +134,25 @@ class ClickHouse:
             raise RuntimeError(f"ClickHouse insert failed {resp.status_code}: {resp.text[:300]}")
 
     async def select(self, sql: str, **params: Any) -> list[dict[str, Any]]:
-        """Run a SELECT with ClickHouse query parameters ({name:Type} in the SQL)."""
-        qp = {f"param_{k}": _param(v) for k, v in params.items()}
-        resp = await self._client.post(
-            "/", params=qp, content=(sql + "\nFORMAT JSONEachRow").encode()
-        )
+        """Run a SELECT with ClickHouse query parameters ({name:Type} in the SQL).
+
+        The query and its parameters go in a form body, not the URL: a URL holds 64 KiB in
+        all, and a list of a few thousand session IDs is more than that once encoded (found
+        17 November 2026, when one actor had grown to thousands of sessions and every batch
+        that touched it failed). A form field holds 128 KiB on the server, so a caller with
+        a longer list still has to send it in parts (``chunks``); it is told so here rather
+        than by a server error.
+        """
+        fields = {"query": (None, sql + "\nFORMAT JSONEachRow")}
+        for k, v in params.items():
+            value = _param(v)
+            if len(value.encode()) > MAX_PARAM_BYTES:
+                raise ValueError(
+                    f"query parameter {k!r} is {len(value.encode())} bytes; "
+                    f"send lists in parts of at most {MAX_PARAM_BYTES} bytes"
+                )
+            fields[f"param_{k}"] = (None, value)
+        resp = await self._client.post("/", files=fields)
         if resp.status_code != 200:
             raise RuntimeError(f"ClickHouse query failed {resp.status_code}: {resp.text[:300]}")
         return [json.loads(line) for line in resp.text.splitlines() if line]
@@ -146,15 +161,24 @@ class ClickHouse:
         await self._client.aclose()
 
 
+MAX_PARAM_BYTES = 100 * 1024  # under the server's 128 KiB for one form field
+CHUNK = 1000  # IDs in one list parameter: about 30 KiB of session IDs
+
+
+def chunks(items: list[Any], size: int = CHUNK) -> list[list[Any]]:
+    """A list in parts short enough to be one query parameter each."""
+    return [items[i : i + size] for i in range(0, len(items), size)]
+
+
+def _escape(text: str) -> str:
+    return text.replace("\\", "\\\\").replace("\t", "\\t").replace("\n", "\\n").replace("\r", "\\r")
+
+
 def _param(v: Any) -> str:
     """A query-parameter value in ClickHouse's text format (arrays of strings, scalars)."""
     if isinstance(v, list | tuple | set):
-        return (
-            "["
-            + ",".join("'" + str(x).replace("\\", "\\\\").replace("'", "\\'") + "'" for x in v)
-            + "]"
-        )
-    return str(v)
+        return "[" + ",".join("'" + _escape(str(x)).replace("'", "\\'") + "'" for x in v) + "]"
+    return _escape(str(v))
 
 
 async def _retry(what: str, fn: Callable[[], Any], attempts: int = 60) -> Any:

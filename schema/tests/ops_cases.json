@@ -1,0 +1,1340 @@
+{
+ "about": "Operations and whether their shape is acceptable, for the two implementations of the contract: mirage_schema.ops (the policy and the responder) and cowrie.mirage_state (the SSH decoy). Both must give every case its verdict. A string '@repeat:X:N' stands for X written N times.",
+ "cases": [
+  {
+   "name": "no operations",
+   "ops": [],
+   "ok": true
+  },
+  {
+   "name": "null is no operations",
+   "ops": null,
+   "ok": true
+  },
+  {
+   "name": "mkdir",
+   "ops": [
+    {
+     "op": "mkdir",
+     "path": "/tmp/a"
+    }
+   ],
+   "ok": true
+  },
+  {
+   "name": "mkdir with a mode",
+   "ops": [
+    {
+     "op": "mkdir",
+     "path": "/tmp/a",
+     "mode": 448
+    }
+   ],
+   "ok": true
+  },
+  {
+   "name": "write",
+   "ops": [
+    {
+     "op": "write",
+     "path": "/tmp/a.txt",
+     "content": "hello\n"
+    }
+   ],
+   "ok": true
+  },
+  {
+   "name": "write with a mode",
+   "ops": [
+    {
+     "op": "write",
+     "path": "/tmp/a.sh",
+     "content": "#!/bin/sh\n",
+     "mode": 493
+    }
+   ],
+   "ok": true
+  },
+  {
+   "name": "write of nothing",
+   "ops": [
+    {
+     "op": "write",
+     "path": "/tmp/empty",
+     "content": ""
+    }
+   ],
+   "ok": true
+  },
+  {
+   "name": "write of exactly the cap",
+   "ops": [
+    {
+     "op": "write",
+     "path": "/tmp/a",
+     "content": "@repeat:a:4096"
+    }
+   ],
+   "ok": true
+  },
+  {
+   "name": "write of the cap in two-byte characters",
+   "ops": [
+    {
+     "op": "write",
+     "path": "/tmp/a",
+     "content": "@repeat:é:2048"
+    }
+   ],
+   "ok": true
+  },
+  {
+   "name": "remove",
+   "ops": [
+    {
+     "op": "remove",
+     "path": "/tmp/a"
+    }
+   ],
+   "ok": true
+  },
+  {
+   "name": "rename",
+   "ops": [
+    {
+     "op": "rename",
+     "path": "/tmp/a",
+     "to": "/tmp/b"
+    }
+   ],
+   "ok": true
+  },
+  {
+   "name": "chmod",
+   "ops": [
+    {
+     "op": "chmod",
+     "path": "/tmp/a",
+     "mode": 384
+    }
+   ],
+   "ok": true
+  },
+  {
+   "name": "chmod to nothing",
+   "ops": [
+    {
+     "op": "chmod",
+     "path": "/tmp/a",
+     "mode": 0
+    }
+   ],
+   "ok": true
+  },
+  {
+   "name": "chmod with the special bits",
+   "ops": [
+    {
+     "op": "chmod",
+     "path": "/tmp/a",
+     "mode": 4095
+    }
+   ],
+   "ok": true
+  },
+  {
+   "name": "chown of the user",
+   "ops": [
+    {
+     "op": "chown",
+     "path": "/tmp/a",
+     "uid": 1000
+    }
+   ],
+   "ok": true
+  },
+  {
+   "name": "chown of the group",
+   "ops": [
+    {
+     "op": "chown",
+     "path": "/tmp/a",
+     "gid": 33
+    }
+   ],
+   "ok": true
+  },
+  {
+   "name": "chown of both",
+   "ops": [
+    {
+     "op": "chown",
+     "path": "/tmp/a",
+     "uid": 0,
+     "gid": 0
+    }
+   ],
+   "ok": true
+  },
+  {
+   "name": "cd",
+   "ops": [
+    {
+     "op": "cd",
+     "path": "/var/www"
+    }
+   ],
+   "ok": true
+  },
+  {
+   "name": "cd to the root",
+   "ops": [
+    {
+     "op": "cd",
+     "path": "/"
+    }
+   ],
+   "ok": true
+  },
+  {
+   "name": "cd into what the kernel fills",
+   "ops": [
+    {
+     "op": "cd",
+     "path": "/proc"
+    }
+   ],
+   "ok": true
+  },
+  {
+   "name": "setenv",
+   "ops": [
+    {
+     "op": "setenv",
+     "name": "EDITOR",
+     "value": "vi"
+    }
+   ],
+   "ok": true
+  },
+  {
+   "name": "setenv to nothing",
+   "ops": [
+    {
+     "op": "setenv",
+     "name": "_X9",
+     "value": ""
+    }
+   ],
+   "ok": true
+  },
+  {
+   "name": "unsetenv",
+   "ops": [
+    {
+     "op": "unsetenv",
+     "name": "HISTFILE"
+    }
+   ],
+   "ok": true
+  },
+  {
+   "name": "proc_start",
+   "ops": [
+    {
+     "op": "proc_start",
+     "args": "sleep 600"
+    }
+   ],
+   "ok": true
+  },
+  {
+   "name": "proc_end",
+   "ops": [
+    {
+     "op": "proc_end",
+     "pid": 4411
+    }
+   ],
+   "ok": true
+  },
+  {
+   "name": "eight operations",
+   "ops": [
+    {
+     "op": "mkdir",
+     "path": "/tmp/d0"
+    },
+    {
+     "op": "mkdir",
+     "path": "/tmp/d1"
+    },
+    {
+     "op": "mkdir",
+     "path": "/tmp/d2"
+    },
+    {
+     "op": "mkdir",
+     "path": "/tmp/d3"
+    },
+    {
+     "op": "mkdir",
+     "path": "/tmp/d4"
+    },
+    {
+     "op": "mkdir",
+     "path": "/tmp/d5"
+    },
+    {
+     "op": "mkdir",
+     "path": "/tmp/d6"
+    },
+    {
+     "op": "mkdir",
+     "path": "/tmp/d7"
+    }
+   ],
+   "ok": true
+  },
+  {
+   "name": "a path of exactly the cap",
+   "ops": [
+    {
+     "op": "mkdir",
+     "path": "/@repeat:a:1023"
+    }
+   ],
+   "ok": true
+  },
+  {
+   "name": "an explicit null is a field not given",
+   "ops": [
+    {
+     "op": "mkdir",
+     "path": "/tmp/a",
+     "mode": null,
+     "content": null
+    }
+   ],
+   "ok": true
+  },
+  {
+   "name": "a path that only begins like one of the kernel's",
+   "ops": [
+    {
+     "op": "mkdir",
+     "path": "/process/a"
+    }
+   ],
+   "ok": true
+  },
+  {
+   "name": "a variable name of exactly the cap",
+   "ops": [
+    {
+     "op": "setenv",
+     "name": "@repeat:A:128",
+     "value": "x"
+    }
+   ],
+   "ok": true
+  },
+  {
+   "name": "a value of exactly the cap",
+   "ops": [
+    {
+     "op": "setenv",
+     "name": "A",
+     "value": "@repeat:v:4096"
+    }
+   ],
+   "ok": true
+  },
+  {
+   "name": "an object, not a list",
+   "ops": {
+    "op": "mkdir",
+    "path": "/tmp/a"
+   },
+   "ok": false
+  },
+  {
+   "name": "a string, not a list",
+   "ops": "mkdir /tmp/a",
+   "ok": false
+  },
+  {
+   "name": "nine operations",
+   "ops": [
+    {
+     "op": "mkdir",
+     "path": "/tmp/d0"
+    },
+    {
+     "op": "mkdir",
+     "path": "/tmp/d1"
+    },
+    {
+     "op": "mkdir",
+     "path": "/tmp/d2"
+    },
+    {
+     "op": "mkdir",
+     "path": "/tmp/d3"
+    },
+    {
+     "op": "mkdir",
+     "path": "/tmp/d4"
+    },
+    {
+     "op": "mkdir",
+     "path": "/tmp/d5"
+    },
+    {
+     "op": "mkdir",
+     "path": "/tmp/d6"
+    },
+    {
+     "op": "mkdir",
+     "path": "/tmp/d7"
+    },
+    {
+     "op": "mkdir",
+     "path": "/tmp/d8"
+    }
+   ],
+   "ok": false
+  },
+  {
+   "name": "an operation that is not an object",
+   "ops": [
+    "mkdir /tmp/a"
+   ],
+   "ok": false
+  },
+  {
+   "name": "an operation with no name",
+   "ops": [
+    {
+     "path": "/tmp/a"
+    }
+   ],
+   "ok": false
+  },
+  {
+   "name": "an operation outside the vocabulary",
+   "ops": [
+    {
+     "op": "exec",
+     "args": "id"
+    }
+   ],
+   "ok": false
+  },
+  {
+   "name": "a name in another case",
+   "ops": [
+    {
+     "op": "MKDIR",
+     "path": "/tmp/a"
+    }
+   ],
+   "ok": false
+  },
+  {
+   "name": "symlink is not in the vocabulary",
+   "ops": [
+    {
+     "op": "symlink",
+     "path": "/tmp/a",
+     "to": "/etc/shadow"
+    }
+   ],
+   "ok": false
+  },
+  {
+   "name": "mkdir without what it needs (nothing given)",
+   "ops": [
+    {
+     "op": "mkdir"
+    }
+   ],
+   "ok": false
+  },
+  {
+   "name": "write without what it needs (path)",
+   "ops": [
+    {
+     "op": "write",
+     "path": "/tmp/a"
+    }
+   ],
+   "ok": false
+  },
+  {
+   "name": "write without what it needs (content)",
+   "ops": [
+    {
+     "op": "write",
+     "content": "x"
+    }
+   ],
+   "ok": false
+  },
+  {
+   "name": "remove without what it needs (nothing given)",
+   "ops": [
+    {
+     "op": "remove"
+    }
+   ],
+   "ok": false
+  },
+  {
+   "name": "rename without what it needs (path)",
+   "ops": [
+    {
+     "op": "rename",
+     "path": "/tmp/a"
+    }
+   ],
+   "ok": false
+  },
+  {
+   "name": "rename without what it needs (to)",
+   "ops": [
+    {
+     "op": "rename",
+     "to": "/tmp/b"
+    }
+   ],
+   "ok": false
+  },
+  {
+   "name": "chmod without what it needs (path)",
+   "ops": [
+    {
+     "op": "chmod",
+     "path": "/tmp/a"
+    }
+   ],
+   "ok": false
+  },
+  {
+   "name": "chmod without what it needs (mode)",
+   "ops": [
+    {
+     "op": "chmod",
+     "mode": 420
+    }
+   ],
+   "ok": false
+  },
+  {
+   "name": "chown without what it needs (uid)",
+   "ops": [
+    {
+     "op": "chown",
+     "uid": 0
+    }
+   ],
+   "ok": false
+  },
+  {
+   "name": "cd without what it needs (nothing given)",
+   "ops": [
+    {
+     "op": "cd"
+    }
+   ],
+   "ok": false
+  },
+  {
+   "name": "setenv without what it needs (name)",
+   "ops": [
+    {
+     "op": "setenv",
+     "name": "A"
+    }
+   ],
+   "ok": false
+  },
+  {
+   "name": "setenv without what it needs (value)",
+   "ops": [
+    {
+     "op": "setenv",
+     "value": "x"
+    }
+   ],
+   "ok": false
+  },
+  {
+   "name": "unsetenv without what it needs (nothing given)",
+   "ops": [
+    {
+     "op": "unsetenv"
+    }
+   ],
+   "ok": false
+  },
+  {
+   "name": "proc_start without what it needs (nothing given)",
+   "ops": [
+    {
+     "op": "proc_start"
+    }
+   ],
+   "ok": false
+  },
+  {
+   "name": "proc_end without what it needs (nothing given)",
+   "ops": [
+    {
+     "op": "proc_end"
+    }
+   ],
+   "ok": false
+  },
+  {
+   "name": "chown of nothing",
+   "ops": [
+    {
+     "op": "chown",
+     "path": "/tmp/a"
+    }
+   ],
+   "ok": false
+  },
+  {
+   "name": "mkdir with content",
+   "ops": [
+    {
+     "op": "mkdir",
+     "path": "/tmp/a",
+     "content": "x"
+    }
+   ],
+   "ok": false
+  },
+  {
+   "name": "chmod with an owner",
+   "ops": [
+    {
+     "op": "chmod",
+     "path": "/tmp/a",
+     "mode": 420,
+     "uid": 0
+    }
+   ],
+   "ok": false
+  },
+  {
+   "name": "cd with a mode",
+   "ops": [
+    {
+     "op": "cd",
+     "path": "/tmp",
+     "mode": 493
+    }
+   ],
+   "ok": false
+  },
+  {
+   "name": "remove with a second path",
+   "ops": [
+    {
+     "op": "remove",
+     "path": "/tmp/a",
+     "to": "/tmp/b"
+    }
+   ],
+   "ok": false
+  },
+  {
+   "name": "proc_start with a pid",
+   "ops": [
+    {
+     "op": "proc_start",
+     "args": "sleep 1",
+     "pid": 4411
+    }
+   ],
+   "ok": false
+  },
+  {
+   "name": "a field nothing takes",
+   "ops": [
+    {
+     "op": "mkdir",
+     "path": "/tmp/a",
+     "recursive": true
+    }
+   ],
+   "ok": false
+  },
+  {
+   "name": "a relative path",
+   "ops": [
+    {
+     "op": "mkdir",
+     "path": "tmp/a"
+    }
+   ],
+   "ok": false
+  },
+  {
+   "name": "a path from the home directory",
+   "ops": [
+    {
+     "op": "mkdir",
+     "path": "~/a"
+    }
+   ],
+   "ok": false
+  },
+  {
+   "name": "a path that climbs",
+   "ops": [
+    {
+     "op": "write",
+     "path": "/tmp/../etc/passwd",
+     "content": "x"
+    }
+   ],
+   "ok": false
+  },
+  {
+   "name": "a path with a doubled slash",
+   "ops": [
+    {
+     "op": "mkdir",
+     "path": "/tmp//a"
+    }
+   ],
+   "ok": false
+  },
+  {
+   "name": "a path with a dot in it",
+   "ops": [
+    {
+     "op": "mkdir",
+     "path": "/tmp/./a"
+    }
+   ],
+   "ok": false
+  },
+  {
+   "name": "a path ending in a slash",
+   "ops": [
+    {
+     "op": "mkdir",
+     "path": "/tmp/a/"
+    }
+   ],
+   "ok": false
+  },
+  {
+   "name": "a path with a NUL",
+   "ops": [
+    {
+     "op": "mkdir",
+     "path": "/tmp/a\u0000b"
+    }
+   ],
+   "ok": false
+  },
+  {
+   "name": "a path over the cap",
+   "ops": [
+    {
+     "op": "mkdir",
+     "path": "/@repeat:a:1024"
+    }
+   ],
+   "ok": false
+  },
+  {
+   "name": "an empty path",
+   "ops": [
+    {
+     "op": "mkdir",
+     "path": ""
+    }
+   ],
+   "ok": false
+  },
+  {
+   "name": "a path that is a number",
+   "ops": [
+    {
+     "op": "mkdir",
+     "path": 7
+    }
+   ],
+   "ok": false
+  },
+  {
+   "name": "a relative new path",
+   "ops": [
+    {
+     "op": "rename",
+     "path": "/tmp/a",
+     "to": "b"
+    }
+   ],
+   "ok": false
+  },
+  {
+   "name": "mkdir under what the kernel fills (/proc/sys/kernel/x)",
+   "ops": [
+    {
+     "op": "mkdir",
+     "path": "/proc/sys/kernel/x"
+    }
+   ],
+   "ok": false
+  },
+  {
+   "name": "mkdir under what the kernel fills (/sys/kernel/x)",
+   "ops": [
+    {
+     "op": "mkdir",
+     "path": "/sys/kernel/x"
+    }
+   ],
+   "ok": false
+  },
+  {
+   "name": "mkdir under what the kernel fills (/dev/x)",
+   "ops": [
+    {
+     "op": "mkdir",
+     "path": "/dev/x"
+    }
+   ],
+   "ok": false
+  },
+  {
+   "name": "mkdir under what the kernel fills (/proc)",
+   "ops": [
+    {
+     "op": "mkdir",
+     "path": "/proc"
+    }
+   ],
+   "ok": false
+  },
+  {
+   "name": "write under what the kernel fills (/proc/sys/kernel/x)",
+   "ops": [
+    {
+     "op": "write",
+     "path": "/proc/sys/kernel/x",
+     "content": "1"
+    }
+   ],
+   "ok": false
+  },
+  {
+   "name": "write under what the kernel fills (/sys/kernel/x)",
+   "ops": [
+    {
+     "op": "write",
+     "path": "/sys/kernel/x",
+     "content": "1"
+    }
+   ],
+   "ok": false
+  },
+  {
+   "name": "write under what the kernel fills (/dev/x)",
+   "ops": [
+    {
+     "op": "write",
+     "path": "/dev/x",
+     "content": "1"
+    }
+   ],
+   "ok": false
+  },
+  {
+   "name": "write under what the kernel fills (/proc)",
+   "ops": [
+    {
+     "op": "write",
+     "path": "/proc",
+     "content": "1"
+    }
+   ],
+   "ok": false
+  },
+  {
+   "name": "remove under what the kernel fills (/proc/sys/kernel/x)",
+   "ops": [
+    {
+     "op": "remove",
+     "path": "/proc/sys/kernel/x"
+    }
+   ],
+   "ok": false
+  },
+  {
+   "name": "remove under what the kernel fills (/sys/kernel/x)",
+   "ops": [
+    {
+     "op": "remove",
+     "path": "/sys/kernel/x"
+    }
+   ],
+   "ok": false
+  },
+  {
+   "name": "remove under what the kernel fills (/dev/x)",
+   "ops": [
+    {
+     "op": "remove",
+     "path": "/dev/x"
+    }
+   ],
+   "ok": false
+  },
+  {
+   "name": "remove under what the kernel fills (/proc)",
+   "ops": [
+    {
+     "op": "remove",
+     "path": "/proc"
+    }
+   ],
+   "ok": false
+  },
+  {
+   "name": "chmod under what the kernel fills (/proc/sys/kernel/x)",
+   "ops": [
+    {
+     "op": "chmod",
+     "path": "/proc/sys/kernel/x",
+     "mode": 420
+    }
+   ],
+   "ok": false
+  },
+  {
+   "name": "chmod under what the kernel fills (/sys/kernel/x)",
+   "ops": [
+    {
+     "op": "chmod",
+     "path": "/sys/kernel/x",
+     "mode": 420
+    }
+   ],
+   "ok": false
+  },
+  {
+   "name": "chmod under what the kernel fills (/dev/x)",
+   "ops": [
+    {
+     "op": "chmod",
+     "path": "/dev/x",
+     "mode": 420
+    }
+   ],
+   "ok": false
+  },
+  {
+   "name": "chmod under what the kernel fills (/proc)",
+   "ops": [
+    {
+     "op": "chmod",
+     "path": "/proc",
+     "mode": 420
+    }
+   ],
+   "ok": false
+  },
+  {
+   "name": "chown under what the kernel fills (/proc/sys/kernel/x)",
+   "ops": [
+    {
+     "op": "chown",
+     "path": "/proc/sys/kernel/x",
+     "uid": 0
+    }
+   ],
+   "ok": false
+  },
+  {
+   "name": "chown under what the kernel fills (/sys/kernel/x)",
+   "ops": [
+    {
+     "op": "chown",
+     "path": "/sys/kernel/x",
+     "uid": 0
+    }
+   ],
+   "ok": false
+  },
+  {
+   "name": "chown under what the kernel fills (/dev/x)",
+   "ops": [
+    {
+     "op": "chown",
+     "path": "/dev/x",
+     "uid": 0
+    }
+   ],
+   "ok": false
+  },
+  {
+   "name": "chown under what the kernel fills (/proc)",
+   "ops": [
+    {
+     "op": "chown",
+     "path": "/proc",
+     "uid": 0
+    }
+   ],
+   "ok": false
+  },
+  {
+   "name": "rename out of what the kernel fills",
+   "ops": [
+    {
+     "op": "rename",
+     "path": "/proc/1/x",
+     "to": "/tmp/x"
+    }
+   ],
+   "ok": false
+  },
+  {
+   "name": "rename into what the kernel fills",
+   "ops": [
+    {
+     "op": "rename",
+     "path": "/tmp/x",
+     "to": "/dev/x"
+    }
+   ],
+   "ok": false
+  },
+  {
+   "name": "mkdir of the root",
+   "ops": [
+    {
+     "op": "mkdir",
+     "path": "/"
+    }
+   ],
+   "ok": false
+  },
+  {
+   "name": "remove of the root",
+   "ops": [
+    {
+     "op": "remove",
+     "path": "/"
+    }
+   ],
+   "ok": false
+  },
+  {
+   "name": "chmod of the root",
+   "ops": [
+    {
+     "op": "chmod",
+     "path": "/",
+     "mode": 420
+    }
+   ],
+   "ok": false
+  },
+  {
+   "name": "chown of the root",
+   "ops": [
+    {
+     "op": "chown",
+     "path": "/",
+     "uid": 0
+    }
+   ],
+   "ok": false
+  },
+  {
+   "name": "write of the root",
+   "ops": [
+    {
+     "op": "write",
+     "path": "/",
+     "content": "x"
+    }
+   ],
+   "ok": false
+  },
+  {
+   "name": "write over the cap",
+   "ops": [
+    {
+     "op": "write",
+     "path": "/tmp/a",
+     "content": "@repeat:a:4097"
+    }
+   ],
+   "ok": false
+  },
+  {
+   "name": "write over the cap in two-byte characters",
+   "ops": [
+    {
+     "op": "write",
+     "path": "/tmp/a",
+     "content": "@repeat:é:2049"
+    }
+   ],
+   "ok": false
+  },
+  {
+   "name": "content that is not text",
+   "ops": [
+    {
+     "op": "write",
+     "path": "/tmp/a",
+     "content": 5
+    }
+   ],
+   "ok": false
+  },
+  {
+   "name": "a negative mode",
+   "ops": [
+    {
+     "op": "chmod",
+     "path": "/tmp/a",
+     "mode": -1
+    }
+   ],
+   "ok": false
+  },
+  {
+   "name": "a mode with a file type in it",
+   "ops": [
+    {
+     "op": "chmod",
+     "path": "/tmp/a",
+     "mode": 33188
+    }
+   ],
+   "ok": false
+  },
+  {
+   "name": "a mode written as text",
+   "ops": [
+    {
+     "op": "chmod",
+     "path": "/tmp/a",
+     "mode": "0644"
+    }
+   ],
+   "ok": false
+  },
+  {
+   "name": "a mode written as digits in text",
+   "ops": [
+    {
+     "op": "chmod",
+     "path": "/tmp/a",
+     "mode": "420"
+    }
+   ],
+   "ok": false
+  },
+  {
+   "name": "a mode that is true",
+   "ops": [
+    {
+     "op": "chmod",
+     "path": "/tmp/a",
+     "mode": true
+    }
+   ],
+   "ok": false
+  },
+  {
+   "name": "a mode with a fraction",
+   "ops": [
+    {
+     "op": "chmod",
+     "path": "/tmp/a",
+     "mode": 420.5
+    }
+   ],
+   "ok": false
+  },
+  {
+   "name": "a uid past the last",
+   "ops": [
+    {
+     "op": "chown",
+     "path": "/tmp/a",
+     "uid": 65536
+    }
+   ],
+   "ok": false
+  },
+  {
+   "name": "a negative gid",
+   "ops": [
+    {
+     "op": "chown",
+     "path": "/tmp/a",
+     "gid": -1
+    }
+   ],
+   "ok": false
+  },
+  {
+   "name": "ending init",
+   "ops": [
+    {
+     "op": "proc_end",
+     "pid": 1
+    }
+   ],
+   "ok": false
+  },
+  {
+   "name": "a pid past the last",
+   "ops": [
+    {
+     "op": "proc_end",
+     "pid": 4194305
+    }
+   ],
+   "ok": false
+  },
+  {
+   "name": "a pid written as text",
+   "ops": [
+    {
+     "op": "proc_end",
+     "pid": "4411"
+    }
+   ],
+   "ok": false
+  },
+  {
+   "name": "a variable name that starts with a digit",
+   "ops": [
+    {
+     "op": "setenv",
+     "name": "1X",
+     "value": "x"
+    }
+   ],
+   "ok": false
+  },
+  {
+   "name": "a variable name with a dash",
+   "ops": [
+    {
+     "op": "setenv",
+     "name": "A-B",
+     "value": "x"
+    }
+   ],
+   "ok": false
+  },
+  {
+   "name": "a variable name with an equals sign",
+   "ops": [
+    {
+     "op": "unsetenv",
+     "name": "A=B"
+    }
+   ],
+   "ok": false
+  },
+  {
+   "name": "an empty variable name",
+   "ops": [
+    {
+     "op": "unsetenv",
+     "name": ""
+    }
+   ],
+   "ok": false
+  },
+  {
+   "name": "a variable name over the cap",
+   "ops": [
+    {
+     "op": "setenv",
+     "name": "@repeat:A:129",
+     "value": "x"
+    }
+   ],
+   "ok": false
+  },
+  {
+   "name": "a value over the cap",
+   "ops": [
+    {
+     "op": "setenv",
+     "name": "A",
+     "value": "@repeat:v:4097"
+    }
+   ],
+   "ok": false
+  },
+  {
+   "name": "a value with a NUL",
+   "ops": [
+    {
+     "op": "setenv",
+     "name": "A",
+     "value": "a\u0000b"
+    }
+   ],
+   "ok": false
+  },
+  {
+   "name": "a command line with a NUL",
+   "ops": [
+    {
+     "op": "proc_start",
+     "args": "sleep\u00001"
+    }
+   ],
+   "ok": false
+  },
+  {
+   "name": "a command line over the cap",
+   "ops": [
+    {
+     "op": "proc_start",
+     "args": "@repeat:a:4097"
+    }
+   ],
+   "ok": false
+  },
+  {
+   "name": "one bad operation among good ones",
+   "ops": [
+    {
+     "op": "mkdir",
+     "path": "/tmp/a"
+    },
+    {
+     "op": "mkdir",
+     "path": "b"
+    },
+    {
+     "op": "mkdir",
+     "path": "/tmp/c"
+    }
+   ],
+   "ok": false
+  }
+ ]
+}

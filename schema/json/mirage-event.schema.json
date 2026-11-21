@@ -213,6 +213,7 @@
         "zeek",
         "suricata",
         "policy",
+        "responder",
         "sim",
         "pipeline"
       ],

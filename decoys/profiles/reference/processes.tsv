@@ -1,0 +1,26 @@
+# Written by record-processes.sh from sha256:655d2a9ebce4. Do not edit.
+# user	vsz_kb	rss_kb	threads	stat	comm	args
+root	15468	3340	1	Ss	sshd	sshd: /usr/sbin/sshd [listener] 0 of 10-100 startups
+root	10400	1692	1	Ss	nginx	nginx: master process nginx
+www-data	10736	2736	1	S	nginx	nginx: worker process
+www-data	10736	2736	1	S	nginx	nginx: worker process
+www-data	10736	2736	1	S	nginx	nginx: worker process
+www-data	10736	2736	1	S	nginx	nginx: worker process
+www-data	10736	2736	1	S	nginx	nginx: worker process
+mysql	8591143976	101456	13	Sl	mariadbd	mariadbd --user=mysql
+www-data	10736	2736	1	S	nginx	nginx: worker process
+www-data	10736	2736	1	S	nginx	nginx: worker process
+www-data	10736	2736	1	S	nginx	nginx: worker process
+www-data	10736	2736	1	S	nginx	nginx: worker process
+www-data	10736	2736	1	S	nginx	nginx: worker process
+www-data	10736	2736	1	S	nginx	nginx: worker process
+www-data	10736	2736	1	S	nginx	nginx: worker process
+redis	60800	12224	5	Sl	redis-server	redis-server 0.0.0.0:6379
+root	3940	3064	1	Ss	bash	-bash
+root	8116	4344	1	Rs	ps	ps
+# unit nginx: ExecStart=/usr/sbin/nginx -g 'daemon on; master_process on;'
+# unit redis-server: ExecStart=/usr/bin/redis-server /etc/redis/redis.conf --supervised systemd --daemonize no
+# unit redis-server: User=redis
+# unit mariadb: User=mysql
+# unit mariadb: ExecStart=/bin/sh -c "set -f; [ ! -e /usr/bin/galera_recovery ] && VAR= || \
+# unit ssh: ExecStart=/usr/sbin/sshd -D $SSHD_OPTS

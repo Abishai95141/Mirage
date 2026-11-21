@@ -1,0 +1,925 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: MIRAGE <noreply@anthropic.com>
+Date: Tue, 17 Nov 2026 13:25:28 +0530
+Subject: [PATCH] MIRAGE: ps from the deployment's own process list; a tree may
+ keep its links' own text
+
+- ps printed one fixed list on every installation (with a mysqld Debian 12
+  has not had since MariaDB 10.5), under headers no real ps has. It now reads
+  the deployment's list ([mirage] processes, written by the profile generator
+  from the hardware class's record of a booted machine and the profile's
+  services), adds the session's own sshd, shell and ps, and prints procps-ng
+  4's formats for ps, -e, -ef, aux, ax, x and selection by -p, -u and -C.
+  Other forms are declined. Without the file the stock command answers.
+- grep answers lines typed at a terminal one by one, as GNU grep does.
+- createfs records where a symbolic link ends up, as a path from the root, and
+  the filesystem reads every relative target from there. A tree that keeps
+  each link's own text ([shell] link_targets = verbatim) has its relative
+  links read from the directory that holds them.
+---
+ src/cowrie/commands/__init__.py         |   1 +
+ src/cowrie/commands/mirage_coreutils.py |   6 +-
+ src/cowrie/commands/mirage_ps.py        | 397 ++++++++++++++++++++++++
+ src/cowrie/commands/mirage_textutils.py |  52 +++-
+ src/cowrie/shell/fs.py                  |  19 +-
+ src/cowrie/test/test_grep.py            |  21 +-
+ src/cowrie/test/test_mirage_fs_share.py |  13 +
+ src/cowrie/test/test_mirage_ps.py       | 210 +++++++++++++
+ src/cowrie/test/test_su.py              |  15 +-
+ 9 files changed, 711 insertions(+), 23 deletions(-)
+ create mode 100644 src/cowrie/commands/mirage_ps.py
+ create mode 100644 src/cowrie/test/test_mirage_ps.py
+
+diff --git a/src/cowrie/commands/__init__.py b/src/cowrie/commands/__init__.py
+index 66d39e1..155fa37 100644
+--- a/src/cowrie/commands/__init__.py
++++ b/src/cowrie/commands/__init__.py
+@@ -69,4 +69,5 @@ command_modules = [
+     # MIRAGE: last, so that its commands replace the stock ones of the same name.
+     "mirage_coreutils",
+     "mirage_textutils",
++    "mirage_ps",
+ ]
+diff --git a/src/cowrie/commands/mirage_coreutils.py b/src/cowrie/commands/mirage_coreutils.py
+index 7f6db80..3dd8edf 100644
+--- a/src/cowrie/commands/mirage_coreutils.py
++++ b/src/cowrie/commands/mirage_coreutils.py
+@@ -571,7 +571,8 @@ class Command_wc(HoneyPotCommand):
+         self.finish()
+ 
+     def lineReceived(self, line: str) -> None:
+-        self.input_data = (self.input_data or b"") + line.encode("utf8") + b"\n"
++        typed = line.rstrip("\n").encode("utf8")
++        self.input_data = (self.input_data or b"") + typed + b"\n"
+ 
+     def handle_CTRL_D(self) -> None:
+         self.finish()
+@@ -712,7 +713,8 @@ class Command_sort(Declining):
+         self.finish()
+ 
+     def lineReceived(self, line: str) -> None:
+-        self.input_data = (self.input_data or b"") + line.encode("utf8") + b"\n"
++        typed = line.rstrip("\n").encode("utf8")
++        self.input_data = (self.input_data or b"") + typed + b"\n"
+ 
+     def handle_CTRL_D(self) -> None:
+         self.finish()
+diff --git a/src/cowrie/commands/mirage_ps.py b/src/cowrie/commands/mirage_ps.py
+new file mode 100644
+index 0000000..053503f
+--- /dev/null
++++ b/src/cowrie/commands/mirage_ps.py
+@@ -0,0 +1,397 @@
++# SPDX-License-Identifier: BSD-3-Clause
++# ABOUTME: MIRAGE: ps from the deployment's own process list, in procps-ng 4's
++# ABOUTME: formats. Stock ps printed one fixed list, with headers no real ps has.
++
++"""``ps`` as procps-ng 4.0 prints it on Debian 12, for the forms people type:
++``ps``, ``ps -e``, ``ps -ef``, ``ps aux``, ``ps ax``, ``ps x``, and selection by
++``-p``, ``-u`` and ``-C``.
++
++The processes are the deployment's (``[mirage] processes``, a file the profile
++generator writes from the hardware class's own record and the profile's
++services), plus this session's: its sshd, its shell when it has a terminal,
++and the ps itself. Without that file the stock command answers, as before.
++
++Processor time is a model, as /proc/stat is: a machine that has been idle since
++boot, with a small steady rate for the daemons that tick.
++"""
++
++from __future__ import annotations
++
++import json
++import time
++from typing import Any, ClassVar
++
++from cowrie.commands.base import Command_ps as StockPs
++from cowrie.commands.mirage_coreutils import on_terminal, terminal_width
++from cowrie.core.config import CowrieConfig
++from cowrie.shell.pwd import Passwd
++
++commands: dict[str, Any] = {}
++
++# Processor seconds a day, for the daemons that are never quite idle.
++CPU_SECONDS_A_DAY = {
++    "systemd": 1.5,
++    "systemd-journal": 0.4,
++    "mariadbd": 35.0,
++    "redis-server": 80.0,
++}
++
++_table: dict[str, Any] | None = None
++_loaded = False
++
++
++def table() -> dict[str, Any] | None:
++    """The deployment's process list, read once; None when there is none."""
++    global _table, _loaded
++    if not _loaded:
++        _loaded = True
++        path = CowrieConfig.get("mirage", "processes", fallback="")
++        if path:
++            try:
++                with open(path, encoding="utf-8") as f:
++                    doc = json.load(f)
++                if doc.get("version") == 1 and doc.get("processes"):
++                    _table = doc
++            except (OSError, ValueError):
++                _table = None
++    return _table
++
++
++def reset_for_tests(doc: dict[str, Any] | None = None, loaded: bool = False) -> None:
++    global _table, _loaded
++    _table, _loaded = doc, loaded
++
++
++class Selection:
++    """What a ps command line asks for. ``unknown`` holds what this does not take."""
++
++    def __init__(self, args: list[str]) -> None:
++        self.everyone = False  # -e, -A, or BSD a with x
++        self.with_tty = False  # BSD a
++        self.own_any_tty = False  # BSD x
++        self.full = False  # -f
++        self.user_format = False  # BSD u
++        self.bsd = False
++        self.header = True
++        self.wide = 0
++        self.pids: list[int] | None = None
++        self.users: list[str] | None = None
++        self.names: list[str] | None = None
++        self.unknown: list[str] = []
++        rest = list(args)
++        while rest:
++            arg = rest.pop(0)
++            if arg.startswith("--"):
++                name, _, value = arg[2:].partition("=")
++                if name in ("no-headers", "no-heading"):
++                    self.header = False
++                elif name in ("pid", "user", "User") and (value or rest):
++                    self._select("p" if name == "pid" else "u", value or rest.pop(0))
++                else:
++                    self.unknown.append(arg)
++            elif arg.startswith("-") and "x" in arg and set(arg[1:]) <= set("auxw"):
++                # `ps -aux`: with no user called x, procps reads it as `ps aux`.
++                self._bsd(arg[1:])
++            elif arg.startswith("-") and len(arg) > 1:
++                letters = arg[1:]
++                while letters:
++                    letter, letters = letters[0], letters[1:]
++                    if letter in "eA":
++                        self.everyone = True
++                    elif letter == "a":
++                        self.with_tty = True
++                    elif letter == "f":
++                        self.full = True
++                    elif letter == "w":
++                        self.wide += 1
++                    elif letter in "puUC":
++                        value = letters or (rest.pop(0) if rest else "")
++                        letters = ""
++                        if not value:
++                            self.unknown.append(arg)
++                        else:
++                            self._select(letter, value)
++                    else:
++                        self.unknown.append(arg)
++                        letters = ""
++            elif set(arg) <= set("auxwh"):
++                self._bsd(arg)
++            else:
++                self.unknown.append(arg)
++
++    def _bsd(self, letters: str) -> None:
++        self.bsd = True
++        for letter in letters:
++            if letter == "a":
++                self.with_tty = True
++            elif letter == "x":
++                self.own_any_tty = True
++            elif letter == "u":
++                self.user_format = True
++            elif letter == "w":
++                self.wide += 1
++            elif letter == "h":
++                self.header = False
++
++    def _select(self, kind: str, value: str) -> None:
++        items = [v for v in value.replace(",", " ").split() if v]
++        if kind == "p":
++            if not all(i.isdigit() for i in items):
++                self.unknown.append(value)
++                return
++            self.pids = (self.pids or []) + [int(i) for i in items]
++        elif kind in "uU":
++            self.users = (self.users or []) + items
++        else:
++            self.names = (self.names or []) + items
++
++
++def clock(seconds: float) -> str:
++    """Processor time as the UNIX formats show it: [DD-]HH:MM:SS."""
++    total = int(seconds)
++    days, rest = divmod(total, 86400)
++    text = f"{rest // 3600:02d}:{rest % 3600 // 60:02d}:{rest % 60:02d}"
++    return f"{days}-{text}" if days else text
++
++
++def bsd_clock(seconds: float) -> str:
++    """Processor time as the BSD formats show it: minutes and seconds."""
++    total = int(seconds)
++    return f"{total // 60}:{total % 60:02d}"
++
++
++def started(when: float, now: float) -> str:
++    """When a process started: the time within a day, the date within the year, else the year."""
++    then, today = time.localtime(when), time.localtime(now)
++    if now - when < 86400:
++        return time.strftime("%H:%M", then)
++    if then.tm_year == today.tm_year:
++        return time.strftime("%b%d", then)
++    return str(then.tm_year)
++
++
++def row(cells: list[tuple[str, int, str]]) -> str:
++    """One line of columns. A value wider than its column takes the room back
++    from the padding of the columns after it, as procps does."""
++    out, debt = [], 0
++    for text, width, align in cells:
++        if width <= 0:
++            out.append(text)
++            continue
++        pad = width - len(text)
++        if pad < 0:
++            debt += -pad
++            pad = 0
++        elif debt:
++            give = min(debt, pad)
++            pad, debt = pad - give, debt - give
++        out.append(" " * pad + text if align == ">" else text + " " * pad)
++    return " ".join(out).rstrip()
++
++
++class Command_ps(StockPs):
++    name: ClassVar[str] = "ps"
++
++    @classmethod
++    def mirage_declines(cls, args: list[str]) -> bool:
++        return table() is not None and bool(Selection(args).unknown)
++
++    def call(self) -> None:
++        doc = table()
++        if doc is None:
++            StockPs.call(self)
++            return
++        chosen = Selection(self.args)
++        if chosen.unknown:
++            self.errorWrite(
++                f"{self.shell.error_prefix()}/usr/bin/ps: cannot execute binary file: "
++                "Exec format error\n"
++            )
++            self.exit_code = 126
++            return
++        now = time.time()
++        boot = float(self.protocol.boot_time())
++        me = str(self.user["username"])
++        tty = "pts/0" if hasattr(self.protocol.user, "windowSize") else "?"
++        processes = self._everything(doc, boot, now, me, tty)
++        shown = [p for p in processes if self._wanted(p, chosen, me, tty)]
++        lines = [self._header(chosen)] if chosen.header else []
++        lines += [self._line(p, chosen, doc, now) for p in shown]
++        if on_terminal(self) and chosen.wide < 2:
++            limit = 132 if chosen.wide else terminal_width(self)
++            lines = [line[:limit] for line in lines]
++        self.write("".join(line + "\n" for line in lines))
++        if not shown:
++            self.exit_code = 1
++
++    def _everything(
++        self, doc: dict[str, Any], boot: float, now: float, me: str, tty: str
++    ) -> list[dict[str, Any]]:
++        out = []
++        up_days = max(0.0, now - boot) / 86400
++        for p in doc["processes"]:
++            out.append(
++                {
++                    **p,
++                    "began": boot + p["start"],
++                    "cpu_s": CPU_SECONDS_A_DAY.get(p["comm"], 0.0) * up_days,
++                }
++            )
++        login = float(getattr(self.protocol, "logintime", now))
++        shell_pid = int(self.protocol.cmdstack[0].pid) if self.protocol.cmdstack else 0
++        if not shell_pid:
++            shell_pid = self.protocol.next_pid()
++        sshd_pid = shell_pid - 2
++        where = "pts/0" if tty != "?" else "notty"
++        parent = doc["listener_pid"]
++        if me != "root":
++            # A login that is not root's is served by two: one keeps root's rights.
++            out.append(
++                self._own(
++                    "root", sshd_pid - 1, parent, "sshd", f"sshd: {me} [priv]", "?", "Ss", login
++                )
++            )
++            parent = sshd_pid - 1
++        own_stat = "Ss" if me == "root" else "S"
++        out.append(
++            self._own(me, sshd_pid, parent, "sshd", f"sshd: {me}@{where}", "?", own_stat, login)
++        )
++        parent = sshd_pid
++        if tty != "?":
++            out.append(self._own(me, shell_pid, sshd_pid, "bash", "-bash", tty, "Ss", login))
++            parent = shell_pid
++        typed = " ".join(["ps", *self.args])
++        state = "R+" if tty != "?" else "Rs"
++        out.append(self._own(me, self.protocol.next_pid(), parent, "ps", typed, tty, state, now))
++        return sorted(out, key=lambda p: p["pid"])
++
++    def _own(
++        self,
++        user: str,
++        pid: int,
++        ppid: int,
++        comm: str,
++        args: str,
++        tty: str,
++        stat: str,
++        began: float,
++    ) -> dict[str, Any]:
++        # What a session's own processes hold, as the deployment's file records it.
++        vsz, rss = (table() or {}).get("session", {}).get(comm, (0, 0))
++        return {
++            "user": user,
++            "pid": pid,
++            "ppid": ppid,
++            "vsz": vsz,
++            "rss": rss,
++            "tty": tty,
++            "stat": stat,
++            "args": args,
++            "comm": comm,
++            "began": began,
++            "cpu_s": 0.0,
++        }
++
++    def _wanted(self, p: dict[str, Any], chosen: Selection, me: str, tty: str) -> bool:
++        picked = chosen.pids is not None or chosen.users is not None or chosen.names is not None
++        if picked:
++            users = set(chosen.users or [])
++            if chosen.users:
++                # A user may be named by number.
++                for entry in Passwd().passwd:
++                    if str(entry["pw_uid"]) in users:
++                        users.add(entry["pw_name"])
++            return (
++                (chosen.pids is not None and p["pid"] in chosen.pids)
++                or (chosen.users is not None and self._full_user(p["user"]) in users)
++                or (chosen.names is not None and p["comm"] in chosen.names)
++            )
++        if chosen.everyone or (chosen.with_tty and chosen.own_any_tty):
++            return True
++        mine = self._full_user(p["user"]) == me
++        if chosen.own_any_tty:
++            return mine
++        if chosen.with_tty:
++            return p["tty"] != "?"
++        return mine and p["tty"] == tty
++
++    @staticmethod
++    def _full_user(shown: str) -> str:
++        """The account behind a name ps cut short (``systemd+``)."""
++        if not shown.endswith("+"):
++            return shown
++        stem = shown[:-1]
++        for entry in Passwd().passwd:
++            if entry["pw_name"].startswith(stem):
++                return str(entry["pw_name"])
++        return shown
++
++    @staticmethod
++    def _short_user(name: str) -> str:
++        return name if len(name) <= 8 else name[:7] + "+"
++
++    def _header(self, chosen: Selection) -> str:
++        if chosen.user_format:
++            return "USER         PID %CPU %MEM    VSZ   RSS TTY      STAT START   TIME COMMAND"
++        if chosen.bsd:
++            return "    PID TTY      STAT   TIME COMMAND"
++        if chosen.full:
++            return "UID          PID    PPID  C STIME TTY          TIME CMD"
++        return "    PID TTY          TIME CMD"
++
++    def _line(self, p: dict[str, Any], chosen: Selection, doc: dict[str, Any], now: float) -> str:
++        user = self._short_user(p["user"])
++        age = max(1.0, now - p["began"])
++        percent = 100.0 * p["cpu_s"] / age
++        if chosen.user_format:
++            memory = 100.0 * p["rss"] / max(1, int(doc["memory_kb"]))
++            return row(
++                [
++                    (user, 8, "<"),
++                    (str(p["pid"]), 7, ">"),
++                    (f"{percent:.1f}", 4, ">"),
++                    (f"{memory:.1f}", 4, ">"),
++                    (str(p["vsz"]), 6, ">"),
++                    (str(p["rss"]), 5, ">"),
++                    (p["tty"], 8, "<"),
++                    (p["stat"], 4, "<"),
++                    (started(p["began"], now), 5, ">"),
++                    (bsd_clock(p["cpu_s"]), 6, ">"),
++                    (p["args"], 0, "<"),
++                ]
++            )
++        if chosen.bsd:
++            return row(
++                [
++                    (str(p["pid"]), 7, ">"),
++                    (p["tty"], 8, "<"),
++                    (p["stat"], 4, "<"),
++                    (bsd_clock(p["cpu_s"]), 6, ">"),
++                    (p["args"], 0, "<"),
++                ]
++            )
++        if chosen.full:
++            return row(
++                [
++                    (user, 8, "<"),
++                    (str(p["pid"]), 7, ">"),
++                    (str(p["ppid"]), 7, ">"),
++                    (str(int(percent)), 2, ">"),
++                    (started(p["began"], now), 5, ">"),
++                    (p["tty"], 8, "<"),
++                    (clock(p["cpu_s"]), 8, ">"),
++                    (p["args"], 0, "<"),
++                ]
++            )
++        return row(
++            [
++                (str(p["pid"]), 7, ">"),
++                (p["tty"], 8, "<"),
++                (clock(p["cpu_s"]), 8, ">"),
++                (p["comm"], 0, "<"),
++            ]
++        )
++
++
++for _name in ("/bin/ps", "/usr/bin/ps", "ps"):
++    commands[_name] = Command_ps
+diff --git a/src/cowrie/commands/mirage_textutils.py b/src/cowrie/commands/mirage_textutils.py
+index 48df771..c5b0d26 100644
+--- a/src/cowrie/commands/mirage_textutils.py
++++ b/src/cowrie/commands/mirage_textutils.py
+@@ -147,25 +147,63 @@ class Command_grep(Declining):
+             source = rf"^(?:{source})$"
+         try:
+             self.matcher = re.compile(source.encode(), re.I if "i" in self.flags else 0)
+-        except re.error:
+-            self.errorWrite(f"{self.name}: Unmatched [, [^, [:, [., or [=\n")
++        except re.error as err:
++            what = "( or \\(" if "parenthes" in str(err) else "[, [^, [:, [., or [="
++            self.errorWrite(f"{self.name}: Unmatched {what}\n")
+             self.exit(2)
+             return
+         self.operands = rest
+         self.matched = self.failed = False
++        self.typed = 0  # lines read from the terminal, and how many of them matched
++        self.typed_hits = 0
+         waits = not rest and "r" not in self.flags and self.input_data is None
+-        if waits and not getattr(self.pp, "stdin_from_pipe", False):
+-            return  # reads the terminal until end of file
++        self.live = waits and not getattr(self.pp, "stdin_from_pipe", False)
++        if self.live:
++            return  # reads the terminal, answering line by line, until end of file
+         self.finish()
+ 
+     def lineReceived(self, line: str) -> None:
+-        self.input_data = (self.input_data or b"") + line.encode("utf8") + b"\n"
++        """A line typed at the terminal: grep answers it at once."""
++        if not getattr(self, "live", False):
++            return
++        if self.limit is not None and self.typed_hits >= self.limit:
++            return
++        self.typed += 1
++        data = line.rstrip("\n").encode("utf8")
++        hits = list(self.matcher.finditer(data))
++        if bool(hits) == ("v" in self.flags):
++            return
++        self.typed_hits += 1
++        self.matched = True
++        if self.flags & {"c", "l", "q"}:
++            return
++        lead = f"{self.typed}:".encode() if "n" in self.flags else b""
++        if "H" in self.flags:
++            lead = b"(standard input):" + lead
++        if "o" in self.flags and "v" not in self.flags:
++            self.writeBytes(b"".join(lead + h.group(0) + b"\n" for h in hits if h.group(0)))
++        else:
++            self.writeBytes(lead + data + b"\n")
++
++    def _end_of_typing(self) -> None:
++        if "c" in self.flags and "q" not in self.flags:
++            self.write(f"{self.typed_hits}\n")
++        elif "l" in self.flags and self.typed_hits and "q" not in self.flags:
++            self.write("(standard input)\n")
++        self.exit(0 if self.matched else 1)
+ 
+     def handle_CTRL_D(self) -> None:
+-        self.finish()
++        if getattr(self, "live", False):
++            self._end_of_typing()
++        else:
++            self.finish()
+ 
+     def eofReceived(self) -> None:
+-        if not self.exited:
++        if self.exited:
++            return
++        if getattr(self, "live", False):
++            self._end_of_typing()
++        else:
+             self.finish()
+ 
+     def _complain(self, message: str) -> None:
+diff --git a/src/cowrie/shell/fs.py b/src/cowrie/shell/fs.py
+index 80b73b7..cf16392 100644
+--- a/src/cowrie/shell/fs.py
++++ b/src/cowrie/shell/fs.py
+@@ -124,6 +124,12 @@ class PermissionDenied(Exception):
+ _marked_trees: list[tuple[Any, str, Any]] = []
+ 
+ 
++def _links_verbatim() -> bool:
++    """Whether the tree's symbolic links hold their own text (a deployment
++    built by MIRAGE) or createfs's resolved path from the root (the default)."""
++    return CowrieConfig.get("shell", "link_targets", fallback="") == "verbatim"
++
++
+ class HoneyPotFilesystem:
+     _log = Logger()
+ 
+@@ -351,13 +357,18 @@ class HoneyPotFilesystem:
+                             # Empty target (e.g. a /proc/<pid>/cwd link
+                             # captured with no destination): a broken link.
+                             return None
+-                        # MIRAGE: a relative link is read from the directory
+-                        # that holds it. Upstream read every one from the
+-                        # root, which is right only for a link in the root.
++                        # MIRAGE: createfs records where a link ends up, as a
++                        # path from the root without its slash, and upstream
++                        # reads every relative target from the root. A tree
++                        # that keeps each link's own text ([shell]
++                        # link_targets = verbatim) has real relative targets,
++                        # which are read from the directory holding the link.
+                         if x[A_TARGET][0] == "/":
+                             cwd = posixpath.normpath(x[A_TARGET])
+-                        else:
++                        elif _links_verbatim():
+                             cwd = posixpath.normpath(f"{cwd}/{x[A_TARGET]}")
++                        else:
++                            cwd = posixpath.normpath(f"/{x[A_TARGET]}")
+                         depth = getattr(self, "_link_depth", 0)
+                         if depth >= 40:  # ELOOP, as the kernel has it
+                             return None
+diff --git a/src/cowrie/test/test_grep.py b/src/cowrie/test/test_grep.py
+index 760a4f3..6952dfc 100644
+--- a/src/cowrie/test/test_grep.py
++++ b/src/cowrie/test/test_grep.py
+@@ -85,29 +85,38 @@ class ShellGrepCommandTests(unittest.TestCase):
+     def test_grep_invalid_pattern_piped(self) -> None:
+         """A pattern that is not a valid regex is an error, not a wedged
+         shell: the pattern is attacker input on every grep path."""
++        # MIRAGE: GNU grep's own words for it.
+         self.proto.lineReceived(b"echo hello | grep '['; echo $?\n")
+         self.assertEqual(
+-            self.tr.value(), b"grep: Invalid regular expression\n2\n" + PROMPT
++            self.tr.value(),
++            b"grep: Unmatched [, [^, [:, [., or [=\n2\n" + PROMPT,
+         )
+ 
+     def test_grep_invalid_pattern_file(self) -> None:
+-        self.proto.lineReceived(b"grep 'a(' /etc/passwd\n")
++        # MIRAGE: in a basic regular expression a bare ( is itself, so this
++        # pattern is valid and simply matches nothing here; in an extended
++        # one it is unmatched, and grep says so.
++        self.proto.lineReceived(b"grep 'a(' /etc/passwd; echo $?\n")
++        self.assertEqual(self.tr.value(), b"1\n" + PROMPT)
++        self.tr.clear()
++        self.proto.lineReceived(b"grep -E 'a(' /etc/passwd; echo $?\n")
+         value = self.tr.value()
+-        self.assertIn(b"grep: Invalid regular expression", value)
+-        self.assertTrue(value.endswith(PROMPT))
++        self.assertIn(b"grep: Unmatched", value)
++        self.assertTrue(value.endswith(b"2\n" + PROMPT))
+ 
+     def test_grep_invalid_pattern_stdin(self) -> None:
+         """The stdin path must reject the pattern up front rather than
+         waiting for a line to fail on."""
+         self.proto.lineReceived(b"grep '['\n")
+         self.assertEqual(
+-            self.tr.value(), b"grep: Invalid regular expression\n" + PROMPT
++            self.tr.value(), b"grep: Unmatched [, [^, [:, [., or [=\n" + PROMPT
+         )
+ 
+     def test_grep_no_args_shows_usage(self) -> None:
+         self.proto.lineReceived(b"grep\n")
+         value = self.tr.value()
+-        self.assertIn(b"usage: grep", value)
++        # MIRAGE: GNU grep's usage line, on stderr, with status 2.
++        self.assertIn(b"Usage: grep [OPTION]... PATTERNS [FILE]...", value)
+         self.assertTrue(value.endswith(PROMPT))
+ 
+     def test_grep_m1_is_accepted(self) -> None:
+diff --git a/src/cowrie/test/test_mirage_fs_share.py b/src/cowrie/test/test_mirage_fs_share.py
+index 4988a05..c633b41 100644
+--- a/src/cowrie/test/test_mirage_fs_share.py
++++ b/src/cowrie/test/test_mirage_fs_share.py
+@@ -147,6 +147,10 @@ class RelativeLinkTests(unittest.TestCase):
+ 
+     def setUp(self) -> None:
+         fs._marked_trees.clear()
++        if not CowrieConfig.has_section("shell"):
++            CowrieConfig.add_section("shell")
++        CowrieConfig.set("shell", "link_targets", "verbatim")
++        self.addCleanup(CowrieConfig.remove_option, "shell", "link_targets")
+         self.fs = fs.HoneyPotFilesystem("linux-x64-lsb", "/root")
+         self.fs.mkdir("/tmp/d", 0, 0, 4096, 0o40755)
+         self.fs.mkdir("/tmp/d/e", 0, 0, 4096, 0o40755)
+@@ -184,6 +188,15 @@ class RelativeLinkTests(unittest.TestCase):
+         self.assertIsNone(self.fs.getfile("/tmp/loop"))
+         self.assertFalse(self.fs.exists("/tmp/loop"))
+ 
++    def test_a_stock_tree_s_targets_are_still_read_from_the_root(self) -> None:
++        CowrieConfig.remove_option("shell", "link_targets")
++        # createfs's form: where the link ends up, from the root, without the slash
++        self.fs.get_path("/tmp/d/e").append(
++            ["stock", fs.T_LINK, 0, 0, 14, 0o120777, 0, [], "tmp/d/real.txt", None]
++        )
++        self.assertIs(self.fs.getfile("/tmp/d/e/stock"), self.fs.getfile("/tmp/d/real.txt"))
++        self.assertIsNone(self.fs.getfile("/tmp/d/e/above"))  # "../real.txt" from the root
++
+     def test_the_link_itself_is_returned_when_it_is_not_followed(self) -> None:
+         node = self.fs.getfile("/tmp/d/e/above", follow_symlinks=False)
+         assert node is not None
+diff --git a/src/cowrie/test/test_mirage_ps.py b/src/cowrie/test/test_mirage_ps.py
+new file mode 100644
+index 0000000..e204979
+--- /dev/null
++++ b/src/cowrie/test/test_mirage_ps.py
+@@ -0,0 +1,210 @@
++# SPDX-License-Identifier: BSD-3-Clause
++# ABOUTME: Tests MIRAGE's ps: the deployment's own process list in procps-ng's
++# ABOUTME: formats, the session's own rows, and what it declines.
++
++from __future__ import annotations
++
++import time
++from typing import Any
++from unittest import mock
++
++from cowrie.commands import mirage_ps
++from cowrie.test.test_mirage_gate import PROMPT, GateTestBase
++
++TABLE: dict[str, Any] = {
++    "version": 1,
++    "memory_kb": 4009140,
++    "listener_pid": 382,
++    "session": {"sshd": [16188, 10540], "bash": [3940, 3064], "ps": [8116, 4344]},
++    "processes": [
++        {"user": "root", "pid": 1, "ppid": 0, "vsz": 101956, "rss": 12032, "tty": "?",
++         "stat": "Ss", "start": 0, "args": "/sbin/init", "comm": "systemd"},
++        {"user": "root", "pid": 2, "ppid": 0, "vsz": 0, "rss": 0, "tty": "?",
++         "stat": "S", "start": 0, "args": "[kthreadd]", "comm": "kthreadd"},
++        {"user": "systemd+", "pid": 263, "ppid": 1, "vsz": 18064, "rss": 8668, "tty": "?",
++         "stat": "Ss", "start": 0, "args": "/lib/systemd/systemd-networkd",
++         "comm": "systemd-network"},
++        {"user": "root", "pid": 382, "ppid": 1, "vsz": 15460, "rss": 8784, "tty": "?",
++         "stat": "Ss", "start": 0,
++         "args": "sshd: /usr/sbin/sshd -D [listener] 0 of 10-100 startups", "comm": "sshd"},
++        {"user": "root", "pid": 384, "ppid": 1, "vsz": 2900, "rss": 1032, "tty": "tty1",
++         "stat": "Ss+", "start": 0, "args": "/sbin/agetty -o -p -- \\u --noclear - linux",
++         "comm": "agetty"},
++        {"user": "mysql", "pid": 393, "ppid": 1, "vsz": 8591143976, "rss": 101696, "tty": "?",
++         "stat": "Ssl", "start": 6, "args": "/usr/sbin/mariadbd", "comm": "mariadbd"},
++        {"user": "www-data", "pid": 397, "ppid": 396, "vsz": 10736, "rss": 2804, "tty": "?",
++         "stat": "S", "start": 3, "args": "nginx: worker process", "comm": "nginx"},
++    ],
++}  # fmt: skip
++
++
++class Base(GateTestBase):
++    def setUp(self) -> None:
++        super().setUp()
++        mirage_ps.reset_for_tests(TABLE, loaded=True)
++        self.proto.user.windowSize = [24, 200]
++        # The machine booted two hours ago: starts show as times, and no daemon
++        # has used a whole second of processor yet.
++        booted = time.time() - 7200
++        self.proto.boot_time = lambda: booted
++
++    def tearDown(self) -> None:
++        mirage_ps.reset_for_tests()
++        super().tearDown()
++
++    def lines(self, line: str) -> list[str]:
++        text = self.run_line(line).decode()
++        return text[: -len(PROMPT.decode())].splitlines()
++
++    def no_terminal(self) -> None:
++        del self.proto.user.windowSize
++
++
++class FormatTests(Base):
++    def test_every_process_in_the_short_format(self) -> None:
++        lines = self.lines("ps -e")
++        self.assertEqual(lines[0], "    PID TTY          TIME CMD")
++        self.assertEqual(lines[1], "      1 ?        00:00:00 systemd")
++        self.assertEqual(lines[2], "      2 ?        00:00:00 kthreadd")
++        self.assertIn("    384 tty1     00:00:00 agetty", lines)
++        self.assertEqual(lines[1:], self.lines("ps -A")[1:-1] + [lines[-1]])
++
++    def test_the_full_format(self) -> None:
++        lines = self.lines("ps -ef")
++        self.assertEqual(lines[0], "UID          PID    PPID  C STIME TTY          TIME CMD")
++        self.assertRegex(lines[1], r"^root           1       0  0 \S{5} \?        00:00:00 /sbin/init$")
++        self.assertRegex(lines[3], r"^systemd\+     263       1  0 \S{5} \?        00:0\d:\d\d /lib/systemd/systemd-networkd$")
++        self.assertRegex(lines[2], r" \[kthreadd\]$")
++
++    def test_the_user_format_and_a_column_that_overflows(self) -> None:
++        lines = self.lines("ps aux")
++        self.assertEqual(
++            lines[0], "USER         PID %CPU %MEM    VSZ   RSS TTY      STAT START   TIME COMMAND"
++        )
++        self.assertRegex(lines[1], r"^root           1  0\.0  0\.3 101956 12032 \?        Ss   \S{5} +\d+:\d\d /sbin/init$")
++        maria = next(line for line in lines if line.endswith("/usr/sbin/mariadbd"))
++        # The two numbers too wide for their columns take the room back from the next one.
++        self.assertRegex(maria, r"^mysql        393  0\.\d  2\.5 8591143976 101696 \?   Ssl  \S{5} +\d+:\d\d /usr/sbin/mariadbd$")
++        self.assertEqual(self.lines("ps -aux")[0], lines[0])
++        self.assertEqual(len(self.lines("ps auxww")), len(lines))
++
++    def test_the_bsd_format_without_u(self) -> None:
++        lines = self.lines("ps ax")
++        self.assertEqual(lines[0], "    PID TTY      STAT   TIME COMMAND")
++        self.assertEqual(lines[1], "      1 ?        Ss     0:00 /sbin/init")
++
++    def test_a_line_is_cut_to_the_terminal_and_not_without_one(self) -> None:
++        self.proto.user.windowSize = [24, 60]
++        self.assertTrue(all(len(line) <= 60 for line in self.lines("ps -ef")))
++        self.assertTrue(any(len(line) > 60 for line in self.lines("ps -efww")))
++        self.assertTrue(any(len(line) > 60 for line in self.lines("ps -ef | cat")))
++
++
++class SessionTests(Base):
++    def test_with_a_terminal_the_session_is_its_sshd_its_shell_and_the_ps(self) -> None:
++        lines = self.lines("ps")
++        self.assertEqual(lines[0], "    PID TTY          TIME CMD")
++        self.assertEqual([line.split()[-1] for line in lines[1:]], ["bash", "ps"])
++        self.assertTrue(all(" pts/0 " in line for line in lines[1:]))
++        full = self.lines("ps -ef")
++        own = [line for line in full if "sshd: root@pts/0" in line or line.endswith(" -bash")]
++        self.assertEqual(len(own), 2)
++        sshd_pid, sshd_parent = own[0].split()[1:3]
++        self.assertEqual(sshd_parent, "382")  # the listener's child
++        self.assertEqual(own[1].split()[2], sshd_pid)  # the shell's parent
++        self.assertRegex(full[-1], r" pts/0    00:00:00 ps -ef$")
++
++    def test_without_a_terminal_there_is_no_shell_and_ps_shows_the_user_s_own(self) -> None:
++        self.no_terminal()
++        lines = self.lines("ps")
++        shown = [line.split()[-1] for line in lines[1:]]
++        self.assertEqual(shown, ["systemd", "kthreadd", "sshd", "sshd", "ps"])
++        self.assertTrue(all(line.split()[1] == "?" for line in lines[1:]))
++        full = self.lines("ps -ef")
++        self.assertTrue(any("sshd: root@notty" in line for line in full))
++        self.assertFalse(any(line.endswith(" -bash") for line in full))
++
++    def test_each_ps_is_a_new_process_and_the_shell_keeps_its_number(self) -> None:
++        first, second = self.lines("ps"), self.lines("ps")
++        self.assertEqual(first[1].split()[0], second[1].split()[0])
++        self.assertLess(int(first[2].split()[0]), int(second[2].split()[0]))
++
++
++class SelectionTests(Base):
++    def test_by_process_id_user_and_name(self) -> None:
++        self.assertEqual(self.lines("ps -p 1")[1:], ["      1 ?        00:00:00 systemd"])
++        self.assertEqual(len(self.lines("ps -p 1,393")), 3)
++        self.assertEqual([x.split()[-1] for x in self.lines("ps -u mysql")[1:]], ["mariadbd"])
++        self.assertEqual([x.split()[-1] for x in self.lines("ps -C nginx")[1:]], ["nginx"])
++        self.assertRegex(self.lines("ps -fp 393")[1], r"^mysql        393       1 ")
++
++    def test_a_name_ps_cut_short_still_belongs_to_its_account(self) -> None:
++        accounts = mock.Mock(passwd=[{"pw_name": "systemd-network", "pw_uid": 998}])
++        with mock.patch.object(mirage_ps, "Passwd", return_value=accounts):
++            self.assertEqual(mirage_ps.Command_ps._full_user("systemd+"), "systemd-network")
++            self.assertEqual(len(self.lines("ps -u systemd-network")), 2)
++            self.assertEqual(len(self.lines("ps -u 998")), 2)
++        self.assertEqual(mirage_ps.Command_ps._full_user("root"), "root")
++
++    def test_nothing_selected_is_the_header_and_status_1(self) -> None:
++        text = self.run_line("ps -p 99999; echo status=$?").decode()
++        self.assertEqual(text[: -len(PROMPT.decode())], "    PID TTY          TIME CMD\nstatus=1\n")
++
++    def test_x_is_the_user_s_own_and_a_is_what_has_a_terminal(self) -> None:
++        own = [line.split()[-1] for line in self.lines("ps x")[1:]]
++        self.assertIn("/sbin/init", own)
++        self.assertNotIn("/usr/sbin/mariadbd", own)
++        with_tty = self.lines("ps a")[1:]
++        self.assertTrue(all(line.split()[1] != "?" for line in with_tty))
++        self.assertTrue(any("agetty" in line for line in with_tty))
++
++    def test_no_header_when_asked(self) -> None:
++        self.assertEqual(self.lines("ps --no-headers -p 1"), ["      1 ?        00:00:00 systemd"])
++
++
++class DeclineTests(Base):
++    def tier(self, line: str) -> str:
++        self.gate.requests.clear()
++        self.run_line(line)
++        return self.gate.requests[-1]["tier"]
++
++    def test_a_form_it_does_not_take_is_declined(self) -> None:
++        self.assertEqual(self.tier("ps -ef"), "emulated")
++        self.assertEqual(self.tier("ps aux"), "emulated")
++        self.assertEqual(self.tier("ps -eo pid,comm"), "none")
++        self.assertEqual(self.tier("ps --forest"), "none")
++        self.assertEqual(self.tier("ps -elf"), "none")
++
++    def test_without_a_table_the_stock_command_answers(self) -> None:
++        mirage_ps.reset_for_tests(None, loaded=True)
++        self.assertEqual(self.tier("ps -eo pid,comm"), "emulated")
++        self.assertIn("COMMAND", self.lines("ps aux")[0])
++
++
++class HelperTests(Base):
++    def test_processor_time_in_both_forms(self) -> None:
++        self.assertEqual(mirage_ps.clock(0), "00:00:00")
++        self.assertEqual(mirage_ps.clock(3725), "01:02:05")
++        self.assertEqual(mirage_ps.clock(90000), "1-01:00:00")
++        self.assertEqual(mirage_ps.bsd_clock(125), "2:05")
++        self.assertEqual(mirage_ps.bsd_clock(7325), "122:05")
++
++    def test_a_start_is_a_time_then_a_date_then_a_year(self) -> None:
++        now = 1_794_900_000.0
++        self.assertRegex(mirage_ps.started(now - 3600, now), r"^\d\d:\d\d$")
++        self.assertRegex(mirage_ps.started(now - 5 * 86400, now), r"^[A-Z][a-z]{2}\d\d$")
++        self.assertRegex(mirage_ps.started(now - 800 * 86400, now), r"^\d{4}$")
++
++
++class LongUptimeTests(Base):
++    def test_after_weeks_starts_are_dates_and_the_daemons_have_used_some_processor(self) -> None:
++        booted = time.time() - 40 * 86400
++        self.proto.boot_time = lambda: booted
++        lines = self.lines("ps aux")
++        init = lines[1].split()
++        self.assertRegex(init[8], r"^([A-Z][a-z]{2}\d\d|\d{4})$")
++        self.assertEqual(init[9], "1:00")  # a second and a half a day
++        maria = next(line for line in lines if line.endswith("/usr/sbin/mariadbd")).split()
++        self.assertEqual(maria[9], "23:20")
++        own = next(line for line in lines if "sshd: root@pts/0" in line).split()
++        self.assertRegex(own[8], r"^\d\d:\d\d$")  # the login was just now
+diff --git a/src/cowrie/test/test_su.py b/src/cowrie/test/test_su.py
+index 672fde1..b53097d 100644
+--- a/src/cowrie/test/test_su.py
++++ b/src/cowrie/test/test_su.py
+@@ -8,6 +8,7 @@
+ from __future__ import annotations
+ 
+ import os
++import re
+ import unittest
+ 
+ from cowrie.shell import fs
+@@ -86,9 +87,12 @@ class SuCommandTests(unittest.TestCase):
+     def test_su_to_phil_id_command(self) -> None:
+         """Test su -c id phil shows phil's uid/gid."""
+         self.proto.lineReceived(b"su -c id phil\n")
+-        self.assertEqual(
++        # MIRAGE: id lists every group /etc/group puts the user in, as id does.
++        self.assertRegex(
+             self.tr.value(),
+-            b"uid=1000(phil) gid=1000(phil) groups=1000(phil)\n" + ROOT_PROMPT,
++            rb"^uid=1000\(phil\) gid=1000\(phil\) groups=1000\(phil\)(,\d+\(\w+\))*\n"
++            + re.escape(ROOT_PROMPT)
++            + rb"$",
+         )
+ 
+     def test_su_nonexistent_user(self) -> None:
+@@ -117,9 +121,12 @@ class SuCommandTests(unittest.TestCase):
+         # Test id command
+         self.tr.clear()
+         self.proto.lineReceived(b"id\n")
+-        self.assertEqual(
++        # MIRAGE: id lists every group /etc/group puts the user in, as id does.
++        self.assertRegex(
+             self.tr.value(),
+-            b"uid=1000(phil) gid=1000(phil) groups=1000(phil)\n" + PHIL_PROMPT,
++            rb"^uid=1000\(phil\) gid=1000\(phil\) groups=1000\(phil\)(,\d+\(\w+\))*\n"
++            + re.escape(PHIL_PROMPT)
++            + rb"$",
+         )
+ 
+     def test_su_login_shell(self) -> None:
+-- 
+2.50.1 (Apple Git-155)
+

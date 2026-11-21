@@ -1,0 +1,77 @@
+# Commands promoted from the live model's answers to the render library (phase 3 spec
+# 3.2b). Written by `make render-candidates` from the responder's cache: stateless
+# commands the model was asked, each one plain command. `make render-record` asks the
+# reference host for each, and `make render-library` makes an entry of every answer
+# that is fixed. `answered` is how often the responder was asked for the command;
+# `left` is why the reference host's answer could not be an entry (the command then
+# stays with the responder). Delete an entry to have it considered afresh.
+- argv: apt-cache show bash
+  answered: 1
+  left: the reference container's package database contradicts the decoy's process
+    list until the image is rebased (known gaps emulator.dpkg-l and emulator.dpkg-s)
+- argv: chage -l caleb
+  answered: 1
+  left: 'it names an account of the deployment, and the recording host has none of
+    them: it answered that the user does not exist'
+- argv: dpkg -L bash
+  answered: 1
+  left: the reference container's package database contradicts the decoy's process
+    list until the image is rebased (known gaps emulator.dpkg-l and emulator.dpkg-s)
+- argv: dpkg -s openssh-server
+  answered: 1
+  left: the reference container's package database contradicts the decoy's process
+    list until the image is rebased (known gaps emulator.dpkg-l and emulator.dpkg-s)
+- argv: getent group root
+  answered: 1
+  left: 'a function of the deployment''s own files (/etc/passwd, /etc/group, /etc/hosts),
+    not of the image: it belongs in the emulator'
+- argv: getent group sudo
+  answered: 1
+  left: 'a function of the deployment''s own files (/etc/passwd, /etc/group, /etc/hosts),
+    not of the image: it belongs in the emulator'
+- argv: getent hosts localhost
+  answered: 1
+  left: 'a function of the deployment''s own files (/etc/passwd, /etc/group, /etc/hosts),
+    not of the image: it belongs in the emulator'
+- argv: getent passwd nosuchuser
+  answered: 1
+  left: 'a function of the deployment''s own files (/etc/passwd, /etc/group, /etc/hosts),
+    not of the image: it belongs in the emulator'
+- argv: getent passwd root
+  answered: 1
+  left: 'a function of the deployment''s own files (/etc/passwd, /etc/group, /etc/hosts),
+    not of the image: it belongs in the emulator'
+- argv: getent protocols tcp
+  answered: 1
+  left: 'a function of the deployment''s own files (/etc/passwd, /etc/group, /etc/hosts),
+    not of the image: it belongs in the emulator'
+- argv: getent services ssh
+  answered: 1
+  left: 'a function of the deployment''s own files (/etc/passwd, /etc/group, /etc/hosts),
+    not of the image: it belongs in the emulator'
+- argv: lastlog -u root
+  answered: 1
+  left: the recording host says root never logged in; the session asking is logged
+    in as root
+- argv: locale
+  answered: 1
+  left: its answer is the session's own locale variables, which an SSH client may
+    send
+- argv: locale -a
+  answered: 1
+- argv: locale charmap
+  answered: 1
+  left: its answer follows the session's own locale variables, which an SSH client
+    may send
+- argv: locale territory
+  answered: 1
+  left: its answer follows the session's own locale variables, which an SSH client
+    may send
+- argv: nginx -h
+  answered: 1
+- argv: openssl version
+  answered: 1
+- argv: sysctl kernel.ostype
+  answered: 1
+- argv: sysctl vm.swappiness
+  answered: 1

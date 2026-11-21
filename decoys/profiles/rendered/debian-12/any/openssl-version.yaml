@@ -1,0 +1,20 @@
+# Written by `mirage-profile render-library`; do not edit. What a real host printed.
+argv: openssl version
+program: /usr/bin/openssl
+source: reference-container
+who: any
+exit_code: 0
+ms:
+- 22
+- 3
+- 3
+- 3
+- 3
+stdout: |
+  OpenSSL 3.0.22 25 Aug 2026 (Library: OpenSSL 3.0.22 25 Aug 2026)
+stderr: ''
+inventory:
+  responder: 1
+shape: text
+streams: stdout
+recorded: {}

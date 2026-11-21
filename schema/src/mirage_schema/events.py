@@ -37,6 +37,9 @@ class Source(StrEnum):
     ZEEK = "zeek"
     SURICATA = "suricata"
     POLICY = "policy"
+    # The responder's own record of an answer (phase 3 spec, section 3). The decoy's event
+    # for the same command says what the session saw; the two join on request_id.
+    RESPONDER = "responder"
     SIM = "sim"
     # Derived by the pipeline itself (the sessioniser's token.triggered findings).
     PIPELINE = "pipeline"

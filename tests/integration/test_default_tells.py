@@ -32,6 +32,12 @@ def test_stack_passes_default_tell_checks(env):
     fails = [r for r in results if r.status == "fail"]
     assert fails == [], fails
     assert {r.check for r in results if r.status == "gap"} == {"HASSH-server equals OpenSSH 9.2p1"}
+    # The hardware class's story is checked, not skipped (phase 3 spec 3.2a).
+    assert "lscpu names the class's CPU" in {r.check for r in results}
+    assert "an exec channel's error comes on stderr" in {r.check for r in results}
+    assert "an exec request is acknowledged before its channel closes" in {r.check for r in results}
+    assert "the session is told the host's own address" in {r.check for r in results}
+    assert "the host key presented is the one in /etc/ssh" in {r.check for r in results}
 
 
 @pytest.fixture
@@ -65,5 +71,7 @@ def test_stock_cowrie_fails_the_ssh_checks(stock_cowrie):
         "random root passwords rejected",
         "kex_algorithms offers nothing OpenSSH 9.2p1 does not",
         "server_host_key_algorithms offers nothing OpenSSH 9.2p1 does not",
+        "an exec channel's error comes on stderr",
+        "an exec request is acknowledged before its channel closes",
     ):
         assert expected in failed, (expected, sorted(failed))

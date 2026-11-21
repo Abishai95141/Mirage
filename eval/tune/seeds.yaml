@@ -1,0 +1,250 @@
+# Invocations written by hand for the tuning set (eval/tune/candidates.py): what a person who
+# has just logged in to a Debian 12 server runs to look around, for programs the decoy has no
+# emulation of. Read-only, each one plain command. None is a command of the bench
+# (eval/probes/llm_commands.yaml): those are held out, and a test checks it.
+commands:
+  # packages
+  - dpkg -l bash
+  - dpkg -l openssh-server
+  - dpkg -l coreutils
+  - dpkg -s bash
+  - dpkg -s nginx
+  - dpkg -s coreutils
+  - dpkg -S /bin/cat
+  - dpkg -S /usr/sbin/nginx
+  - dpkg -L openssh-server
+  - dpkg -L nginx-common
+  - dpkg --print-architecture
+  - dpkg --get-selections
+  - dpkg-query -W bash
+  - dpkg-query -l nginx
+  - dpkg-query -s openssl
+  - apt-cache policy bash
+  - apt-cache policy openssh-server
+  - apt-cache show coreutils
+  - apt-cache depends bash
+  - apt-cache rdepends libc6
+  - apt-cache pkgnames
+  - apt-cache stats
+  - apt-mark showmanual
+  - apt-mark showhold
+  - apt-config dump
+  # accounts
+  - getent passwd
+  - getent passwd www-data
+  - getent passwd 0
+  - getent passwd 33
+  - getent group
+  - getent group www-data
+  - getent group 0
+  - getent group adm
+  - getent shadow root
+  - getent hosts
+  - getent hosts 127.0.0.1
+  - getent networks
+  - getent nosuchdatabase
+  - chage -l www-data
+  - chage -l nosuchuser
+  - lastlog
+  - lastlog -u www-data
+  - lastlog -u nosuchuser
+  - faillog -u root
+  - faillock --user root
+  - pwck -r
+  - grpck -r
+  - users
+  - groups www-data
+  - id www-data
+  # the system
+  - locale -k LC_TIME
+  - locale -k LC_NUMERIC
+  - locale -m
+  - sysctl kernel.hostname
+  - sysctl kernel.osrelease
+  - sysctl kernel.pid_max
+  - sysctl fs.file-max
+  - sysctl net.ipv4.ip_forward
+  - sysctl -n kernel.ostype
+  - sysctl nosuch.key
+  - ldd /bin/cat
+  - ldd /usr/sbin/nginx
+  - ldd /nonexistent-file
+  - ldconfig -p
+  - ldconfig -v
+  - getcap /usr/bin/ping
+  - getcap /bin/ls
+  - capsh --print
+  - ipcs
+  - ipcs -m
+  - ipcs -q
+  - ipcs -s
+  - lslocks
+  - lsipc
+  - lsns
+  - lsmem
+  - lslogins
+  - lslogins root
+  - findmnt /
+  - findmnt -t ext4
+  - runlevel
+  - ischroot
+  - tty
+  - mesg
+  - nproc --all
+  - hostid
+  - arch
+  # services, as programs
+  - nginx -t
+  - nginx -T
+  - nginx -s nosuchsignal
+  - sshd -T
+  - sshd -V
+  - mariadb -V
+  - mariadbd --version
+  - mariadb-admin --version
+  - redis-cli -v
+  - redis-server -v
+  - redis-benchmark --version
+  - openssl version -a
+  - openssl version -d
+  - openssl list -digest-commands
+  - openssl list -cipher-commands
+  - openssl ciphers
+  - openssl dgst -sha256 /etc/hostname
+  - openssl dgst -md5 /etc/shells
+  - openssl md5 /etc/hostname
+  - openssl sha1 /etc/hostname
+  - openssl base64 -in /etc/hostname
+  - openssl x509 -in /nonexistent-file -noout -text
+  - openssl rsa -in /nonexistent-file -check
+  - ssh-keygen -l -f /etc/ssh/ssh_host_rsa_key.pub
+  - ssh-keygen -l -f /etc/ssh/ssh_host_ecdsa_key.pub
+  - ssh-keygen -l -f /nonexistent-file
+  - ssh-keygen -lv -f /etc/ssh/ssh_host_ed25519_key.pub
+  - perl -v
+  - perl -V:version
+  # files and text
+  - od -c /etc/shells
+  - od -x /etc/hostname
+  - od -An -tx1 /etc/hostname
+  - od -c /nonexistent-file
+  - cksum /etc/shells
+  - cksum /etc/hostname /etc/shells
+  - cksum /nonexistent-file
+  - sum /etc/shells
+  - sum -s /etc/hostname
+  - b2sum /etc/shells
+  - sha224sum /etc/hostname
+  - sha384sum /etc/hostname
+  - base32 /etc/hostname
+  - basenc --base16 /etc/hostname
+  - diff /etc/hostname /etc/hostname
+  - diff /etc/hostname /etc/issue
+  - diff -u /etc/hostname /etc/issue
+  - diff -q /etc/hostname /etc/issue
+  - diff /etc/hostname /nonexistent-file
+  - cmp /etc/hostname /etc/hostname
+  - cmp /etc/hostname /etc/issue
+  - cmp -l /etc/hostname /etc/issue
+  - cmp /etc/hostname /nonexistent-file
+  - comm /etc/hostname /etc/hostname
+  - comm -3 /etc/hostname /etc/issue
+  - paste /etc/hostname /etc/issue
+  - paste -s /etc/shells
+  - join /etc/shells /etc/shells
+  - expand /etc/hostname
+  - unexpand /etc/hostname
+  - fold -w 10 /etc/shells
+  - fmt /etc/issue
+  - pr -l 5 /etc/hostname
+  - nl /etc/shells
+  - tsort /etc/hostname
+  - shuf -i 7-7
+  - shuf -n 0 /etc/shells
+  - factor 12
+  - factor 97
+  - factor 1024 255
+  - factor 0
+  - factor abc
+  - expr 7 + 5
+  - expr 9 / 2
+  - expr length hostname
+  - expr substr hostname 1 4
+  - expr 1 / 0
+  - numfmt --to=si 1500000
+  - numfmt --from=iec 2K
+  - numfmt abc
+  - namei /etc/hostname
+  - namei -l /etc/hostname
+  - namei /bin/sh
+  - namei /nonexistent-file
+  - pathchk /etc/hostname
+  - file /etc/hostname
+  - stat -f /
+  - du -s /etc/ssh
+  - du -sh /etc/nginx
+  - du -a /etc/ssh
+  - dircolors
+  - dircolors -p
+  - printenv HOME
+  - printenv NOSUCHVARIABLE
+  - getconf PAGE_SIZE
+  - getconf LONG_BIT
+  - getconf ARG_MAX
+  - getconf NOSUCHNAME
+  - getopt ab:c -a -b x
+  - getopt -T
+  - iconv -l
+  - iconv -f utf8 -t ascii /etc/hostname
+  - zcat /etc/hostname
+  - gzip -l /etc/hostname
+  - gzip -t /etc/hostname
+  - bzip2 -t /etc/hostname
+  - xz -l /etc/hostname
+  - xz -t /etc/hostname
+  - tar tf /etc/hostname
+  - tar tf /nonexistent-file
+  - cpio --version
+  - zdump UTC
+  - mcookie
+  - uuidgen
+  - whereis ls
+  - whereis nginx
+  - whereis nosuchprogram
+  - run-parts --list /etc/cron.daily
+  - run-parts --test /etc/cron.daily
+  - tempfile
+  - savelog
+  - which -a sh
+  - update-alternatives --list pager
+  - update-alternatives --display editor
+  - update-alternatives --get-selections
+  - chattr
+  - lsattr /etc/hostname
+  - lsattr -d /etc
+  - blkid
+  - lsblk
+  - swapon --show
+  - last
+  - last root
+  - lastb
+  - w -h
+  - who -b
+  - who -r
+  - utmpdump /var/run/utmp
+  - wall
+  - logger
+  - dmesg
+  - journalctl
+  - timedatectl
+  - hostnamectl
+  - loginctl
+  - systemd-detect-virt
+  - mariadb-check
+  - mysqladmin
+  - my_print_defaults mysqld
+  - resolveip localhost
+  - resolveip 127.0.0.1
+  - perror 2
+  - perror 13
+  - innochecksum --version

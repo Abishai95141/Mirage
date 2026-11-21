@@ -59,7 +59,7 @@ class _Policy(BaseHTTPRequestHandler):
             if _Policy.mode == "garbage"
             else json.dumps(
                 {
-                    "action": "fake_error",
+                    "action": "respond" if _Policy.mode == "v2" else "fake_error",
                     "output": body["argv"][0],
                     "exit_code": 3,
                     "decision_id": "d1",
@@ -104,6 +104,8 @@ async def test_gate_applies_decision(policy_url):
         ("ok", "wrong-token-xxxxxxxxxx", "status:401"),
         ("garbage", "secret-token-xxxxxxxx", "malformed"),
         ("slow", "secret-token-xxxxxxxx", "timeout"),
+        # an action of contract v2, which these decoys never said they support
+        ("v2", "secret-token-xxxxxxxx", "unsupported"),
     ],
 )
 async def test_gate_falls_back_to_allow(policy_url, mode, token, reason):

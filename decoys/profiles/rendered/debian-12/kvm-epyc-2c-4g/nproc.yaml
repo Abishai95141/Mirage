@@ -1,0 +1,17 @@
+# Written by `mirage-profile render-library`; do not edit. What a real host printed.
+argv: nproc
+program: /usr/bin/nproc
+source: class-record
+who: any
+exit_code: 0
+ms:
+- 1
+stdout: |
+  2
+stderr: ''
+inventory:
+  corpus: 6
+  lab: 1
+shape: text
+streams: stdout
+recorded: {}

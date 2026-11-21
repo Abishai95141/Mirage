@@ -1,0 +1,349 @@
+# The fixed list of ordinary commands behind two groups of the fingerprint suite (phase 3 spec
+# 3.4): emulator fidelity and response time. Each is sent as one exec request, as root, to the
+# decoy and to the real reference host, and the two answers are compared by the fidelity check.
+#
+#   id    stable; the check's ID is built from it, so the known-gaps file can name it
+#   cmd   the line sent. It really runs on the reference host: read-only, or confined to /tmp
+#   same  patterns (multi-line regular expressions) the two hosts must agree on: both answers
+#         match, or neither does. For behaviour the shape comparison is too loose to see.
+#   exact the two answers must be the same line for line, once numbers, dates and
+#         addresses are masked. The reference host carries the decoy's profile (host name,
+#         accounts), so answers about identity, the shell and small files are the same.
+#   time  the class it is timed under; without it the command is not timed
+#
+# What is not here, on purpose: commands whose answer depends on the machine or its kernel
+# (`uname -a`, `lscpu`, `free`, `df`, `ip addr`). The reference host is a container and reports
+# the lab machine's kernel and hardware. Those are held against the recorded reference and the
+# hardware class's record by the default-tell and render-library groups.
+commands:
+  # who and where
+  - {id: id, cmd: "id", time: report, exact: true}
+  - {id: id-u, cmd: "id -u", exact: true}
+  - {id: id-nobody, cmd: "id nobody", exact: true}
+  - {id: whoami, cmd: "whoami", time: report, exact: true}
+  - {id: groups, cmd: "groups", exact: true}
+  - {id: hostname, cmd: "hostname", exact: true}
+  - {id: pwd, cmd: "pwd", time: builtin, exact: true}
+  - {id: uname-m, cmd: "uname -m", exact: true}
+  - {id: uname-s, cmd: "uname -s", exact: true}
+  - {id: uname-n, cmd: "uname -n", exact: true}
+  - {id: arch, cmd: "arch", exact: true}
+  - {id: date, cmd: "date"}
+  - {id: uptime, cmd: "uptime"}
+  - {id: os-release, cmd: "cat /etc/os-release", time: read, exact: true}
+  - {id: debian-version, cmd: "cat /etc/debian_version", exact: true}
+  - {id: etc-hostname, cmd: "cat /etc/hostname", exact: true}
+  # the shell
+  - {id: echo, cmd: "echo hello world", time: builtin, exact: true}
+  - {id: echo-home, cmd: "echo $HOME", exact: true}
+  - {id: echo-shell, cmd: "echo $SHELL", exact: true}
+  - {id: echo-path, cmd: "echo $PATH", exact: true}
+  - {id: echo-user, cmd: "echo $USER", exact: true}
+  - {id: status-true, cmd: "true; echo $?", exact: true}
+  - {id: status-false, cmd: "false; echo $?", exact: true}
+  - {id: and-or, cmd: "false && echo yes || echo no", exact: true}
+  - {id: variable, cmd: "X=5; echo $X", exact: true}
+  - {id: substitution, cmd: "echo $(whoami)", exact: true}
+  - {id: arithmetic, cmd: "echo $((2+3))", exact: true}
+  - {id: for-loop, cmd: "for i in 1 2 3; do echo $i; done", exact: true}
+  - {id: cd-then-pwd, cmd: "cd /var/log; pwd", exact: true}
+  - {id: cd-missing, cmd: "cd /nonexistent-dir", exact: true}
+  - {id: env, cmd: "env", exact: true}
+  - {id: type-cd, cmd: "type cd", exact: true}
+  - {id: which-ls, cmd: "which ls", exact: true}
+  - {id: which-missing, cmd: "which nosuchprogram", exact: true}
+  - {id: command-v, cmd: "command -v cat", exact: true}
+  - {id: missing-command, cmd: "nosuchprogram --version", time: missing, exact: true}
+  - {id: glob-echo, cmd: "echo /etc/host*", same: ['\*'], exact: true}
+  - {id: glob-ls, cmd: "ls /etc/host*", same: ['\*', '(?m)^/etc/hostname$']}
+  - {id: redirect-round-trip, cmd: "echo marker-line > /tmp/probe.txt; cat /tmp/probe.txt; rm /tmp/probe.txt", exact: true}
+  - {id: stderr-redirect, cmd: "ls /nonexistent-dir 2>/dev/null; echo done", exact: true}
+  # files
+  # /usr, not /: the reference host has files of its own in its root
+  - {id: ls-usr, cmd: "ls /usr", exact: true, time: list}
+  - {id: ls-la-root-home, cmd: "ls -la /root"}
+  - {id: ls-l-passwd, cmd: "ls -l /etc/passwd", same: ['[A-Z][a-z]{2} [ \d]\d +(\d\d:\d\d|\d{4}) /etc', '^-rw-r--r-- 1 root root ']}
+  - {id: ls-two-dirs, cmd: "ls /home /opt", same: ['(?m)^/home:$', '(?m)^/opt:$']}
+  - {id: ls-d, cmd: "ls -d /etc", exact: true}
+  - {id: ls-missing, cmd: "ls /nonexistent-dir", exact: true}
+  - {id: cat-passwd, cmd: "cat /etc/passwd", time: read}
+  - {id: cat-shadow, cmd: "cat /etc/shadow"}
+  - {id: cat-missing, cmd: "cat /nonexistent-file", exact: true}
+  - {id: cat-directory, cmd: "cat /etc", exact: true}
+  - {id: head, cmd: "head -n 3 /etc/passwd"}
+  - {id: tail, cmd: "tail -n 2 /etc/passwd"}
+  - {id: wc, cmd: "wc -l /etc/passwd", exact: true}
+  - {id: grep, cmd: "grep root /etc/passwd"}
+  - {id: grep-count, cmd: "grep -c root /etc/passwd", exact: true}
+  - {id: grep-no-match, cmd: "grep nosuchword /etc/passwd", exact: true}
+  - {id: cut, cmd: "cut -d: -f1 /etc/passwd"}
+  - {id: sort-head, cmd: "sort /etc/passwd | head -n 2"}
+  - {id: pipe-wc, cmd: "cat /etc/passwd | wc -l", exact: true}
+  - {id: awk, cmd: "awk -F: '{print $1}' /etc/passwd"}
+  - {id: sed, cmd: "sed -n 1p /etc/passwd", exact: true}
+  - {id: stat, cmd: "stat /etc/passwd"}
+  - {id: du, cmd: "du -sh /etc/ssh"}
+  - {id: find, cmd: "find /etc/ssh -name '*.pub'"}
+  - {id: test-file, cmd: "test -f /etc/passwd; echo $?", exact: true}
+  - {id: mkdir-rmdir, cmd: "mkdir /tmp/probe-dir; ls -d /tmp/probe-dir; rmdir /tmp/probe-dir; ls -d /tmp/probe-dir", exact: true}
+  - {id: touch-ls, cmd: "touch /tmp/probe-file; ls /tmp/probe-file; rm /tmp/probe-file", exact: true, time: write}
+  # changing the tree. Added 17 November 2026, when the state manager's replay test found
+  # that `cp` changed the decoy's tree without reporting it and `mkdir -p` made a directory
+  # called -p: the first list had three commands that write, and none with an option. Every
+  # one of these tidies up after itself, since the reference host really runs it.
+  - {id: f-mkdir-p, cmd: "mkdir -p /tmp/pf/a/b && ls -R /tmp/pf; rm -r /tmp/pf", exact: true}
+  - {id: f-mkdir-exists, cmd: "mkdir /tmp/pf; mkdir /tmp/pf; echo $?; mkdir -p /tmp/pf; echo $?; rmdir /tmp/pf", exact: true}
+  - {id: f-mkdir-noparent, cmd: "mkdir /tmp/pf-absent/x/y; echo $?", exact: true}
+  - {id: f-mkdir-mode, cmd: "mkdir -v -m 700 /tmp/pf; stat -c '%a %U:%G' /tmp/pf; rmdir /tmp/pf", exact: true}
+  - {id: f-mkdir-missing, cmd: "mkdir; echo $?; mkdir -q /tmp/pf; echo $?", exact: true}
+  - {id: f-mkdir-over-file, cmd: "touch /tmp/pf1; mkdir /tmp/pf1; mkdir -p /tmp/pf1; mkdir /tmp/pf1/x; rm /tmp/pf1", exact: true}
+  - {id: f-rmdir-full, cmd: "mkdir -p /tmp/pf/a; rmdir /tmp/pf; echo $?; rm -r /tmp/pf", exact: true}
+  - {id: f-rmdir-absent, cmd: "rmdir /tmp/pf-absent; echo $?; touch /tmp/pf1; rmdir /tmp/pf1; rm /tmp/pf1", exact: true}
+  - {id: f-rmdir-parents, cmd: "cd /tmp && mkdir -p pf/a/b pf/keep && rmdir -pv pf/a/b; ls pf; rm -r pf", exact: true}
+  - {id: f-cp, cmd: "echo one > /tmp/pf1; cp /tmp/pf1 /tmp/pf2; cat /tmp/pf2; stat -c '%a %s %U:%G' /tmp/pf2; rm /tmp/pf1 /tmp/pf2", exact: true}
+  # Timed on a line of two commands, not on the five above: every command costs the decoy a
+  # round trip to the policy service (about 2 ms on the lab host; the budget is 20 at p95),
+  # so a long line measures how many commands it has. On five, a busy host put the median
+  # past the bound once in three runs (17 November 2026); alone it passed.
+  - {id: f-cp-timed, cmd: "cp /etc/hostname /tmp/pf2; rm /tmp/pf2", exact: true, time: write}
+  - {id: f-cp-absent, cmd: "cp /tmp/pf-absent /tmp/pf2; echo $?", exact: true}
+  - {id: f-cp-dir, cmd: "mkdir /tmp/pf; cp /tmp/pf /tmp/pf2; echo $?; rmdir /tmp/pf", exact: true}
+  - {id: f-cp-recursive, cmd: "mkdir -p /tmp/pf/a; echo x > /tmp/pf/a/f; cp -r /tmp/pf /tmp/pf2; ls -R /tmp/pf2; cat /tmp/pf2/a/f; rm -r /tmp/pf /tmp/pf2", exact: true}
+  - {id: f-cp-into-dir, cmd: "mkdir /tmp/pf; echo x > /tmp/pf1; cp /tmp/pf1 /tmp/pf/; ls /tmp/pf; rm -r /tmp/pf /tmp/pf1", exact: true}
+  - {id: f-cp-operands, cmd: "cp; echo $?; cp /tmp/pf1; echo $?; cp /etc/hostname /etc/hosts /tmp/pf-absent; echo $?", exact: true}
+  - {id: f-cp-mode, cmd: "echo x > /tmp/pf1; chmod 600 /tmp/pf1; cp /tmp/pf1 /tmp/pf2; stat -c '%a' /tmp/pf2; rm /tmp/pf1 /tmp/pf2", exact: true}
+  - {id: f-cp-verbose, cmd: "echo x > /tmp/pf1; cp -v /tmp/pf1 /tmp/pf2; rm /tmp/pf1 /tmp/pf2", exact: true}
+  - {id: f-cp-over, cmd: "echo new > /tmp/pf1; echo old-and-longer > /tmp/pf2; cp /tmp/pf1 /tmp/pf2; cat /tmp/pf2; stat -c %s /tmp/pf2; rm /tmp/pf1 /tmp/pf2", exact: true}
+  - {id: f-cp-noparent, cmd: "cp /etc/hostname /tmp/pf-absent/x; echo $?", exact: true}
+  - {id: f-mv, cmd: "echo x > /tmp/pf1; mv /tmp/pf1 /tmp/pf2; ls /tmp/pf1 /tmp/pf2; cat /tmp/pf2; rm /tmp/pf2", exact: true}
+  - {id: f-mv-absent, cmd: "mv /tmp/pf-absent /tmp/pf2; echo $?", exact: true}
+  - {id: f-mv-into-dir, cmd: "mkdir /tmp/pf; echo x > /tmp/pf1; mv /tmp/pf1 /tmp/pf; ls /tmp/pf; rm -r /tmp/pf", exact: true}
+  - {id: f-mv-verbose, cmd: "echo x > /tmp/pf1; mv -v /tmp/pf1 /tmp/pf2; rm /tmp/pf2", exact: true}
+  - {id: f-mv-operands, cmd: "mv; echo $?; mv /tmp/pf1; echo $?", exact: true}
+  - {id: f-mv-dir, cmd: "mkdir -p /tmp/pf/a; touch /tmp/pf/a/f; mv /tmp/pf /tmp/pf2; ls -R /tmp/pf2; rm -r /tmp/pf2", exact: true}
+  - {id: f-rm-absent, cmd: "rm /tmp/pf-absent; echo $?; rm -f /tmp/pf-absent; echo $?", exact: true}
+  - {id: f-rm-dir, cmd: "mkdir /tmp/pf; rm /tmp/pf; echo $?; rmdir /tmp/pf", exact: true}
+  - {id: f-rm-verbose, cmd: "mkdir -p /tmp/pf/a; touch /tmp/pf/a/f; rm -rv /tmp/pf", exact: true}
+  - {id: f-rm-operands, cmd: "rm; echo $?; rm -r; echo $?", exact: true}
+  - {id: f-touch-new, cmd: "touch /tmp/pf1; stat -c '%a %s %U:%G' /tmp/pf1; rm /tmp/pf1", exact: true}
+  - {id: f-touch-noparent, cmd: "touch /tmp/pf-absent/x; echo $?", exact: true}
+  - {id: f-ln-symbolic, cmd: "ln -s /etc/hostname /tmp/pfl; readlink /tmp/pfl; cat /tmp/pfl; stat -c '%F %s' /tmp/pfl; rm /tmp/pfl", exact: true}
+  - {id: f-ln-exists, cmd: "touch /tmp/pf1; ln -s /etc/hostname /tmp/pf1; echo $?; ln -sf /etc/hostname /tmp/pf1; readlink /tmp/pf1; rm /tmp/pf1", exact: true}
+  - {id: f-ln-hard, cmd: "echo x > /tmp/pf1; ln /tmp/pf1 /tmp/pf2; cat /tmp/pf2; rm /tmp/pf1 /tmp/pf2; ln /tmp/pf-absent /tmp/pf2; echo $?", exact: true}
+  - {id: f-ln-operands, cmd: "ln; echo $?; ln -s /etc/hostname /tmp/pf-absent/x; echo $?", exact: true}
+  - {id: f-chmod-symbolic, cmd: "touch /tmp/pf1; chmod u+x,go-r /tmp/pf1; stat -c %a /tmp/pf1; chmod a=r /tmp/pf1; stat -c %a /tmp/pf1; rm -f /tmp/pf1", exact: true}
+  - {id: f-chmod-absent, cmd: "chmod 600 /tmp/pf-absent; echo $?; chmod; echo $?; chmod 9z9 /tmp; echo $?", exact: true}
+  - {id: f-chmod-recursive, cmd: "mkdir -p /tmp/pf/a; touch /tmp/pf/a/f; chmod -R 700 /tmp/pf; stat -c '%a %n' /tmp/pf /tmp/pf/a /tmp/pf/a/f; rm -r /tmp/pf", exact: true}
+  - {id: f-chmod-special, cmd: "touch /tmp/pf1; chmod 4755 /tmp/pf1; ls -l /tmp/pf1 | cut -c1-10; chmod -v 644 /tmp/pf1; rm /tmp/pf1", exact: true}
+  - {id: f-chown, cmd: "touch /tmp/pf1; chown daemon:daemon /tmp/pf1; stat -c %U:%G /tmp/pf1; chown root: /tmp/pf1; stat -c %U:%G /tmp/pf1; rm /tmp/pf1", exact: true}
+  # One entry in the directory: the order chown meets two in is the filesystem's own.
+  - {id: f-chown-recursive, cmd: "mkdir -p /tmp/pf/a; chown -Rv www-data /tmp/pf; rm -r /tmp/pf", exact: true}
+  - {id: f-getconf, cmd: "getconf LONG_BIT; getconf PAGE_SIZE; getconf CLK_TCK; getconf GNU_LIBC_VERSION; getconf NAME_MAX /; getconf no_such_variable; echo $?", exact: true}
+  - {id: f-readlink, cmd: "readlink /bin; readlink /etc/hostname; echo $?; readlink -f /bin/sh; readlink -f /tmp/pf-absent; realpath /bin/sh /tmp/pf-absent; cd /etc; realpath hostname ..", exact: true}
+  - {id: f-names, cmd: "basename /a/b/c.txt .txt; basename /a/b/; dirname /a/b/c.txt; dirname a; basename; echo $?", exact: true}
+  - {id: f-checksums, cmd: "md5sum /bin/ls /usr/bin/id; sha256sum /bin/ls; sha1sum /etc/hostname; echo hello | md5sum; md5sum /tmp/pf-absent; echo $?", exact: true}
+  - {id: f-checksum-check, cmd: "echo hello > /tmp/pf1; sha256sum /tmp/pf1 > /tmp/pf.sum; sha256sum -c /tmp/pf.sum; echo x > /tmp/pf1; sha256sum -c /tmp/pf.sum; echo $?; rm /tmp/pf1 /tmp/pf.sum", exact: true}
+  - {id: f-cut, cmd: "echo abcdefghij | cut -c1-3; echo a:b:c | cut -d: -f1,3; cut -d: -f1 /etc/passwd | head -3; echo abc | cut; echo $?", exact: true}
+  - {id: f-xargs, cmd: "printf 'a b\\nc\\n' | xargs; printf 'a\\nb\\n' | xargs -n 1 echo one; printf 'a\\nb\\n' | xargs -I{} echo pre-{}-post; echo /etc/hostname | xargs cat | wc -l; echo a | xargs nosuchcmd; echo $?", exact: true}
+  - {id: f-seq-tac, cmd: "seq 3; seq 2 2 6; seq -w 8 10; printf 'a\\nb\\n' | tac; printf 'abc\\n' | rev; seq; echo $?", exact: true}
+  - {id: f-find-tests, cmd: "find /etc/ssh -maxdepth 1 -name 'ssh_host*' -type f | sort; find /etc/ssh -type d | sort; find /etc -maxdepth 1 -name 'host*' | sort; find /etc/passwd -perm 644; find /etc/ssh -frob; echo $?", exact: true}
+  - {id: f-find-exec, cmd: "mkdir -p /tmp/pf; touch /tmp/pf/a /tmp/pf/b; find /tmp/pf -type f -exec basename {} \\; | sort; find /tmp/pf -name a -delete; find /tmp/pf | sort; rm -r /tmp/pf", exact: true}
+  - {id: f-find-perm, cmd: "find /usr/bin -perm -4000 -type f 2>/dev/null | sort", exact: true}
+  - {id: f-passwd, cmd: "passwd nosuchuser; echo $?; echo 'nosuchuser:pw' | chpasswd; echo $?; echo badline | chpasswd; echo $?", exact: true}
+  - {id: f-chown-invalid, cmd: "touch /tmp/pf1; chown nosuchuser /tmp/pf1; echo $?; chown root:nosuchgroup /tmp/pf1; echo $?; chown root; echo $?; chown; rm /tmp/pf1", exact: true}
+  - {id: f-chown-absent, cmd: "chown root /tmp/pf-absent; echo $?; chown -c 1234:5678 /tmp; chown -c root:root /tmp", exact: true}
+  - {id: f-chgrp, cmd: "touch /tmp/pf1; chgrp -v daemon /tmp/pf1; chgrp -v daemon /tmp/pf1; chgrp nosuchgroup /tmp/pf1; echo $?; rm /tmp/pf1", exact: true}
+  - {id: f-tee, cmd: "echo x | tee /tmp/pf1; cat /tmp/pf1; echo y | tee -a /tmp/pf1 > /dev/null; cat /tmp/pf1; rm /tmp/pf1", exact: true}
+  - {id: f-append, cmd: "echo a > /tmp/pf1; echo b >> /tmp/pf1; wc -l < /tmp/pf1; cat /tmp/pf1; rm /tmp/pf1", exact: true}
+  - {id: f-overwrite, cmd: "echo long-line-here > /tmp/pf1; echo s > /tmp/pf1; stat -c %s /tmp/pf1; cat /tmp/pf1; rm /tmp/pf1", exact: true}
+  - {id: f-cat-dir, cmd: "cat /tmp; echo $?; cat /tmp/pf-absent; echo $?", exact: true}
+  - {id: f-head-tail, cmd: "printf 'a\\nb\\nc\\n' > /tmp/pf1; head -2 /tmp/pf1; tail -1 /tmp/pf1; head -n 1 /tmp/pf1; rm /tmp/pf1", exact: true}
+  - {id: f-find, cmd: "mkdir -p /tmp/pf/a; touch /tmp/pf/a/f /tmp/pf/g; find /tmp/pf | sort; find /tmp/pf -name f -type f; find /tmp/pf -maxdepth 1 -type d | sort; rm -r /tmp/pf", exact: true}
+  - {id: f-find-absent, cmd: "find /tmp/pf-absent; echo $?", exact: true}
+  - {id: f-test, cmd: "touch /tmp/pf1; [ -e /tmp/pf1 ] && echo there; [ -d /tmp/pf1 ] || echo not-dir; [ -s /tmp/pf1 ] || echo empty; [ -x /tmp/pf1 ] || echo not-exec; rm /tmp/pf1", exact: true}
+  - {id: f-redirect-noparent, cmd: "echo x > /tmp/pf-absent/x; echo $?", exact: true}
+  - {id: f-redirect-dir, cmd: "echo x > /tmp; echo $?", exact: true}
+  - {id: f-script, cmd: "printf '#!/bin/sh\\necho ran $1\\n' > /tmp/pf.sh; chmod +x /tmp/pf.sh; /tmp/pf.sh now; sh /tmp/pf.sh again; rm /tmp/pf.sh", exact: true}
+  - {id: f-script-noexec, cmd: "echo 'echo ran' > /tmp/pf.sh; /tmp/pf.sh; echo $?; rm /tmp/pf.sh", exact: true}
+  # processes and sessions
+  - {id: ps, cmd: "ps"}
+  - {id: ps-aux, cmd: "ps aux"}
+  - {id: ps-ef, cmd: "ps -ef"}
+  - {id: w, cmd: "w"}
+  - {id: who, cmd: "who", exact: true}
+  - {id: crontab-l, cmd: "crontab -l"}
+  # packages and services
+  - {id: dpkg-l, cmd: "dpkg -l openssh-server"}
+  - {id: dpkg-s, cmd: "dpkg -s nginx"}
+  # Only the listeners both hosts have: the reference container lacks the resolver a real
+  # guest runs and has Docker's own, so the whole list differs by design.
+  - {id: ss-tln, cmd: "ss -Htln '( sport = :22 or sport = :80 )'", time: report, exact: true}
+  - {id: nginx-v, cmd: "nginx -v", time: library}
+  - {id: nginx-t, cmd: "nginx -t"}
+  - {id: sshd-t, cmd: "sshd -t"}
+  # more of the same commands, with the options people use
+  - {id: id-g, cmd: "id -g", exact: true}
+  - {id: id-groups, cmd: "id -G", exact: true}
+  - {id: id-un, cmd: "id -un", exact: true}
+  - {id: id-gn, cmd: "id -gn", exact: true}
+  - {id: id-www-data, cmd: "id www-data", exact: true}
+  - {id: id-missing-user, cmd: "id nosuchuser", exact: true}
+  - {id: ls-l-ssh, cmd: "ls -l /etc/ssh", same: ['(?m)^total \d+$', '[A-Z][a-z]{2} [ \d]\d +(\d\d:\d\d|\d{4}) ']}
+  - {id: ls-la-tmp, cmd: "ls -la /tmp", same: ['(?m)^total \d+$', '(?m)^drwxrwxrwt \d+ root root +\d+ .* \.$']}
+  - {id: ls-ld-etc, cmd: "ls -ld /etc", same: ['^drwxr-xr-x \d+ root root +\d+ [A-Z][a-z]{2} [ \d]\d ']}
+  - {id: ls-1-ssh, cmd: "ls -1 /etc/ssh"}
+  - {id: ls-a-root, cmd: "ls -a /root", same: ['(?m)^\.$', '(?m)^\.\.$']}
+  - {id: ls-lh-log, cmd: "ls -lh /var/log", same: ['(?m)^total [\d.]+K?$']}
+  - {id: ls-recursive, cmd: "ls -R /etc/ssh", same: ['(?m)^/etc/ssh:$', '(?m)^/etc/ssh/sshd_config\.d:$']}
+  - {id: ls-link, cmd: "ls -l /bin", exact: true}
+  - {id: ls-dev-null, cmd: "ls -l /dev/null", same: ['^crw-rw-rw- 1 root root 1, 3 ']}
+  - {id: ls-file-and-dirs, cmd: "ls /etc/hostname /home /opt", same: ['(?m)^/etc/hostname$', '(?m)^/home:$']}
+  - {id: ls-numeric, cmd: "ls -n /etc/hostname", same: ['^-rw-r--r-- 1 0 0 ']}
+  - {id: ls-classify, cmd: "ls -F /etc/ssh", same: ['(?m)^ssh_config\.d/$']}
+  - {id: glob-question, cmd: "echo /etc/hos?s", exact: true}
+  - {id: glob-brackets, cmd: "echo /etc/[hp]ost*", same: ['\*']}
+  - {id: glob-quoted, cmd: "echo \"/etc/host*\"", exact: true}
+  - {id: glob-no-match, cmd: "echo /nonexist*", exact: true}
+  - {id: glob-in-directory, cmd: "cd /etc/ssh; echo *.pub", exact: true}
+  - {id: glob-cat, cmd: "cat /etc/host*", same: ['(?m)^127\.0\.0\.1\s+localhost$']}
+  - {id: tilde, cmd: "echo ~", exact: true}
+  - {id: wc-default, cmd: "wc /etc/hostname", exact: true}
+  - {id: wc-two-files, cmd: "wc -l /etc/hostname /etc/shells", exact: true}
+  - {id: wc-stdin, cmd: "cat /etc/hostname | wc", exact: true}
+  - {id: wc-missing, cmd: "wc -l /nonexistent-file", exact: true}
+  - {id: wc-words, cmd: "echo a b c | wc -w", exact: true}
+  - {id: sort-file, cmd: "sort /etc/shells", exact: true}
+  - {id: sort-reverse, cmd: "sort -r /etc/shells", exact: true}
+  - {id: sort-unique-stdin, cmd: "printf 'b\\na\\nb\\n' | sort -u", exact: true}
+  - {id: sort-key, cmd: "sort -t: -k3 -n /etc/passwd", same: ['^root:']}
+  - {id: sort-missing, cmd: "sort /nonexistent-file", exact: true}
+  - {id: stat-format, cmd: "stat -c '%a %U %G %n' /etc/passwd", exact: true}
+  - {id: stat-directory, cmd: "stat /etc", same: ['(?m)^  File: /etc$', 'IO Block: 4096   directory$', '(?m)^Access: \(0755/drwxr-xr-x\)  Uid: \(    0/    root\)   Gid: \(    0/    root\)$', '(?m)^ Birth: ']}
+  - {id: stat-link, cmd: "stat -c '%A %F %N' /bin", exact: true}
+  - {id: stat-missing, cmd: "stat /nonexistent-file", exact: true}
+  - {id: type-ls, cmd: "type ls", exact: true}
+  - {id: type-missing, cmd: "type nosuchprogram", exact: true}
+  - {id: type-t, cmd: "type -t cd", exact: true}
+  - {id: type-keyword, cmd: "type if", exact: true}
+  - {id: command-v-builtin, cmd: "command -v cd", exact: true}
+  - {id: command-v-missing, cmd: "command -v nosuchprogram; echo $?", exact: true}
+  - {id: env-ssh, cmd: "echo $SSH_CONNECTION", same: ['^\S+ \d+ \S+ 22$']}
+  - {id: shlvl, cmd: "echo $SHLVL", exact: true}
+  # the shell as bash: the syntax and builtins scripts are written in (phase 3, step 4b).
+  # Stock Cowrie answered most of these with a syntax error or "command not found".
+  - {id: sh-default, cmd: "echo \"${NOPE:-fallback}\" \"${HOME:+set}\" \"${NOPE:=made}\" $NOPE ${#HOME}", exact: true}
+  - {id: sh-strip, cmd: "F=/a/b/c.tar.gz; echo ${F%.gz} ${F%%.*} ${F#/a} ${F##*/} ${F/b/B} ${F//\\//_} ${F^^} ${F:1:3}", exact: true}
+  - {id: sh-required, cmd: "echo \"${NOPE:?is needed}\"; echo not reached", exact: true}
+  - {id: sh-bad-substitution, cmd: "echo ${HOME!x}; echo not reached", exact: true}
+  - {id: sh-bad-substitution-next-line, cmd: "echo ${HOME!x}; echo not reached\necho next $?", exact: true}
+  - {id: sh-word-quotes, cmd: "printf '<%s>' \"${NOPE:-'q w'}\" ${NOPE:-'a  b' c} \"${NOPE:-\"d  e\"}\"; echo", exact: true}
+  - {id: sh-pattern-quotes, cmd: "V='a*b'; echo \"${V%'*'*}\" \"${V/'*'/X}\" ${V//[a-b]/_}", exact: true}
+  - {id: sh-indirect, cmd: "A=HOME; echo ${!A} ${!HO*}", exact: true}
+  - {id: sh-append, cmd: "x=1; x+=2; echo $x", exact: true}
+  - {id: sh-brace, cmd: "echo {a,b}{1,2} {1..5} x{,y} {} {x}", exact: true}
+  - {id: sh-ansi-c, cmd: "printf '%s|' $'a\\tb' $'it\\'s'; echo", exact: true}
+  - {id: sh-cond, cmd: "[[ -d /etc && abc == a* && ! -e /nonexistent-file ]] && echo yes; [[ abc =~ ^a.c$ ]]; echo $?", time: builtin, exact: true}
+  - {id: sh-cond-quoted-pattern, cmd: "[[ abc == \"a*\" ]]; echo $?; V='two words'; [[ $V == 'two words' ]]; echo $?", exact: true}
+  - {id: sh-cond-malformed, cmd: "echo before; [[ a == ]]; echo $?", exact: true}
+  - {id: sh-cond-malformed-next-line, cmd: "echo before\n[[ a b ]]\necho not reached", exact: true}
+  - {id: sh-arith, cmd: "i=5; (( i > 3 )) && echo gt; (( i++ )); echo $i $((i * 2)) $(( 1 << 4 )) $(( 0x1f ))", exact: true}
+  - {id: sh-arith-error, cmd: "(( 1 / 0 )); echo $?; echo $(( 1 / 0 )); echo not reached", exact: true}
+  - {id: sh-let, cmd: "let x=3+4 y=x*2; echo $x $y", exact: true}
+  - {id: sh-c-for, cmd: "for ((i=0;i<3;i++)); do echo $i; done", exact: true}
+  - {id: sh-negate, cmd: "if ! grep -q nosuchuser /etc/passwd; then echo absent; fi; ! true; echo $?", exact: true}
+  - {id: sh-case, cmd: "for w in alpha beta other; do case $w in alpha|a1) echo first;; b*) echo second;; *) echo unknown;; esac; done", exact: true}
+  - {id: sh-while, cmd: "n=0; while [ $n -lt 3 ]; do n=$((n+1)); done; echo $n; until [ $n -le 1 ]; do n=$((n-1)); done; echo $n", exact: true}
+  - {id: sh-while-read, cmd: "printf 'a b\\nc d\\n' | while read x y; do echo \"[$y $x]\"; done", exact: true}
+  - {id: sh-test, cmd: "[ -f /etc/passwd -a ! -d /etc/passwd ] && echo file; test 3 -gt 2 && echo gt; [ \"$HOME\" = /nowhere ]; echo $?", exact: true}
+  - {id: sh-function, cmd: "f() { local v=in; echo $v $1 $#; return 3; }; v=out; f arg; echo $? $v", exact: true}
+  - {id: sh-function-error, cmd: "f() { nosuchprogram; cd /nonexistent-dir; }; f; nosuchprogram", exact: true}
+  - {id: sh-function-error-line, cmd: "f() {\necho in\nnosuchprogram\n}\nf\nnosuchprogram", exact: true}
+  - {id: sh-type-function, cmd: "f() { for i in 1 2; do echo $i; done; if true; then echo y; else echo n; fi; }; type f", exact: true}
+  - {id: sh-declare-f, cmd: "g() { case $1 in a|b) echo ab;; *) echo other;; esac; cat /etc/hostname | wc -l; while false; do :; done; }; declare -f g; declare -F", exact: true}
+  - {id: sh-function-subshell-body, cmd: "g() ( cd /tmp; pwd ); g; pwd", exact: true}
+  - {id: sh-eval, cmd: "c='echo evald'; eval $c; eval 'x=5'; echo $x", exact: true}
+  - {id: sh-source, cmd: "echo 'S=sourced; echo in $1' > /tmp/probe-s.sh; . /tmp/probe-s.sh arg; echo $S; rm /tmp/probe-s.sh", exact: true}
+  - {id: sh-source-error, cmd: "printf 'echo one\\nnosuchprogram\\n' > /tmp/probe-e.sh; . /tmp/probe-e.sh; rm /tmp/probe-e.sh; . /nonexistent-file; echo $?", exact: true}
+  - {id: sh-shift, cmd: "set -- a 'b c' d; shift; echo $# $1; printf '<%s>' \"${@:2}\" \"$@\"; echo", exact: true}
+  - {id: sh-readonly, cmd: "readonly R=1; R=2; echo not reached", exact: true}
+  - {id: sh-readonly-before-command, cmd: "readonly R=1; R=2 echo ran; unset R; echo $? $R", exact: true}
+  - {id: sh-readonly-list, cmd: "readonly", exact: true}
+  - {id: sh-declare, cmd: "declare -i n=3+4; declare -u up=abc; declare -x ex=1; declare -p n up ex; declare -a arr; declare -p arr", exact: true}
+  - {id: sh-export-list, cmd: "export -p", exact: true}
+  - {id: sh-export-child, cmd: "export A=1; B=2; sh -c 'echo \"[$A][$B]\"'; A=3 sh -c 'echo $A'", exact: true}
+  - {id: sh-set, cmd: "set", exact: true}
+  - {id: sh-set-with-function, cmd: "x='a b'; f() { echo hi; }; set | tail -6", exact: true}
+  - {id: sh-declare-p, cmd: "declare -p", exact: true}
+  - {id: sh-set-o, cmd: "set -o; set -o pipefail; echo $SHELLOPTS", exact: true}
+  - {id: sh-shopt, cmd: "shopt; shopt -s nullglob; shopt nullglob; shopt nosuchoption", exact: true}
+  - {id: sh-own-variables, cmd: "echo \"$BASH_VERSION|$UID|$EUID|$HOSTTYPE|$OSTYPE|$MACHTYPE|$OPTIND|$-|$0|$BASH|$TERM|$_|$PS4\"", exact: true}
+  - {id: sh-last-argument, cmd: "echo a b > /dev/null; echo $_; x=1; echo \"[$_]\"", exact: true}
+  - {id: sh-unset, cmd: "unset UID; echo $?; X=1; unset X; echo \"[$X]\"", exact: true}
+  - {id: sh-cd-dash, cmd: "cd /tmp; cd /etc; cd -; echo $OLDPWD; env | grep OLDPWD", exact: true}
+  - {id: sh-pushd, cmd: "pushd /tmp; pushd /etc; dirs; popd; pwd", exact: true}
+  - {id: sh-alias, cmd: "alias ll='ls -l'; alias; unalias ll; alias nosuchalias; echo $?", exact: true}
+  - {id: sh-trap, cmd: "trap 'echo bye' EXIT; trap 'echo int' 2; trap; echo working", exact: true}
+  - {id: sh-trap-list, cmd: "trap -l", exact: true}
+  - {id: sh-syntax-error, cmd: "echo first; if then echo x; fi", exact: true}
+  - {id: sh-here-document, cmd: "cat <<EOF\nhome is $HOME ${NOPE:-none} $((1+1))\nEOF", exact: true}
+  - {id: sh-background, cmd: "echo a & wait; echo b", exact: true}
+  - {id: sh-subshell, cmd: "V=out; ( V=in; cd /tmp; echo $V $PWD ); echo $V $PWD", exact: true}
+  - {id: sh-builtin, cmd: "echo() { printf 'mine\\n'; }; echo x; builtin echo y; command echo z; builtin ls", exact: true}
+  - {id: sh-hash, cmd: "hash; ls /etc/hostname > /dev/null; hash; hash -r; hash", exact: true}
+  - {id: sh-read, cmd: "echo 'one two three' | { read a b; echo \"$b|$a\"; }", exact: true}
+  - {id: sh-background-status, cmd: "false & wait $!; echo $?; ls /nonexistent-dir & wait; echo $?; echo \"[$!]\" | tr -d 0-9", exact: true}
+  - {id: sh-background-compound, cmd: "( echo sub; echo two ) & wait; echo x | cat & wait; for i in 1 2; do echo $i; done & wait; echo end", exact: true}
+  - {id: sh-background-separator, cmd: "echo a &; echo b", exact: true}
+  - {id: sleep-fraction, cmd: "sleep 0.1; echo $?; sleep 0.05s .05; echo $?; sleep x", exact: true}
+  # Spike S2's three wrong answers, as checks (spec 3.4; Gate 3, test 7). A model said that
+  # root may not read /etc/shadow, answered `which` in another distribution's words with
+  # status 0, and gave `ss` the header of `netstat`. Whichever rung answers these now, the
+  # answer is held to the real host's.
+  - {id: s2-root-reads-shadow, cmd: "cat /etc/shadow > /dev/null; echo $?; head -1 /etc/shadow | cut -d: -f1", exact: true}
+  - {id: s2-which-several, cmd: "which python3 gcc perl; echo $?", exact: true}
+  # The header's spacing follows the longest cell under it, and the reference container has a
+  # five-digit port of Docker's that no host has: the words are compared, and the layout is
+  # held by the rows both hosts have (the ss-* probes below).
+  - {id: s2-ss-header, cmd: "ss -tlnp | head -1 | tr -s ' '", exact: true}
+  # getent, tty and ss (patch 0021): the accounts, whether there is a terminal, what listens
+  - {id: getent-passwd, cmd: "getent passwd root; getent passwd 0", exact: true}
+  - {id: getent-passwd-missing, cmd: "getent passwd nosuchuser; echo $?", exact: true}
+  - {id: getent-passwd-several, cmd: "getent passwd root nosuchuser daemon; echo $?", exact: true}
+  - {id: getent-passwd-count, cmd: "getent passwd | wc -l; getent passwd | head -3", exact: true}
+  - {id: getent-group, cmd: "getent group sudo root; getent group 27; getent group nosuchgroup; echo $?", exact: true}
+  - {id: getent-shadow, cmd: "getent shadow root | cut -d: -f1,3-; getent shadow | wc -l", exact: true}
+  - {id: getent-hosts-address, cmd: "getent hosts 127.0.0.1; echo $?", exact: true}
+  - {id: getent-hosts-name, cmd: "getent hosts localhost ip6-localhost; echo $?", exact: true}
+  - {id: getent-ahosts-address, cmd: "getent ahosts 127.0.0.1; echo $?", exact: true}
+  - {id: getent-no-database, cmd: "getent; echo $?", exact: true}
+  - {id: getent-unknown-database, cmd: "getent nosuchdb; echo $?", exact: true}
+  - {id: getent-bad-option, cmd: "getent -x; echo $?", exact: true}
+  - {id: getent-no-enumeration, cmd: "getent ethers; echo $?; getent initgroups root", exact: true}
+  - {id: getent-version, cmd: "getent --version | head -1; getent --usage", exact: true}
+  - {id: tty-none, cmd: "tty; echo $?; tty -s; echo $?", exact: true}
+  - {id: tty-refuses, cmd: "tty extra; echo $?; tty -x; echo $?", exact: true}
+  - {id: ss-sshd, cmd: "ss -Htlnp sport = :22", exact: true}
+  - {id: ss-web, cmd: "ss -Htln sport = :80", exact: true}
+  - {id: ss-database, cmd: "ss -Htln '( sport = :3306 or sport = :6379 )' | sort", exact: true}
+  - {id: ss-own-connection, cmd: "ss -tn state established | head -1 | tr -s ' '; ss -Htn | wc -l", exact: true}
+  - {id: ss-version, cmd: "ss -V; ss -q 2>&1 | head -2; ss -tn state nosuch; echo $?", exact: true}
+  - {id: ss-agrees-with-ps, cmd: "p=$(ss -Htlnp sport = :22 | head -1 | sed 's/.*pid=//; s/,.*//'); ps -p $p | grep -c sshd", exact: true}
+  # unlink, link, truncate, install, shred, and cat as it is (patch 0024). Until then the
+  # five were the model's to answer, and it reported changes it had not made.
+  - {id: cat-no-final-newline, cmd: "printf abc > /tmp/pc1; cat /tmp/pc1 | wc -c; cat /tmp/pc1 /tmp/pc1; echo; rm /tmp/pc1", exact: true}
+  - {id: cat-numbered, cmd: "cat -n /etc/shells | head -3; cat -b /etc/shells | tail -1", exact: true}
+  - {id: cat-show-all, cmd: "printf 'a\\tb\\n\\n\\nc' > /tmp/pc2; cat -A /tmp/pc2; echo; cat -sb /tmp/pc2; echo; cat -E /tmp/pc2; echo; rm /tmp/pc2", exact: true}
+  - {id: cat-refuses, cmd: "cat -x /etc/hostname; echo $?; cat /tmp/nosuch-cat /etc/hostname; echo $?; cat /etc; echo $?", exact: true}
+  - {id: truncate-makes, cmd: "truncate -s 10 /tmp/pt1; echo $?; wc -c /tmp/pt1; stat -c '%a %s' /tmp/pt1; rm /tmp/pt1", exact: true}
+  - {id: truncate-forms, cmd: "echo hello world > /tmp/pt2; truncate -s 5 /tmp/pt2; cat /tmp/pt2; echo; truncate -s +3 /tmp/pt2; wc -c < /tmp/pt2; truncate -s '<4' /tmp/pt2; wc -c < /tmp/pt2; truncate -s %10 /tmp/pt2; wc -c < /tmp/pt2; rm /tmp/pt2", exact: true}
+  - {id: truncate-refuses, cmd: "truncate /tmp/pt3; echo $?; truncate -s abc /tmp/pt3; echo $?; truncate -s 1 /tmp/nosuchdir/x; echo $?; truncate -c -s 1 /tmp/pt3; echo $?; ls /tmp/pt3", exact: true}
+  - {id: install-directory, cmd: "install -d -m 750 /tmp/pi1/a; echo $?; stat -c '%a %n' /tmp/pi1 /tmp/pi1/a; rm -r /tmp/pi1", exact: true}
+  - {id: install-file, cmd: "install -m 600 /etc/hostname /tmp/pi2; echo $?; stat -c '%a %U %G %s' /tmp/pi2; cat /tmp/pi2; install /etc/hostname /tmp/pi2; stat -c '%a' /tmp/pi2; rm /tmp/pi2", exact: true}
+  - {id: install-parents, cmd: "install -D -m 640 /etc/hostname /tmp/pi4/x/y; echo $?; stat -c '%a %n' /tmp/pi4/x/y /tmp/pi4/x; rm -r /tmp/pi4", exact: true}
+  - {id: install-refuses, cmd: "install; echo $?; install /etc/hostname; echo $?; install /tmp/nosuch /tmp/pi3; echo $?; install -m 999 /etc/hostname /tmp/pi3; echo $?", exact: true}
+  - {id: link-and-unlink, cmd: "echo x > /tmp/pl1; link /tmp/pl1 /tmp/pl2; echo $?; cat /tmp/pl2; unlink /tmp/pl1; echo $?; ls /tmp/pl1 /tmp/pl2; rm /tmp/pl2", exact: true}
+  - {id: link-refuses, cmd: "link /tmp/nosuch /tmp/pl3; echo $?; link /tmp /tmp/pl3; echo $?; unlink /tmp/nosuch; echo $?; mkdir /tmp/pl4; unlink /tmp/pl4; echo $?; rmdir /tmp/pl4", exact: true}
+  - {id: shred-removes, cmd: "echo x > /tmp/ps1; shred -u -v /tmp/ps1; echo $?; ls /tmp/ps1", exact: true}
+  - {id: shred-leaves-a-block, cmd: "echo x > /tmp/ps2; shred -n 1 -z /tmp/ps2; echo $?; wc -c < /tmp/ps2; rm /tmp/ps2", exact: true}
+  # One login is one host (patch 0023): what an earlier command of the line made is there.
+  - {id: file-then-install, cmd: "mkdir -p /tmp/pk1/in; echo data > /tmp/pk1/in/f; install -m 644 /tmp/pk1/in/f /tmp/pk1/out; cat /tmp/pk1/out; rm -r /tmp/pk1", exact: true}

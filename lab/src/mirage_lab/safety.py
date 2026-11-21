@@ -66,8 +66,16 @@ def has_default_route6(route6: str) -> bool:
     return False
 
 
-def check_target(addresses: list[str], route4: str, route6: str) -> list[str]:
-    """Why the runner may not start; an empty list means it may."""
+def check_target(
+    addresses: list[str], route4: str, route6: str, side_networks: int = 0
+) -> list[str]:
+    """Why the runner may not start; an empty list means it may.
+
+    ``side_networks`` is how many attached private networks are allowed beside the lab's own.
+    It is 0 for the runner. The showcase's console is the one exception (1): it has to be
+    reachable from the proxy in front of it, over a second network that is internal too.
+    Everything else still holds for it: no default route, no route through a gateway, and a
+    target on a directly attached private network."""
     problems: list[str] = []
     nets, default4, routed4 = attached_networks(route4)
     if default4:
@@ -77,9 +85,10 @@ def check_target(addresses: list[str], route4: str, route6: str) -> list[str]:
     if has_default_route6(route6):
         problems.append("this container has an IPv6 default route, so it is not isolated")
     private = [n for n in nets if n.is_private and n.prefixlen >= 12]
-    if len(nets) != 1 or len(private) != 1:
+    if len(private) != len(nets) or not 1 <= len(nets) <= 1 + max(0, side_networks):
         shown = [str(n) for n in nets]
-        problems.append(f"expected exactly one attached private network, found {shown}")
+        wanted = "exactly one" if side_networks <= 0 else f"one to {1 + side_networks}"
+        problems.append(f"expected {wanted} attached private network, found {shown}")
     if not addresses:
         problems.append("the target does not resolve")
     for addr in addresses:
@@ -97,13 +106,13 @@ def resolve(target: str) -> list[str]:
     return sorted({info[4][0] for info in infos})
 
 
-def require_lab(target: str) -> str:
+def require_lab(target: str, side_networks: int = 0) -> str:
     """The target's address, or SafetyError. Called before any connection is opened."""
     if not ROUTE4.exists():
         raise SafetyError("no /proc/net/route: the runner only runs in its lab container")
     addresses = resolve(target)
     route6 = ROUTE6.read_text() if ROUTE6.exists() else ""
-    problems = check_target(addresses, ROUTE4.read_text(), route6)
+    problems = check_target(addresses, ROUTE4.read_text(), route6, side_networks)
     if problems:
         raise SafetyError("; ".join(problems))
     return addresses[0]

@@ -252,11 +252,15 @@ class Analyst:
             return
         self.linked.add(key)
         ch.links.append(link)
-        before = self.components.find(x) == self.components.find(y)
-        self.components.union(x, y)
         ch.touched |= {x, y}
-        if not before:
-            ch.touched |= self.components.members(x)
+        rx, ry = self.components.find(x), self.components.find(y)
+        if rx != ry:
+            # Two actors become one, named for the smaller representative. Only the sessions
+            # of the other side take a new actor ID, so only they are summarised again: an
+            # actor of thousands of sessions that gains one more is not rewritten for it.
+            renamed = self.components.members(max(rx, ry))
+            self.components.union(x, y)
+            ch.touched |= renamed
 
     def _link_same_source(self, sid: str, src: str, ts: datetime, ch: Changes) -> None:
         prev = self.last_by_src.get(src) if src else None
